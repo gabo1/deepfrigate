@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ObjectDetection",
+  "type": "object",
+  "required": ["camera_id", "track_id", "timestamp", "label", "confidence", "bbox"],
+  "properties": {
+    "camera_id": {"type": "string", "minLength": 1},
+    "track_id": {"type": "integer", "minimum": 0},
+    "timestamp": {"type": "number"},
+    "label": {"type": "string", "minLength": 1},
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "bbox": {
+      "type": "object",
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": {"type": "number", "minimum": 0},
+        "y": {"type": "number", "minimum": 0},
+        "width": {"type": "number", "exclusiveMinimum": 0},
+        "height": {"type": "number", "exclusiveMinimum": 0}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

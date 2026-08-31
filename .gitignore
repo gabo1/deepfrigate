@@ -1,0 +1,27 @@
+.env
+.web-dev/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+*.onnx
+*.plan
+*.engine
+models/*/[0-9]*/labels.txt
+models/**/benchmarks/
+data/
+/frigate/
+2bxmmd.jpg
+
+# Frigate runtime (mounted at ./config/frigate)
+config/frigate/*.db
+config/frigate/*.db-*
+config/frigate/backup.db
+config/frigate/.jwt_secret
+config/frigate/.exports
+config/frigate/.vacuum
+config/frigate/.search_stats.json
+config/frigate/.runtime_state.json.lock
+config/frigate/model_cache/
+config/frigate/go2rtc_homekit.yml

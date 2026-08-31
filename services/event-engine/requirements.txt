@@ -1,0 +1,4 @@
+jsonschema==4.25.1
+paho-mqtt==2.1.0
+Pillow==11.3.0
+psycopg[binary]==3.3.4

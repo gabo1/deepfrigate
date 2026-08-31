@@ -1,0 +1,20 @@
+{
+  "cameras": {
+    "tienda": {
+      "width": 1280,
+      "height": 720,
+      "zones": {
+        "area_cajas": {
+          "coordinates": [
+            [0.58, 0.0],
+            [1.0, 0.0],
+            [1.0, 0.72],
+            [0.58, 0.72]
+          ],
+          "objects": ["person"],
+          "inertia": 3
+        }
+      }
+    }
+  }
+}

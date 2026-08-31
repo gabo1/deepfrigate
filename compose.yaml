@@ -1,0 +1,307 @@
+name: deepfrigate
+
+services:
+  mqtt:
+    image: eclipse-mosquitto:2.0.22
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${MQTT_PORT:-1883}:1883"
+    volumes:
+      - ./config/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mqtt-data:/mosquitto/data
+
+  postgres:
+    image: postgres:17.6-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-deepfrigate}
+      POSTGRES_USER: ${POSTGRES_USER:-deepfrigate}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  qdrant:
+    image: qdrant/qdrant:v1.15.4
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${QDRANT_HTTP_PORT:-6343}:6333"
+      - "127.0.0.1:${QDRANT_GRPC_PORT:-6344}:6334"
+    volumes:
+      - qdrant-data:/qdrant/storage
+
+  triton:
+    image: ${TRITON_IMAGE:?Set TRITON_IMAGE in .env}
+    restart: unless-stopped
+    gpus: all
+    ipc: host
+    command:
+      - tritonserver
+      - --model-repository=/models
+      - --model-control-mode=explicit
+      - --load-model=object-detector
+      - --load-model=vehicle-embedding
+      - --load-model=person-attribute
+      - --strict-model-config=true
+    ports:
+      - "127.0.0.1:${TRITON_HTTP_PORT:-8010}:8000"
+      - "127.0.0.1:${TRITON_GRPC_PORT:-8011}:8001"
+      - "127.0.0.1:${TRITON_METRICS_PORT:-8012}:8002"
+    volumes:
+      - ./models:/models:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://localhost:8000/v2/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  platform-api:
+    build: ./services/platform-api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-deepfrigate}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-deepfrigate}
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-vehicle_embeddings}
+      FRIGATE_API_URL: http://frigate:5000/api
+      PIPELINE_CONFIG: /app/pipeline-config/pipeline.yaml
+      PIPELINE_SCHEMA: /app/contracts/pipeline.schema.json
+      ZONES_CONFIG: /app/config/zones.json
+      TRITON_MODEL_REPOSITORY: /app/models
+      TRITON_HTTP_URL: http://triton:8000
+      TRITON_REQUIRED_MODELS: ${TRITON_REQUIRED_MODELS:-object-detector,vehicle-embedding,person-attribute}
+      MODEL_MANAGEMENT_ALLOW_UNLOAD: ${MODEL_MANAGEMENT_ALLOW_UNLOAD:-false}
+    volumes:
+      - ./services/video-engine/config:/app/pipeline-config
+      - ./contracts/pipeline.schema.json:/app/contracts/pipeline.schema.json:ro
+      - ./config/zones.json:/app/config/zones.json:ro
+      - ./models:/app/models:ro
+    ports:
+      - "127.0.0.1:${PLATFORM_API_PORT:-8082}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      triton:
+        condition: service_healthy
+
+  ai-router:
+    build:
+      context: .
+      dockerfile: services/ai-router/Dockerfile
+    restart: unless-stopped
+    ipc: host
+    environment:
+      MQTT_HOST: mqtt
+      TRITON_URL: triton:8001
+      TRITON_MODEL: ${TRITON_MODEL:-vehicle-embedding}
+      FRAME_STORE_URL: http://frame-store:8080
+      FRAME_REF_WORKERS: ${FRAME_REF_WORKERS:-4}
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-vehicle_embeddings}
+      EMBEDDING_LABELS: ${EMBEDDING_LABELS:-person,car}
+      EMBEDDING_MAX_PER_TRACK: ${EMBEDDING_MAX_PER_TRACK:-3}
+      EMBEDDING_MIN_CROP_WIDTH: ${EMBEDDING_MIN_CROP_WIDTH:-48}
+      EMBEDDING_MIN_CROP_HEIGHT: ${EMBEDDING_MIN_CROP_HEIGHT:-32}
+      DS_SNAPSHOT_DIR: /opt/ds-snapshots
+      ATTRIBUTE_LABELS: ${ATTRIBUTE_LABELS:-person}
+      ATTRIBUTE_TRITON_MODEL: ${ATTRIBUTE_TRITON_MODEL:-person-attribute}
+      ATTRIBUTE_MAX_PER_TRACK: ${ATTRIBUTE_MAX_PER_TRACK:-2}
+      ATTRIBUTE_MIN_CROP_WIDTH: ${ATTRIBUTE_MIN_CROP_WIDTH:-64}
+      ATTRIBUTE_MIN_CROP_HEIGHT: ${ATTRIBUTE_MIN_CROP_HEIGHT:-96}
+    volumes:
+      - ./data/ds-snapshots:/opt/ds-snapshots:ro
+    depends_on:
+      - mqtt
+      - triton
+      - frame-store
+      - qdrant
+
+  frame-store:
+    build:
+      context: .
+      dockerfile: services/frame-store/Dockerfile
+    restart: unless-stopped
+    ipc: host
+    environment:
+      MQTT_HOST: mqtt
+      MQTT_PORT: 1883
+      TRACKED_OBJECTS_TOPIC: deepfrigate/tracked-objects/+
+      FRAME_REF_SCHEMA: /app/contracts/frame-ref.schema.json
+      FRAME_SHM_ROOT: /dev/shm
+      FRAME_SWEEP_SECONDS: ${FRAME_SWEEP_SECONDS:-1}
+    ports:
+      - "127.0.0.1:${FRAME_STORE_PORT:-8083}:8080"
+    depends_on:
+      - mqtt
+
+  detection-adapter:
+    build:
+      context: .
+      dockerfile: services/detection-adapter/Dockerfile
+    restart: unless-stopped
+    environment:
+      MQTT_HOST: mqtt
+      MQTT_PORT: 1883
+      DETECTIONS_TOPIC_PREFIX: deepfrigate/detections
+      DETECTIONS_TOPIC: deepfrigate/detections/#
+      TRACKED_OBJECTS_TOPIC: deepfrigate/tracked-objects/{camera_id}
+      LOST_AFTER_SECONDS: ${LOST_AFTER_SECONDS:-5}
+      END_AFTER_SECONDS: ${END_AFTER_SECONDS:-5}
+      DETECT_FPS: ${DETECT_FPS:-5}
+      OBJECT_THRESHOLD: ${OBJECT_THRESHOLD:-0.7}
+      ZONES_CONFIG: /app/config/zones.json
+      ZONE_DWELL_UPDATE_SECONDS: ${ZONE_DWELL_UPDATE_SECONDS:-1}
+      MIN_DETECTION_CONFIDENCE: ${MIN_DETECTION_CONFIDENCE:-0.5}
+      MIN_DETECTION_AREA: ${MIN_DETECTION_AREA:-0}
+    volumes:
+      - ./config/zones.json:/app/config/zones.json:ro
+    depends_on:
+      - mqtt
+
+  event-engine:
+    build:
+      context: .
+      dockerfile: services/event-engine/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-deepfrigate}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-deepfrigate}
+      MQTT_HOST: mqtt
+      MQTT_PORT: 1883
+      TRACKED_OBJECTS_TOPIC: deepfrigate/tracked-objects/+
+      EVENTS_TOPIC: deepfrigate/events/{camera_id}
+      EVENT_QUEUE_SIZE: ${EVENT_QUEUE_SIZE:-1024}
+      FRIGATE_REVIEW_BRIDGE: ${FRIGATE_REVIEW_BRIDGE:-true}
+      FRIGATE_REVIEW_LABELS: ${FRIGATE_REVIEW_LABELS:-person,car}
+      FRIGATE_API_URL: http://frigate:5000/api
+      FRIGATE_API_TIMEOUT_SECONDS: ${FRIGATE_API_TIMEOUT_SECONDS:-5}
+      FRIGATE_DB_PATH: /frigate/frigate.db
+      ZONES_CONFIG: /app/config/zones.json
+      DS_SNAPSHOT_DIR: /opt/ds-snapshots
+      FRIGATE_CLIPS_DIR: /media/frigate/clips
+    volumes:
+      - ./config/frigate:/frigate
+      - ./config/zones.json:/app/config/zones.json:ro
+      - ./data/ds-snapshots:/opt/ds-snapshots:ro
+      - frigate-media:/media/frigate
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mqtt:
+        condition: service_started
+      frigate:
+        condition: service_healthy
+
+  frigate:
+    build:
+      context: .
+      dockerfile: services/frigate/Dockerfile
+      args:
+        FRIGATE_IMAGE: ${FRIGATE_IMAGE:-ghcr.io/blakeblackshear/frigate:0.18.0-beta3-tensorrt}
+    image: deepfrigate-frigate:local
+    restart: unless-stopped
+    stop_grace_period: 30s
+    shm_size: "512mb"
+    gpus: all
+    environment:
+      FRIGATE_CAMERA_TIENDA_URL: ${RTSP_TIENDA:?Set RTSP_TIENDA in .env}
+      FRIGATE_CAMERA_TRAFICO_URL: ${RTSP_TRAFICO:?Set RTSP_TRAFICO in .env}
+    volumes:
+      - ./config/frigate:/config
+      - frigate-media:/media/frigate
+      - /etc/localtime:/etc/localtime:ro
+      - type: tmpfs
+        target: /tmp/cache
+        tmpfs:
+          size: 1000000000
+    ports:
+      - "${WEB_PORT:-3002}:8971"
+      - "127.0.0.1:${GO2RTC_API_PORT:-1984}:1984"
+      - "127.0.0.1:${FRIGATE_RTSP_PORT:-8554}:8554"
+      - "${GO2RTC_WEBRTC_PORT:-8555}:8555/tcp"
+      - "${GO2RTC_WEBRTC_PORT:-8555}:8555/udp"
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://localhost:5000/api/version"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 30s
+    depends_on:
+      mqtt:
+        condition: service_started
+      platform-api:
+        condition: service_started
+
+  frigate-web-dev:
+    image: node:20-bookworm-slim
+    profiles: ["web-dev"]
+    working_dir: /work
+    environment:
+      UPSTREAM: /upstream
+      PATCHES: /patches
+      WEB_DEV: /work
+      PROXY_HOST: frigate:8971
+      WEB_DEV_PORT: "5173"
+      DEEPFRIGATE_WEB_SRC: /patches/web
+    ports:
+      - "${WEB_DEV_PORT:-5173}:5173"
+    volumes:
+      - ./frigate/web:/upstream:ro
+      - ./services/frigate:/patches:ro
+      - ./scripts/dev-frontend.sh:/scripts/dev-frontend.sh:ro
+      - web-dev-work:/work
+    depends_on:
+      frigate:
+        condition: service_healthy
+    command: ["bash", "/scripts/dev-frontend.sh"]
+
+  video-engine:
+    build:
+      context: .
+      dockerfile: services/video-engine/Dockerfile
+      args:
+        DEEPSTREAM_IMAGE: ${DEEPSTREAM_IMAGE:?Set DEEPSTREAM_IMAGE in .env}
+    profiles: ["video"]
+    gpus: all
+    ipc: host
+    depends_on:
+      triton:
+        condition: service_healthy
+      frame-store:
+        condition: service_healthy
+      frigate:
+        condition: service_healthy
+    environment:
+      RTSP_TIENDA: rtsp://frigate:8554/tienda
+      PIPELINE_CONFIG: /opt/deepfrigate/config/pipeline.yaml
+      PIPELINE_SCHEMA: /opt/contracts/pipeline.schema.json
+      ZONES_CONFIG: /opt/config/zones.json
+      TRITON_MODEL_REPOSITORY: /opt/models
+      TRITON_GRPC_URL: triton:8001
+      FRAME_STORE_URL: http://frame-store:8080
+      FRAME_TTL_SECONDS: ${FRAME_TTL_SECONDS:-15}
+      FRAME_REFRESH_SECONDS: ${FRAME_REFRESH_SECONDS:-5}
+      FRAME_MIN_EXPORT_SECONDS: ${FRAME_MIN_EXPORT_SECONDS:-1}
+      FRAME_CONFIDENCE_IMPROVEMENT: ${FRAME_CONFIDENCE_IMPROVEMENT:-0.05}
+      FRAME_CROP_PADDING: ${FRAME_CROP_PADDING:-0.1}
+      DS_SNAPSHOT_DIR: /opt/snapshots
+      DS_SNAPSHOT_INTERVAL: ${DS_SNAPSHOT_INTERVAL:-0.4}
+    volumes:
+      - ./services/video-engine:/opt/deepfrigate:ro
+      - ./data/ds-snapshots:/opt/snapshots
+      - ./contracts:/opt/contracts:ro
+      - ./config/zones.json:/opt/config/zones.json:ro
+      - ./models:/opt/models:ro
+
+volumes:
+  mqtt-data:
+  postgres-data:
+  qdrant-data:
+  frigate-media:
+  web-dev-work:

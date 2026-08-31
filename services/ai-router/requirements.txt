@@ -1,0 +1,5 @@
+paho-mqtt==2.1.0
+jsonschema==4.25.1
+numpy==2.5.2
+opencv-python-headless==5.0.0.93
+tritonclient[grpc]==2.65.0

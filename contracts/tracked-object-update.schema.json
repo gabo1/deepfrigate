@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TrackedObjectUpdate",
+  "type": "object",
+  "required": ["type", "object_id", "camera_id", "track_id", "timestamp", "update_type", "data"],
+  "properties": {
+    "type": {"const": "tracked_object_update"},
+    "object_id": {"type": "string", "minLength": 1},
+    "camera_id": {"type": "string", "minLength": 1},
+    "track_id": {"type": "integer", "minimum": 0},
+    "timestamp": {"type": "number"},
+    "update_type": {
+      "enum": ["detection", "zone", "stationary", "plate", "face", "classification", "visual_match", "ocr", "embedding", "vlm", "custom"]
+    },
+    "data": {"type": "object"}
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"update_type": {"const": "zone"}},
+        "required": ["update_type"]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": ["event", "zone", "current_zones", "entered_zones", "dwell_time", "label", "bbox"],
+            "properties": {
+              "event": {"enum": ["zone_enter", "zone_exit", "dwell_time"]},
+              "zone": {"type": "string", "minLength": 1},
+              "current_zones": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1},
+                "uniqueItems": true
+              },
+              "entered_zones": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1},
+                "uniqueItems": true
+              },
+              "dwell_time": {"type": "number", "minimum": 0},
+              "label": {"type": "string", "minLength": 1},
+              "bbox": {
+                "type": "object",
+                "required": ["x", "y", "width", "height"],
+                "properties": {
+                  "x": {"type": "number", "minimum": 0},
+                  "y": {"type": "number", "minimum": 0},
+                  "width": {"type": "number", "exclusiveMinimum": 0},
+                  "height": {"type": "number", "exclusiveMinimum": 0}
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"update_type": {"const": "embedding"}},
+        "required": ["update_type"]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "model",
+              "model_version",
+              "vector_id",
+              "collection",
+              "dimensions",
+              "distance",
+              "frame_ref_id",
+              "inference_ms",
+              "end_to_end_ms"
+            ],
+            "properties": {
+              "model": {"type": "string", "minLength": 1},
+              "model_version": {"type": "string", "minLength": 1},
+              "vector_id": {"type": "string", "format": "uuid"},
+              "collection": {"type": "string", "minLength": 1},
+              "dimensions": {"const": 512},
+              "distance": {"const": "Cosine"},
+              "frame_ref_id": {"type": "string", "minLength": 1},
+              "inference_ms": {"type": "number", "minimum": 0},
+              "end_to_end_ms": {"type": "number", "minimum": 0}
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"update_type": {"const": "classification"}},
+        "required": ["update_type"]
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "object",
+            "required": [
+              "model",
+              "model_version",
+              "label",
+              "attributes",
+              "frame_ref_id",
+              "inference_ms",
+              "end_to_end_ms"
+            ],
+            "properties": {
+              "model": {"type": "string", "minLength": 1},
+              "model_version": {"type": "string", "minLength": 1},
+              "label": {"type": "string", "minLength": 1},
+              "attributes": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "required": ["name", "value", "score"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {"type": "string", "minLength": 1},
+                    "value": {"type": "string", "minLength": 1},
+                    "score": {"type": "number", "minimum": 0, "maximum": 1}
+                  }
+                }
+              },
+              "frame_ref_id": {"type": "string", "minLength": 1},
+              "inference_ms": {"type": "number", "minimum": 0},
+              "end_to_end_ms": {"type": "number", "minimum": 0}
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    }
+  ],
+  "additionalProperties": false
+}

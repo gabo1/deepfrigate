@@ -1,0 +1,97 @@
+version: 0.18-0
+
+auth:
+  enabled: true
+
+tls:
+  enabled: false
+
+mqtt:
+  enabled: true
+  host: mqtt
+  port: 1883
+  topic_prefix: frigate
+  client_id: frigate
+
+detectors:
+  onnx:
+    type: onnx
+
+model:
+  model_type: yolox
+  width: 416
+  height: 416
+  input_tensor: nchw
+  input_dtype: float_denorm
+  path: /config/model_cache/yolox_tiny.onnx
+  labelmap_path: /labelmap/coco-80.txt
+
+objects:
+  track:
+    - person
+    - car
+
+go2rtc:
+  streams:
+    tienda:
+      - "{FRIGATE_CAMERA_TIENDA_URL}"
+    trafico:
+      - "{FRIGATE_CAMERA_TRAFICO_URL}"
+
+record:
+  enabled: true
+  continuous:
+    days: 1
+
+snapshots:
+  enabled: true
+
+cameras:
+  tienda:
+    ffmpeg:
+      hwaccel_args: preset-nvidia
+      inputs:
+        - path: rtsp://127.0.0.1:8554/tienda
+          input_args: preset-rtsp-restream
+          roles:
+            - detect
+            - record
+    detect:
+      enabled: false
+      width: 1280
+      height: 720
+      fps: 5
+    objects:
+      track:
+        - person
+        - car
+    zones:
+      area_cajas:
+        coordinates: 0.58,0.0,1.0,0.0,1.0,0.72,0.58,0.72
+        objects:
+          - person
+        inertia: 3
+    live:
+      streams:
+        Main: tienda
+
+  trafico:
+    ffmpeg:
+      hwaccel_args: preset-nvidia
+      inputs:
+        - path: rtsp://127.0.0.1:8554/trafico
+          input_args: preset-rtsp-restream
+          roles:
+            - detect
+    detect:
+      enabled: false
+      width: 1280
+      height: 720
+      fps: 5
+    record:
+      enabled: false
+    snapshots:
+      enabled: false
+    live:
+      streams:
+        Main: trafico

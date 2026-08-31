@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DeepFrigateEvent",
+  "type": "object",
+  "required": [
+    "type",
+    "id",
+    "event_type",
+    "object_id",
+    "camera_id",
+    "track_id",
+    "timestamp",
+    "source_update_type",
+    "severity",
+    "data"
+  ],
+  "properties": {
+    "type": {"const": "event"},
+    "id": {"type": "string", "format": "uuid"},
+    "event_type": {
+      "enum": [
+        "object_detected",
+        "object_lost",
+        "object_ended",
+        "object_entered_zone",
+        "object_exited_zone",
+        "object_stationary",
+        "specific_plate",
+        "visual_match",
+        "dwell_time"
+      ]
+    },
+    "object_id": {"type": "string", "minLength": 1},
+    "camera_id": {"type": "string", "minLength": 1},
+    "track_id": {"type": "integer", "minimum": 0},
+    "timestamp": {"type": "number"},
+    "source_update_type": {
+      "enum": [
+        "detection",
+        "zone",
+        "stationary",
+        "plate",
+        "visual_match"
+      ]
+    },
+    "severity": {"enum": ["info", "warning", "critical"]},
+    "data": {"type": "object"}
+  },
+  "additionalProperties": false
+}

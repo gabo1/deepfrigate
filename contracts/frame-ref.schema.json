@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FrameRef",
+  "type": "object",
+  "required": [
+    "version",
+    "id",
+    "kind",
+    "owner",
+    "camera_id",
+    "track_id",
+    "timestamp",
+    "expires_at",
+    "width",
+    "height",
+    "format",
+    "size_bytes",
+    "locator"
+  ],
+  "properties": {
+    "version": {"const": 1},
+    "id": {"type": "string", "minLength": 1},
+    "kind": {"enum": ["cuda", "shm"]},
+    "owner": {"type": "string", "minLength": 1},
+    "camera_id": {"type": "string", "minLength": 1},
+    "track_id": {"type": "integer", "minimum": 0},
+    "timestamp": {"type": "number"},
+    "expires_at": {"type": "number"},
+    "width": {"type": "integer", "minimum": 1},
+    "height": {"type": "integer", "minimum": 1},
+    "format": {"enum": ["rgb", "bgr", "rgba", "bgra", "nv12", "jpeg"]},
+    "size_bytes": {"type": "integer", "minimum": 1},
+    "locator": {"type": "object"}
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"kind": {"const": "shm"}},
+        "required": ["kind"]
+      },
+      "then": {
+        "properties": {
+          "locator": {
+            "type": "object",
+            "required": ["name", "offset"],
+            "properties": {
+              "name": {"type": "string", "pattern": "^deepfrigate_[A-Za-z0-9_.-]+$"},
+              "offset": {"type": "integer", "minimum": 0}
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"kind": {"const": "cuda"}},
+        "required": ["kind"]
+      },
+      "then": {
+        "properties": {
+          "locator": {
+            "type": "object",
+            "required": ["device_id", "ipc_handle", "scope"],
+            "properties": {
+              "device_id": {"type": "integer", "minimum": 0},
+              "ipc_handle": {"type": "string", "minLength": 1},
+              "scope": {"enum": ["process", "container", "host"]}
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    }
+  ],
+  "additionalProperties": false
+}

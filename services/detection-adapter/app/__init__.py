@@ -1,0 +1,1 @@
+"""DeepFrigate detection adapter."""

@@ -1,0 +1,1 @@
+"""DeepFrigate FrameRef registry."""

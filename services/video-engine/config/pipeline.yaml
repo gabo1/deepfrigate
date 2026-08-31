@@ -1,0 +1,43 @@
+api_version: deepfrigate/v1
+
+pipeline:
+  name: deepfrigate-multicamera
+
+  cameras:
+    - id: tienda
+      source_env: RTSP_TIENDA
+      gpu: 0
+
+  detection:
+    model: object-detector
+    version: 1
+    config_path: /opt/deepfrigate/config/config_infer_yolo26.pbtxt
+    gpu: 0
+
+  tracker:
+    type: nvtracker
+    config_path: /opt/nvidia/deepstream/deepstream/samples/configs/deepstream-app/config_tracker_NvDCF_perf.yml
+    width: 640
+    height: 384
+    gpu: 0
+
+  frame_export:
+    labels:
+      - person
+      - car
+
+  enrichments:
+    - model: vehicle-embedding
+      family: pp-shitu
+      labels:
+        - car
+        - person
+    - model: person-attribute
+      family: pulc-person
+      labels:
+        - person
+
+  rules:
+    - type: zone
+      camera: tienda
+      zone: area_cajas
