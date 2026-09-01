@@ -51,8 +51,12 @@ class EventEngine:
                     if label.strip()
                 },
                 store=(
-                    FrigateEventStore(os.environ["FRIGATE_DB_PATH"])
-                    if os.getenv("FRIGATE_DB_PATH")
+                    FrigateEventStore(
+                        os.getenv("FRIGATE_EVENT_STORE_URL")
+                        or os.environ["FRIGATE_DB_PATH"]
+                    )
+                    if os.getenv("FRIGATE_EVENT_STORE_URL")
+                    or os.getenv("FRIGATE_DB_PATH")
                     else None
                 ),
                 camera_sizes=_camera_sizes(

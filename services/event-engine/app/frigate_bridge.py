@@ -7,7 +7,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from typing import Any
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
@@ -78,6 +78,9 @@ class FrigateReviewBridge:
         self.timeout = timeout
         self.labels = labels
         self.store = store
+        self._embed_requested: set[str] = set()
+        self._store_ready: set[str] = set()
+        self._store_missing: set[str] = set()
         self.camera_sizes = camera_sizes or {}
         self.path_min_delta = path_min_delta
         self.snapshot_dir = snapshot_dir
@@ -330,6 +333,12 @@ class FrigateReviewBridge:
             event["object_id"],
             end_time=float(event["timestamp"]),
         )
+        self._replace_snapshot(
+            event["camera_id"],
+            event["object_id"],
+            str(frigate_event_id),
+            ((last_update or {}).get("data") or event.get("data") or {}).get("bbox"),
+        )
         self._write_timeline(
             str(frigate_event_id),
             event["camera_id"],
@@ -497,6 +506,8 @@ class FrigateReviewBridge:
     ) -> None:
         if self.store is None:
             return
+        if frigate_event_id in self._store_missing:
+            return
         width, height = camera_size(camera_id, self.camera_sizes)
         data_update: dict[str, Any] = {"type": "object"}
         if score is not None:
@@ -514,13 +525,17 @@ class FrigateReviewBridge:
             data_update=data_update,
             drop_draw=box is not None,
             end_time=end_time,
+            wait=0 if frigate_event_id in self._store_ready else 5,
         )
-        if not written:
-            logger.warning(
-                "Frigate event=%s not ready for geometry object=%s",
-                frigate_event_id,
-                object_id,
-            )
+        if written:
+            self._store_ready.add(frigate_event_id)
+            return
+        self._store_missing.add(frigate_event_id)
+        logger.warning(
+            "Frigate event=%s not ready for geometry object=%s",
+            frigate_event_id,
+            object_id,
+        )
 
     def _stored_path(self, frigate_event_id: str) -> list[list[Any]]:
         if self.store is None:
@@ -680,12 +695,39 @@ class FrigateReviewBridge:
             frigate_event_id=frigate_event_id,
             bbox=bbox if isinstance(bbox, dict) else None,
         ):
+            self._embed_frigate_thumbnail(frigate_event_id)
             return
         logger.warning(
             "No DeepStream snapshot for object=%s event=%s",
             object_id,
             frigate_event_id,
         )
+
+    def _embed_frigate_thumbnail(self, frigate_event_id: str) -> None:
+        if frigate_event_id in self._embed_requested:
+            return
+        try:
+            self._request(
+                "POST",
+                f"/events/{quote(frigate_event_id, safe='')}/thumbnail/embed",
+            )
+        except HTTPError as error:
+            if error.code not in {400, 404}:
+                raise
+            logger.debug(
+                "Frigate thumbnail embed skipped for event=%s (%s)",
+                frigate_event_id,
+                error.code,
+            )
+            return
+        except (URLError, TimeoutError, OSError) as error:
+            logger.warning(
+                "Frigate thumbnail embed unavailable for event=%s: %s",
+                frigate_event_id,
+                error,
+            )
+            return
+        self._embed_requested.add(frigate_event_id)
 
     def _box(self, camera_id: str, bbox: Any) -> list[float] | None:
         width, height = camera_size(camera_id, self.camera_sizes)

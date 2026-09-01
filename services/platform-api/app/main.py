@@ -376,6 +376,51 @@ def frigate_request(path: str) -> Any:
         return json.loads(response.read())
 
 
+def load_frigate_events(event_ids: list[str]) -> list[dict[str, Any]]:
+    """Resolve Frigate Events without overflowing nginx's request line."""
+    events: list[dict[str, Any]] = []
+    for start in range(0, len(event_ids), 40):
+        chunk = event_ids[start : start + 40]
+        query = urlencode({"ids": ",".join(chunk)})
+        loaded = frigate_request(f"/event_ids?{query}")
+        if isinstance(loaded, list):
+            events.extend(loaded)
+    return events
+
+
+def existing_frigate_event_ids(event_ids: list[str]) -> set[str]:
+    store_url = os.getenv("FRIGATE_EVENT_STORE_URL", "").strip()
+    if not store_url or not event_ids:
+        return set(event_ids)
+    with psycopg.connect(store_url) as connection:
+        rows = connection.execute(
+            "SELECT id FROM event WHERE id = ANY(%s)",
+            (event_ids,),
+        ).fetchall()
+    return {str(row[0]) for row in rows}
+
+
+def current_frigate_object_ids(exclude: str | None = None) -> list[str]:
+    with psycopg.connect(database_url) as connection:
+        links = connection.execute(
+            """
+            SELECT object_id, frigate_event_id
+            FROM frigate_event_links
+            WHERE frigate_event_id IS NOT NULL
+            """
+        ).fetchall()
+    present = existing_frigate_event_ids(
+        [str(row[1]) for row in links]
+    )
+    return sorted(
+        {
+            str(row[0])
+            for row in links
+            if str(row[1]) in present and str(row[0]) != exclude
+        }
+    )
+
+
 def triton_request(
     method: str,
     path: str,
@@ -651,10 +696,53 @@ def get_object(object_id: str) -> dict[str, Any]:
     }
 
 
+def search_qdrant_similar(
+    vector: Any,
+    *,
+    label: str,
+    exclude_object_id: str,
+    limit: int,
+    offset: int = 0,
+    min_score: float = 0,
+    restrict_object_ids: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    must: list[dict[str, Any]] = [
+        {"key": "label", "match": {"value": label}},
+    ]
+    if restrict_object_ids:
+        must.append(
+            {
+                "key": "object_id",
+                "match": {"any": restrict_object_ids},
+            }
+        )
+    return qdrant_request(
+        "/points/search",
+        {
+            "vector": vector,
+            "limit": limit,
+            "offset": offset,
+            "score_threshold": min_score,
+            "with_payload": True,
+            "with_vector": False,
+            "filter": {
+                "must": must,
+                "must_not": [
+                    {
+                        "key": "object_id",
+                        "match": {"value": exclude_object_id},
+                    }
+                ],
+            },
+        },
+    )["result"]
+
+
 @app.get("/v1/objects/{object_id}/similar", tags=["objects"])
 def get_similar_objects(
     object_id: str,
     limit: int = Query(default=10, ge=1, le=50),
+    offset: int = Query(default=0, ge=0),
     min_score: float = Query(default=0, ge=-1, le=1),
 ) -> dict[str, Any]:
     source_points = load_embedding_points(object_id, with_vector=True)
@@ -670,34 +758,14 @@ def get_similar_objects(
     )
     source_payload = source.get("payload", {})
     try:
-        candidates = qdrant_request(
-            "/points/search",
-            {
-                "vector": source["vector"],
-                "limit": limit,
-                "score_threshold": min_score,
-                "with_payload": True,
-                "with_vector": False,
-                "filter": {
-                    "must": [
-                        {
-                            "key": "label",
-                            "match": {
-                                "value": source_payload.get(
-                                    "label", "car"
-                                )
-                            },
-                        }
-                    ],
-                    "must_not": [
-                        {
-                            "key": "object_id",
-                            "match": {"value": object_id},
-                        }
-                    ],
-                },
-            },
-        )["result"]
+        candidates = search_qdrant_similar(
+            source["vector"],
+            label=str(source_payload.get("label", "car")),
+            exclude_object_id=object_id,
+            limit=limit,
+            offset=offset,
+            min_score=min_score,
+        )
     except (KeyError, TimeoutError, URLError, ValueError) as error:
         raise HTTPException(
             status_code=503, detail="vector search unavailable"
@@ -752,7 +820,8 @@ def get_similar_objects(
 @app.get("/v1/frigate-events/{frigate_event_id}/similar", tags=["objects"])
 def get_similar_frigate_events(
     frigate_event_id: str,
-    limit: int = Query(default=25, ge=1, le=50),
+    limit: int = Query(default=25, ge=1, le=25),
+    offset: int = Query(default=0, ge=0),
     min_score: float = Query(default=0, ge=-1, le=1),
 ) -> list[dict[str, Any]]:
     with psycopg.connect(
@@ -771,12 +840,61 @@ def get_similar_frigate_events(
             status_code=404, detail="not a DeepFrigate tracked object"
         )
 
-    similar = get_similar_objects(
-        str(source_link["object_id"]), limit=limit, min_score=min_score
+    object_id = str(source_link["object_id"])
+    source_points = load_embedding_points(object_id, with_vector=True)
+    if not source_points:
+        return []
+    source = max(
+        source_points,
+        key=lambda point: float(
+            point.get("payload", {}).get("frame_timestamp", 0)
+        ),
     )
+    current_objects = current_frigate_object_ids(exclude=object_id)
+    if not current_objects:
+        return []
+    try:
+        candidates = search_qdrant_similar(
+            source["vector"],
+            label=str(source.get("payload", {}).get("label", "person")),
+            exclude_object_id=object_id,
+            limit=limit,
+            offset=offset,
+            min_score=min_score,
+            restrict_object_ids=current_objects,
+        )
+    except (KeyError, TimeoutError, URLError, ValueError) as error:
+        raise HTTPException(
+            status_code=503, detail="vector search unavailable"
+        ) from error
+    try:
+        hydrated = hydrate_similar_frigate_events(
+            [
+                {
+                    "object_id": candidate.get("payload", {}).get("object_id"),
+                    "score": float(candidate["score"]),
+                    "has_events": True,
+                    **candidate.get("payload", {}),
+                }
+                for candidate in candidates
+            ]
+        )
+    except (HTTPError, TimeoutError, URLError, ValueError) as error:
+        raise HTTPException(
+            status_code=503, detail="Frigate event lookup unavailable"
+        ) from error
+    next_offset = offset + len(candidates)
+    for event in hydrated:
+        event["deepfrigate_next_offset"] = next_offset
+    return hydrated[:limit]
+
+
+def hydrate_similar_frigate_events(
+    candidates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     scores = {
         str(candidate["object_id"]): float(candidate["score"])
-        for candidate in similar["items"]
+        for candidate in candidates
         if candidate.get("object_id") and candidate.get("has_events")
     }
     if not scores:
@@ -787,7 +905,7 @@ def get_similar_frigate_events(
     ) as connection:
         links = connection.execute(
             """
-            SELECT DISTINCT ON (object_id) object_id, frigate_event_id
+            SELECT object_id, frigate_event_id
             FROM frigate_event_links
             WHERE object_id = ANY(%s)
               AND frigate_event_id IS NOT NULL
@@ -802,14 +920,16 @@ def get_similar_frigate_events(
     if not event_to_object:
         return []
 
-    query = urlencode({"ids": ",".join(event_to_object)})
-    try:
-        frigate_events = frigate_request(f"/event_ids?{query}")
-    except (HTTPError, TimeoutError, URLError, ValueError) as error:
-        raise HTTPException(
-            status_code=503, detail="Frigate event lookup unavailable"
-        ) from error
+    present_ids = existing_frigate_event_ids(list(event_to_object))
+    event_to_object = {
+        event_id: object_id
+        for event_id, object_id in event_to_object.items()
+        if event_id in present_ids
+    }
+    if not event_to_object:
+        return []
 
+    frigate_events = load_frigate_events(list(event_to_object))
     hydrated: list[dict[str, Any]] = []
     for event in frigate_events:
         event_id = str(event.get("id", ""))
@@ -852,8 +972,10 @@ def get_similar_frigate_events(
                 "deepfrigate_similarity": score,
             }
         )
+    score_order = {object_id: index for index, object_id in enumerate(scores)}
     return sorted(
         hydrated,
-        key=lambda event: float(event["deepfrigate_similarity"]),
-        reverse=True,
+        key=lambda event: score_order.get(
+            str(event["deepfrigate_object_id"]), len(scores)
+        ),
     )

@@ -272,7 +272,7 @@ export default function DeepFrigate() {
                       }
                       onClick={() =>
                         navigate(
-                          `/explore?search_type=similarity&event_id=${encodeURIComponent(details.frigate_event_id ?? "")}&deep_search=1`,
+                          `/explore?search_type=deep&event_id=${encodeURIComponent(details.frigate_event_id ?? "")}`,
                         )
                       }
                     >

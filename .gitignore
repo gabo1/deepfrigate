@@ -25,3 +25,6 @@ config/frigate/.search_stats.json
 config/frigate/.runtime_state.json.lock
 config/frigate/model_cache/
 config/frigate/go2rtc_homekit.yml
+
+# Local Frigate PostgreSQL fork; lives in its own repo (gabo1/pgfrigate).
+/frigate-pg/

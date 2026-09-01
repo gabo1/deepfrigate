@@ -25,6 +25,12 @@ replaceOnce(
     '              <Route path="/deepfrigate" element={<DeepFrigate />} />\n',
 );
 
+replaceOnce(
+  `${root}/types/search.ts`,
+  `  limit?: number;\n`,
+  `  limit?: number;\n  offset?: number;\n`,
+);
+
 const explore = `${root}/pages/Explore.tsx`;
 replaceOnce(
   explore,
@@ -41,6 +47,7 @@ replaceOnce(
     "deep_object_id",
   );
   const deepSimilarityEventId =
+    deepSearchParams.get("search_type") === "deep" ||
     deepSearchParams.get("deep_search") === "1"
       ? deepSearchParams.get("event_id")
       : null;
@@ -57,12 +64,64 @@ replaceOnce(
         \`deepfrigate/v1/frigate-events/\${encodeURIComponent(
           deepSimilarityEventId,
         )}/similar\`,
-        { limit: 24 },
+        { limit: 25 },
       ];
     }
 
     // no search parameters
 `,
+);
+replaceOnce(
+  explore,
+  `  const similaritySearch = useMemo(
+    () => searchSearchParams["search_type"] == "similarity",
+    [searchSearchParams],
+  );`,
+  `  const similaritySearch = useMemo(
+    () =>
+      searchSearchParams["search_type"] == "similarity" ||
+      searchSearchParams["search_type"] == "deep",
+    [searchSearchParams],
+  );`,
+);
+replaceOnce(
+  explore,
+  `    if (pageIndex > 0 && previousPageData) {
+      const lastDate = previousPageData[previousPageData.length - 1].start_time;
+      return [
+        url,
+        {
+          ...params,
+          [isAscending ? "after" : "before"]: lastDate.toString(),
+          limit: API_LIMIT,
+        },
+      ];
+    }`,
+  `    if (pageIndex > 0 && previousPageData) {
+      if (url === "events/search" || url.startsWith("deepfrigate/v1/frigate-events/")) {
+        const lastResult = previousPageData[previousPageData.length - 1] as {
+          deepfrigate_next_offset?: number;
+        };
+        return [
+          url,
+          {
+            ...params,
+            limit: API_LIMIT,
+            offset:
+              lastResult.deepfrigate_next_offset ?? pageIndex * API_LIMIT,
+          },
+        ];
+      }
+      const lastDate = previousPageData[previousPageData.length - 1].start_time;
+      return [
+        url,
+        {
+          ...params,
+          [isAscending ? "after" : "before"]: lastDate.toString(),
+          limit: API_LIMIT,
+        },
+      ];
+    }`,
 );
 replaceOnce(
   explore,
@@ -92,20 +151,22 @@ replaceOnce(
           <MenuItem
             aria-label={t("itemMenu.findSimilar.aria")}
             onClick={() => {
-              if (!config?.semantic_search?.enabled) {
-                navigate(
-                  \`/explore?search_type=similarity&event_id=\${encodeURIComponent(
-                    searchResult.id,
-                  )}&deep_search=1\`,
-                );
-                return;
-              }
-              findSimilar();
+              navigate(
+                \`/explore?search_type=deep&event_id=\${encodeURIComponent(
+                  searchResult.id,
+                )}\`,
+              );
             }}
           >
             <span>{t("itemMenu.findSimilar.label")}</span>
           </MenuItem>
         )}`,
+);
+replaceOnce(
+  searchResultActions,
+  `  const { data: config } = useSWR<FrigateConfig>("config");\n`,
+  `  const { data: config } = useSWR<FrigateConfig>("config");\n` +
+    "  void findSimilar;\n",
 );
 
 const detailActionsMenu = `${root}/components/overlay/detail/DetailActionsMenu.tsx`;
@@ -140,18 +201,11 @@ replaceOnce(
               <DropdownMenuItem
                 onClick={() => {
                   setIsOpen(false);
-                  if (!config?.semantic_search.enabled) {
-                    navigate(
-                      \`/explore?search_type=similarity&event_id=\${encodeURIComponent(
-                        search.id,
-                      )}&deep_search=1\`,
-                    );
-                    return;
-                  }
-                  setTimeout(() => {
-                    setSearch?.(undefined);
-                    setSimilarity?.();
-                  }, 0);
+                  navigate(
+                    \`/explore?search_type=deep&event_id=\${encodeURIComponent(
+                      search.id,
+                    )}\`,
+                  );
                 }}
               >
                 <div className="flex cursor-pointer items-center gap-2">
@@ -159,6 +213,13 @@ replaceOnce(
                 </div>
               </DropdownMenuItem>
             )}`,
+);
+replaceOnce(
+  detailActionsMenu,
+  `  const navigate = useNavigate();\n`,
+  `  const navigate = useNavigate();\n` +
+    "  void setSearch;\n" +
+    "  void setSimilarity;\n",
 );
 
 const navigation = `${root}/hooks/use-navigation.ts`;

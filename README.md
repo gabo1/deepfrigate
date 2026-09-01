@@ -26,6 +26,10 @@ The unmodified Frigate checkout remains under `frigate/`; runtime state,
 credentials and its database persist under `config/frigate`, while recordings
 use the `frigate-media` volume.
 
+`recording-sync` and MinIO are **deprecated**. Do not deploy them. The
+uploader and `recording_segments` index stay in-tree under Compose profile
+`deprecated` only.
+
 Frigate's authenticated port is the only application endpoint exposed on every
 host interface. MQTT, PostgreSQL, Qdrant, Triton, Platform API, Frame Store,
 go2rtc's API, and the optional host RTSP restream bind to `127.0.0.1`; services

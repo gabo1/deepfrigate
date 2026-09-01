@@ -13,18 +13,12 @@ mqtt:
   topic_prefix: frigate
   client_id: frigate
 
+# DeepStream (YOLO26) owns boxes. Frigate still requires a detector
+# process; cpu tflite stays idle because detect.enabled is false.
+# Do not set `type: onnx` — that loads YOLOX and ~1 GB RAM.
 detectors:
-  onnx:
-    type: onnx
-
-model:
-  model_type: yolox
-  width: 416
-  height: 416
-  input_tensor: nchw
-  input_dtype: float_denorm
-  path: /config/model_cache/yolox_tiny.onnx
-  labelmap_path: /labelmap/coco-80.txt
+  cpu:
+    type: cpu
 
 objects:
   track:

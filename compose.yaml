@@ -27,6 +27,26 @@ services:
       timeout: 3s
       retries: 10
 
+  minio:
+    # Deprecated with recording-sync. Not started unless --profile deprecated.
+    profiles: ["deprecated"]
+    image: minio/minio:RELEASE.2025-02-28T09-55-16Z
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-deepfrigate}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?Set S3_SECRET_KEY in .env}
+    ports:
+      - "127.0.0.1:${S3_API_PORT:-9000}:9000"
+      - "127.0.0.1:${S3_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
   qdrant:
     image: qdrant/qdrant:v1.15.4
     restart: unless-stopped
@@ -68,7 +88,8 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-deepfrigate}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-deepfrigate}
       QDRANT_URL: http://qdrant:6333
       QDRANT_COLLECTION: ${QDRANT_COLLECTION:-vehicle_embeddings}
-      FRIGATE_API_URL: http://frigate:5000/api
+      FRIGATE_API_URL: ${FRIGATE_API_URL:-http://frigate:5000/api}
+      FRIGATE_EVENT_STORE_URL: ${FRIGATE_EVENT_STORE_URL:-}
       PIPELINE_CONFIG: /app/pipeline-config/pipeline.yaml
       PIPELINE_SCHEMA: /app/contracts/pipeline.schema.json
       ZONES_CONFIG: /app/config/zones.json
@@ -179,9 +200,14 @@ services:
       EVENT_QUEUE_SIZE: ${EVENT_QUEUE_SIZE:-1024}
       FRIGATE_REVIEW_BRIDGE: ${FRIGATE_REVIEW_BRIDGE:-true}
       FRIGATE_REVIEW_LABELS: ${FRIGATE_REVIEW_LABELS:-person,car}
-      FRIGATE_API_URL: http://frigate:5000/api
+      FRIGATE_API_URL: ${FRIGATE_API_URL:-http://frigate:5000/api}
       FRIGATE_API_TIMEOUT_SECONDS: ${FRIGATE_API_TIMEOUT_SECONDS:-5}
-      FRIGATE_DB_PATH: /frigate/frigate.db
+      # Leave empty when the bridge targets a PostgreSQL-backed Frigate; its
+      # legacy SQLite geometry store cannot update that instance.
+      FRIGATE_DB_PATH: ${FRIGATE_DB_PATH-/frigate/frigate.db}
+      # PostgreSQL URL for the Frigate Event/Timeline store. Takes precedence
+      # over FRIGATE_DB_PATH when the bridge targets PostgreSQL-backed Frigate.
+      FRIGATE_EVENT_STORE_URL: ${FRIGATE_EVENT_STORE_URL:-}
       ZONES_CONFIG: /app/config/zones.json
       DS_SNAPSHOT_DIR: /opt/ds-snapshots
       FRIGATE_CLIPS_DIR: /media/frigate/clips
@@ -189,12 +215,42 @@ services:
       - ./config/frigate:/frigate
       - ./config/zones.json:/app/config/zones.json:ro
       - ./data/ds-snapshots:/opt/ds-snapshots:ro
-      - frigate-media:/media/frigate
+      - frigate-bridge-media:/media/frigate
     depends_on:
       postgres:
         condition: service_healthy
       mqtt:
         condition: service_started
+      frigate:
+        condition: service_healthy
+
+  recording-sync:
+    # Deprecated 1 Sep 2026. Do not deploy. Kept for reference only.
+    profiles: ["deprecated"]
+    build:
+      context: .
+      dockerfile: services/recording-sync/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-deepfrigate}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-deepfrigate}
+      SITE_ID: ${SITE_ID:-local}
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+      S3_BUCKET: ${S3_BUCKET:-deepfrigate}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-deepfrigate}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?Set S3_SECRET_KEY in .env}
+      FRIGATE_DB_PATH: /frigate/frigate.db
+      FRIGATE_MEDIA_DIR: /media/frigate
+      RECORDING_POLL_SECONDS: ${RECORDING_POLL_SECONDS:-10}
+      RECORDING_BATCH_SIZE: ${RECORDING_BATCH_SIZE:-20}
+    volumes:
+      - ./config/frigate:/frigate:ro
+      - frigate-media:/media/frigate:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
       frigate:
         condition: service_healthy
 
@@ -278,7 +334,7 @@ services:
       frigate:
         condition: service_healthy
     environment:
-      RTSP_TIENDA: rtsp://frigate:8554/tienda
+      RTSP_TIENDA: ${RTSP_TIENDA:-rtsp://frigate:8554/tienda}
       PIPELINE_CONFIG: /opt/deepfrigate/config/pipeline.yaml
       PIPELINE_SCHEMA: /opt/contracts/pipeline.schema.json
       ZONES_CONFIG: /opt/config/zones.json
@@ -300,8 +356,12 @@ services:
       - ./models:/opt/models:ro
 
 volumes:
+  frigate-bridge-media:
+    name: ${FRIGATE_BRIDGE_MEDIA_VOLUME:-deepfrigate_frigate-media}
+    external: true
   mqtt-data:
   postgres-data:
   qdrant-data:
   frigate-media:
+  minio-data:
   web-dev-work:
