@@ -13,8 +13,10 @@ Runbook de corte (aún no ejecutado): `frigate-pg/docs/CUTOVER.md`.
 - Usuario: `admin`
 - Contraseña: (la del NVR; no versionar)
 - Compose Frigate: `frigate-pg/docker-compose.pgvector-smoke.yml`
-- Imagen: `deepfrigate-frigate-pg:pgvector-smoke` (`Dockerfile.postgres-smoke`,
-  `COPY frigate` sobre `deepfrigate-frigate:local`, **sin Vite**)
+- Imagen en `:3005`: `deepfrigate-frigate-pg:pgvector-smoke` (legado:
+  `:local` + minify). Receta preferida (Vite fuentes, sin minify):
+  `pgvector-smoke-vite-src`. Runbook:
+  `frigate-pg/docs/RECREAR-IMAGEN-3005.md`.
 - Contenedores: `frigate-pgvector-smoke`, `frigate-pgvector-smoke-db`
   (`pgvector/pgvector:pg17`, base `frigate_pgvector_smoke`)
 - Detector nativo: **apagado** (`detect.enabled: false`, `detectors.cpu`
@@ -71,8 +73,10 @@ Runbook de corte (aún no ejecutado): `frigate-pg/docs/CUTOVER.md`.
 
 **Pendiente**
 
-- Ejecutar el corte SQLite → PostgreSQL (ensayo + noche). Runbook:
-  `frigate-pg/docs/CUTOVER.md`.
+- Noche de corte SQLite → PostgreSQL. Ensayo **hecho** 1 sep 23:10 UTC
+  (`matches: true`, 104.989 filas). Runbook:
+  `frigate-pg/docs/CUTOVER.md`. Imagen:
+  `deepfrigate-frigate-pg:pgvector-smoke`.
 
 **Deprecado (1 sep 2026)**
 
@@ -82,6 +86,9 @@ Runbook de corte (aún no ejecutado): `frigate-pg/docs/CUTOVER.md`.
 - Histórico Jina sin vector: no backfill. Events anteriores al enganche
   (~04:40 UTC 1 sep) pueden no tener fila en `vec_thumbnails`. Jina
   solo indexa Events nuevos en vivo.
+- Imagen `deepfrigate-frigate-pg:smoke` y
+  `docker-compose.postgres-smoke.yml`: no construir ni arrancar.
+  Sustituto: `deepfrigate-frigate-pg:pgvector-smoke`.
 
 **Hecho (runbook / paridad / Export):** pgvector usa KNN coseno exacto
 (sin HNSW). CRUD Export/Users cubierto en smoke. El procedimiento de
@@ -902,8 +909,13 @@ de producto sigue siendo Qdrant.
 Tarde: `event_cleanup` portado a `jsonb_extract_path_text`; el hilo ya no
 muere en `max_severity`. Cycle en try/except.
 
-Pendiente de operación: ejecutar `frigate-pg/docs/CUTOVER.md` (ensayo
-contra `frigate_cutover_rehearsal`, luego noche de corte a la base
-`frigate` en `deepfrigate-postgres-1`). No importar SQLite a
-`frigate_pgvector_smoke`. `recording-sync` y el backfill Jina del
-histórico están deprecados.
+Ensayo de corte **hecho** 1 sep 23:10 UTC: import a
+`frigate_cutover_rehearsal` con `matches: true` (event=15075,
+recordings=21109, timeline=68715, previews=64, reviewsegment=14,
+user=1, userreviewstatus=9, regions=2). Frigate throwaway healthy en
+`:3003` (`safe_mode`); Events y events/summary 200. `/review/summary` 500 en la imagen **deprecada**
+`deepfrigate-frigate-pg:smoke` (GROUP BY `start_time`). El corte usa
+`deepfrigate-frigate-pg:pgvector-smoke`. Ensayo limpiado (contenedor +
+base dropeados). Lab `:3005` y NVR SQLite
+intactos. Pendiente: noche de corte a la base `frigate`. No importar
+SQLite a `frigate_pgvector_smoke`.
