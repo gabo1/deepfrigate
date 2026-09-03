@@ -980,6 +980,54 @@ Los tres primeros están en `camara-eventos`. Los demás **no**, y a propósito:
 sin geometría no valen 0, es que no pueden existir, y un cero permanente en un
 panel parece un dato.
 
+#### Cómo encender merodeo y overcrowding en una cámara
+
+Los dos salen de **una zona**, así que la receta es la misma: añadir el
+polígono a `config/zones.json` y sus umbrales. Sin polígono no hay nada que
+encender.
+
+```jsonc
+"user": {
+  "width": 1280, "height": 720,
+  "zones": {
+    "carril_derecho": {
+      "coordinates": [[0.55,0.25],[1.0,0.25],[1.0,1.0],[0.55,1.0]],
+      "objects": ["car"],          // sin esto contaría también personas
+      "inertia": 3,                // frames dentro/fuera antes de contar
+      "overcrowding_threshold": 6, // entra: >= 6 coches a la vez
+      "overcrowding_clear_threshold": 3,
+      "overcrowding_hold_s": 10,
+      "loitering_threshold_s": 120 // "merodeo" = coche parado 2 min
+    }
+  }
+}
+```
+
+Qué aparece al recargar el adapter, y qué **no**:
+
+| Se enciende | Sigue apagado |
+|---|---|
+| `sv_zona_presentes`, `sv_zona_permanencia_*` | `sv_cruces_*` (necesita `lines`) |
+| `sv_merodeo_ahora` | `df_direction_match` (necesita `directions`) |
+| `df_overcrowding_state` y sus flancos | |
+| `df_zone_enter/exit`, `df_zone_dwell_seconds` | |
+
+**Los umbrales no se copian de `tienda`.** Los de `area_cajas` están calibrados
+para personas haciendo cola (§11 bis) y en tráfico significan otra cosa:
+
+| Parámetro | `area_cajas` (personas) | Sentido en coches |
+|---|---|---|
+| `loitering_threshold_s` | **15 s** — alguien parado en caja | 15 s es un semáforo. Para "coche detenido" van minutos: 120-300 s |
+| `overcrowding_threshold` | **4** en el área de cajas | Depende de cuántos coches caben en el polígono; en un carril corto 4 es tráfico normal |
+| `overcrowding_clear_threshold` | **2** (= umbral − 2) | Mantener el margen de 2: con 1 vuelve el parpadeo (§9) |
+| `overcrowding_hold_s` | **10 s**, medido contra los bajones de 8 s del tracker | Reevaluar: en `user` no se ha medido la duración de los bajones |
+
+Y una advertencia que vale doble en tráfico: `sv_estacionarios` ya marca **6 de
+7 objetos** en `user` sin ninguna zona. Un coche parado es lo normal en una
+calle, así que un "merodeo" mal calibrado se dispararía constantemente. Antes
+de fijar el umbral conviene mirar la distribución real de permanencia con el
+mapa de calor ponderado por `dwell`, igual que se hizo con `DWELL_CAP_S`.
+
 **`camara-eventos` está derivado**, no duplicado: su generador lee
 `analitica-deepfrigate.json`, se queda con las dos filas que no dependen de
 geometría y las recoloca. Si allí se arregla una consulta, aquí también. Existe
