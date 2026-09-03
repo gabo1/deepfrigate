@@ -16,7 +16,7 @@ contraseñas (Grafana/Frigate admin).
 
 | Cosa | Dónde | Estado |
 |---|---|---|
-| DeepStream YOLO26 + NvDCF | `deepfrigate-video-engine-1` | arriba |
+| DeepStream YOLO26 + NvDCF | `deepfrigate-video-engine-1` | arriba; batch 2 (`tienda` + `user`) |
 | Adapter (zonas/líneas/crowd/dirección) | `deepfrigate-detection-adapter-1` | arriba; `/metrics` en `:9110` |
 | Event Engine + puente Frigate | `deepfrigate-event-engine-1` | arriba; apunta al smoke |
 | Frigate PG + pgvector | `https://100.83.231.97:3005` (`frigate-pgvector-smoke`) | healthy; `detect.enabled: false` |
@@ -31,6 +31,10 @@ contraseñas (Grafana/Frigate admin).
 
 DeepStream **no** lleva `gst-nvdsanalytics`. Las reglas de zona/línea/dirección
 están en Python en el adapter.
+
+**3 sep tarde:** segunda cámara `user` (RTSP cyberw.io, coches). Relato y
+trampas: `docs/CAMARA-USER.md`. Zonas/líneas de `user` están vacías; el
+heatmap Grafana sigue embebido a `tienda.jpg`.
 
 UI Frigate **Review** (`/review`) = `reviewsegment` (tarjeta “hubo persona”).
 **No lista** `line_crossed_*`, `overcrowding` ni `entered_zone`. Esos viven en
@@ -519,7 +523,14 @@ Más trampas del puente (ya parcheadas en código, 2–3 sep):
   Ahora el START **solo** hace `POST /create`.
 - 500 en create: no tumba el worker; backoff **30 s** por track.
 - Si la UI/API vuelve a 500: Frigate unhealthy + `MaxConnectionsExceeded`.
-  Parar `event-engine`, `docker restart frigate-pgvector-smoke`, no
+  Causa (3 sep, 2 cámaras): FastAPI corre `POST /create` y nginx `/auth`
+  en un threadpool; el middleware Peewee solo cerraba en el hilo del
+  event loop y el worker **fugaba** la conexión. Parche:
+  `_install_threadpool_db_closer` en
+  `frigate-pg/frigate/api/fastapi_app.py`. Recuperación inmediata:
+  `docker restart frigate-pgvector-smoke` (el parche ya está en el
+  árbol; si el contenedor es la imagen vieja, `docker cp` el .py a
+  `/opt/frigate/frigate/api/fastapi_app.py` y restart). No
   `compose down -v`.
 
 Diagnóstico thumbs: crop bueno 3–8 KiB; escena Frigate 68–73 KiB en
@@ -816,10 +827,11 @@ que el §8 pedía; el resto son utilidades del addon.
 | 4 · apagar | ✅ contenedor eliminado, `:5008` no responde |
 
 Tres de esos cuatro stats **no dicen nada hoy** y por eso lo llevan en su
-descripción, no en un comentario que nadie lee: solo hay una cámara, el
-pipeline solo publica `person`, y la "hora punta" es un artefacto del bucle de
-299 s — con tráfico idéntico a todas horas, gana la hora en la que cupieron más
-vueltas. Empiezan a significar algo con cámara real y más clases.
+descripción, no en un comentario que nadie lee: `tienda` sigue siendo el
+bucle de 299 s (solo `person`); `user` ya aporta `car` real pero el heatmap
+JPEG y varios paneles SQL siguen anclados a `tienda`. La "hora punta" de
+`tienda` es un artefacto del bucle — con tráfico idéntico a todas horas,
+gana la hora en la que cupieron más vueltas.
 
 **La pérdida asumida es `/api/export/pdf`.** Componía un informe con stats,
 gráfico embebido, secciones seleccionables y bloque LPR vía WeasyPrint. Grafana
@@ -908,6 +920,68 @@ cambia, se cambia aquí y en el sitio que dice la columna "dónde".
 | `analitica-deepfrigate` | refresh 10 s, rango `now-1h` | dashboard provisionado |
 | `pulc-atributos` | refresh 1 m, rango `now-6h` | SQL, no necesita 10 s |
 | Bucle de vídeo | **299,1 s** | `fakecam`: 21 personas por vuelta. Invalida cualquier lectura por hora del día. |
+
+---
+
+## 11 quater. Cámaras: la `user` y la reconexión RTSP
+
+### Qué es `user` y en qué se diferencia de `tienda`
+
+| | `tienda` | `user` |
+|---|---|---|
+| Fuente | `tienda_10.mp4` en bucle (`-stream_loop -1`) | **cámara externa real**, `rtsp://cyberw.io:15190/?inst=1` |
+| Etiquetas | `person` | **`car` y `person`** (698 / 114 el 3 sep) |
+| Atributos PULC | sí | solo en las personas; los coches no tienen |
+| Lectura por hora del día | **sin sentido** (bucle de 299 s) | **sí vale**: es tráfico real |
+| Geometría en `zones.json` | zona + línea + dirección | **ninguna** |
+
+Dos consecuencias que hay que tener presentes:
+
+- **`user` no tiene geometría**, así que aforo, permanencia, merodeo,
+  overcrowding y cruces son cero **por construcción** para esa cámara. Solo
+  funcionan los paneles SQL y el heatmap. Dibujarla es el paso que desbloquea
+  el resto, y el heatmap de rutas es la herramienta para decidir dónde: la
+  primera imagen ya mostró **dos carriles de tráfico convergiendo**.
+- **Ni velocidad ni matrícula.** `average_estimated_speed` y el LPR existen en
+  Frigate pero no están configurados; la velocidad necesita `distances` en las
+  zonas. Es config de Frigate, no de dashboard.
+
+### La cámara se cayó y no volvió (3 sep, corregido)
+
+`user` emitió de 19:12 a 20:51 y se paró. El pipeline siguió tan tranquilo con
+`tienda` sola durante 70 minutos, sin avisar a nadie:
+
+```
+WARNING from src: Could not read from resource.
+  .../GstDsNvUriSrcBin:source1/GstRTSPSrc:src
+nvstreammux: Successfully handled EOS for source_id=1
+```
+
+**Causa:** `nvurisrcbin` trae `rtsp-reconnect-interval` a **0 = desactivado**
+por defecto, así que un EOS de la fuente es definitivo. Con `tienda` nunca se
+notó porque es un fichero local en bucle que no falla jamás; la primera cámara
+real lo destapó. El origen del fallo está aguas arriba: mediamtx registra
+pérdidas continuas de paquetes RTP en ese stream (1.500–5.400 por ventana), y
+un `ffmpeg` directo no decodifica un solo fotograma en 2 s.
+
+**Arreglo:** `rtsp_reconnect_interval` (defecto **10 s**) y
+`rtsp_reconnect_attempts` (defecto **-1**, sin límite) por cámara en
+`pipeline.yaml`, aplicados a `nvurisrcbin` solo para URIs `rtsp://`. Se ponen
+las dos propiedades porque cuentan cosas distintas:
+`rtsp-reconnect-interval` mide desde el último dato recibido, e
+`init-rtsp-reconnect-interval` actúa cuando la fuente devuelve un error
+explícito — que es lo que pasó aquí.
+
+Van también en `contracts/pipeline.schema.json`, que tiene
+`additionalProperties: false`: sin declararlas ahí, el YAML no valida.
+
+Verificado tras desplegar: `user` volvió a publicar **974 tracked-objects en
+20 s**, más que `tienda`, y sus Events vuelven a entrar en la base.
+
+⚠️ **Sigue sin haber alerta de cámara caída.** `sv_objetos_activos{camera="user"}`
+valía 0 durante toda la caída, pero 0 también es lo normal de madrugada. Para
+distinguir "no pasa nadie" de "la fuente está muerta" haría falta una métrica
+de última detección por cámara. Pendiente.
 
 ---
 

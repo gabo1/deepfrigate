@@ -4,7 +4,10 @@
   "title": "DeepFrigate declarative pipeline",
   "type": "object",
   "additionalProperties": false,
-  "required": ["api_version", "pipeline"],
+  "required": [
+    "api_version",
+    "pipeline"
+  ],
   "properties": {
     "api_version": {
       "const": "deepfrigate/v1"
@@ -12,7 +15,12 @@
     "pipeline": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "cameras", "detection", "tracker"],
+      "required": [
+        "name",
+        "cameras",
+        "detection",
+        "tracker"
+      ],
       "properties": {
         "name": {
           "type": "string",
@@ -24,7 +32,10 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["id", "source_env"],
+            "required": [
+              "id",
+              "source_env"
+            ],
             "properties": {
               "id": {
                 "type": "string",
@@ -38,6 +49,17 @@
                 "type": "integer",
                 "minimum": 0,
                 "default": 0
+              },
+              "rtsp_reconnect_interval": {
+                "type": "integer",
+                "minimum": 0,
+                "default": 10,
+                "description": "Segundos sin datos antes de forzar una reconexion RTSP. 0 desactiva. Sin esto un EOS de la fuente es definitivo: DeepStream la suelta y el pipeline sigue sin avisar."
+              },
+              "rtsp_reconnect_attempts": {
+                "type": "integer",
+                "default": -1,
+                "description": "-1 = reintentar sin limite."
               }
             }
           }
@@ -45,7 +67,11 @@
         "detection": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["model", "version", "config_path"],
+          "required": [
+            "model",
+            "version",
+            "config_path"
+          ],
           "properties": {
             "model": {
               "type": "string",
@@ -69,7 +95,12 @@
         "tracker": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["type", "config_path", "width", "height"],
+          "required": [
+            "type",
+            "config_path",
+            "width",
+            "height"
+          ],
           "properties": {
             "type": {
               "const": "nvtracker"
@@ -96,7 +127,9 @@
         "frame_export": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["labels"],
+          "required": [
+            "labels"
+          ],
           "properties": {
             "labels": {
               "type": "array",
@@ -115,14 +148,22 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["model", "family", "labels"],
+            "required": [
+              "model",
+              "family",
+              "labels"
+            ],
             "properties": {
               "model": {
                 "type": "string",
                 "minLength": 1
               },
               "family": {
-                "enum": ["pp-shitu", "plate-recognition", "pulc-person"]
+                "enum": [
+                  "pp-shitu",
+                  "plate-recognition",
+                  "pulc-person"
+                ]
               },
               "labels": {
                 "type": "array",
@@ -142,7 +183,10 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["type", "camera"],
+            "required": [
+              "type",
+              "camera"
+            ],
             "properties": {
               "type": {
                 "enum": [
@@ -171,7 +215,9 @@
                   }
                 },
                 "then": {
-                  "required": ["zone"]
+                  "required": [
+                    "zone"
+                  ]
                 }
               }
             ]

@@ -12,6 +12,21 @@ from jsonschema import Draft202012Validator
 import yaml
 
 
+# Segundos sin recibir datos antes de forzar una reconexion RTSP. El defecto
+# de `nvurisrcbin` es 0 = desactivado, y con eso un EOS de la fuente es
+# definitivo: DeepStream la suelta y el pipeline sigue con las demas sin avisar
+# a nadie. Paso el 3 sep con la camara `user`, que se cayo a las 20:51 y no
+# volvio en 70 minutos mientras `tienda` seguia. No se habia notado nunca
+# porque `tienda` es un fichero en bucle servido en local, que no falla.
+#
+# 10 s: suficiente para no reconectar por un hipo de red, y bastante menos que
+# el hueco de 70 min de aquel dia.
+DEFAULT_RTSP_RECONNECT_INTERVAL = 10
+# -1 es el defecto de nvurisrcbin: reintentar sin limite. Explicito porque una
+# camara que vuelve sola a las 3 de la manana es justo lo que se quiere.
+DEFAULT_RTSP_RECONNECT_ATTEMPTS = -1
+
+
 class PipelineConfigError(ValueError):
     """Raised when a declarative pipeline cannot be compiled safely."""
 
@@ -107,12 +122,34 @@ def compile_pipeline(
                 f"camera {camera['id']}: environment variable "
                 f"{source_env} is not set"
             )
+        reconnect = camera.get(
+            "rtsp_reconnect_interval", DEFAULT_RTSP_RECONNECT_INTERVAL
+        )
+        if not isinstance(reconnect, int) or isinstance(reconnect, bool):
+            raise PipelineConfigError(
+                f"camera {camera['id']}: rtsp_reconnect_interval must be an "
+                "integer number of seconds"
+            )
+        if reconnect < 0:
+            raise PipelineConfigError(
+                f"camera {camera['id']}: rtsp_reconnect_interval must be >= 0"
+            )
+        attempts = camera.get(
+            "rtsp_reconnect_attempts", DEFAULT_RTSP_RECONNECT_ATTEMPTS
+        )
+        if not isinstance(attempts, int) or isinstance(attempts, bool):
+            raise PipelineConfigError(
+                f"camera {camera['id']}: rtsp_reconnect_attempts must be an "
+                "integer"
+            )
         resolved_cameras.append(
             {
                 "id": camera["id"],
                 "uri": uri,
                 "source_env": source_env,
                 "gpu": camera.get("gpu", 0),
+                "rtsp_reconnect_interval": reconnect,
+                "rtsp_reconnect_attempts": attempts,
             }
         )
 

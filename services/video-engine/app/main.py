@@ -59,16 +59,27 @@ def build_pipeline() -> tuple[Pipeline, FrameExporter]:
     pipeline_gpu = config["detection"]["gpu"]
     pipeline = Pipeline(config["name"])
     for source_id, camera in cameras.items():
-        pipeline.add(
-            "nvurisrcbin",
-            f"source{source_id}",
-            {
-                "uri": camera["uri"],
-                "gpu-id": camera["gpu"],
-                "drop-on-latency": True,
-                "latency": 100,
-            },
-        )
+        properties = {
+            "uri": camera["uri"],
+            "gpu-id": camera["gpu"],
+            "drop-on-latency": True,
+            "latency": 100,
+        }
+        if camera["uri"].startswith("rtsp://"):
+            # Sin esto un EOS de la fuente es DEFINITIVO: DeepStream la suelta,
+            # el pipeline sigue con las demás cámaras y nadie se entera. El
+            # defecto de nvurisrcbin es 0 = desactivado.
+            interval = camera["rtsp_reconnect_interval"]
+            if interval:
+                properties["rtsp-reconnect-interval"] = interval
+                # El de arriba cuenta desde el último dato recibido; éste actúa
+                # cuando la fuente devuelve un error explícito. Hacen falta los
+                # dos: el fallo real fue "Could not read from resource".
+                properties["init-rtsp-reconnect-interval"] = interval
+            properties["rtsp-reconnect-attempts"] = camera[
+                "rtsp_reconnect_attempts"
+            ]
+        pipeline.add("nvurisrcbin", f"source{source_id}", properties)
 
     pipeline.add(
         "nvstreammux",

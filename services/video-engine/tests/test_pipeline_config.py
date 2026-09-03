@@ -10,6 +10,7 @@ CONFIG = Path("/opt/deepfrigate/config/pipeline.yaml")
 SCHEMA = Path("/opt/deepfrigate/contracts/pipeline.schema.json")
 ENVIRONMENT = {
     "RTSP_TIENDA": "rtsp://example/tienda",
+    "RTSP_USER": "rtsp://example/user",
 }
 
 
@@ -23,7 +24,7 @@ def test_checked_in_pipeline_compiles_deterministically() -> None:
 
     assert first == second
     assert first["name"] == "deepfrigate-multicamera"
-    assert [camera["id"] for camera in first["cameras"]] == ["tienda"]
+    assert [camera["id"] for camera in first["cameras"]] == ["tienda", "user"]
     assert first["detection"]["model"] == "object-detector"
     assert first["tracker"]["type"] == "nvtracker"
     assert first["export_labels"] == ["car", "person"]
@@ -141,3 +142,48 @@ def test_model_and_version_references_are_validated(
         model_repository_path=models,
     )
     assert compiled["detection"]["version"] == 1
+
+
+def test_rtsp_reconnect_defaults_are_applied() -> None:
+    """Sin reconexión, un EOS de la fuente es definitivo.
+
+    Es lo que dejó la cámara `user` fuera 70 min el 3 sep mientras `tienda`
+    seguía: DeepStream soltó source1 y el pipeline continuó sin avisar.
+    """
+    config = load_pipeline(CONFIG, schema_path=SCHEMA, environment=ENVIRONMENT)
+    for camera in config["cameras"]:
+        assert camera["rtsp_reconnect_interval"] == 10
+        assert camera["rtsp_reconnect_attempts"] == -1
+
+
+def test_rtsp_reconnect_can_be_overridden_per_camera(tmp_path: Path) -> None:
+    document = _document()
+    document["pipeline"]["cameras"][0]["rtsp_reconnect_interval"] = 30
+    document["pipeline"]["cameras"][0]["rtsp_reconnect_attempts"] = 5
+    config = load_pipeline(
+        _write(tmp_path, document), schema_path=SCHEMA,
+        environment=ENVIRONMENT,
+    )
+    assert config["cameras"][0]["rtsp_reconnect_interval"] == 30
+    assert config["cameras"][0]["rtsp_reconnect_attempts"] == 5
+    assert config["cameras"][1]["rtsp_reconnect_interval"] == 10
+
+
+def test_rtsp_reconnect_interval_zero_disables_it(tmp_path: Path) -> None:
+    document = _document()
+    document["pipeline"]["cameras"][0]["rtsp_reconnect_interval"] = 0
+    config = load_pipeline(
+        _write(tmp_path, document), schema_path=SCHEMA,
+        environment=ENVIRONMENT,
+    )
+    assert config["cameras"][0]["rtsp_reconnect_interval"] == 0
+
+
+def test_negative_rtsp_reconnect_interval_is_rejected(tmp_path: Path) -> None:
+    document = _document()
+    document["pipeline"]["cameras"][0]["rtsp_reconnect_interval"] = -5
+    with pytest.raises(PipelineConfigError):
+        load_pipeline(
+            _write(tmp_path, document), schema_path=SCHEMA,
+            environment=ENVIRONMENT,
+        )
