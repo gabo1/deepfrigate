@@ -1,0 +1,445 @@
+{
+  "title": "Eventos y heatmap por cámara",
+  "uid": "camara-eventos",
+  "description": "Lo que funciona en CUALQUIER cámara desde su primer Event: SQL sobre la tabla `event` y el heatmap. Sin dependencia de `zones.json`. Derivado de `analitica-deepfrigate`, que además trae la analítica de Prometheus (aforo, permanencia, cruces, overcrowding) y para eso sí hace falta geometría.",
+  "tags": [
+    "deepfrigate",
+    "camara",
+    "eventos"
+  ],
+  "timezone": "browser",
+  "refresh": "1m",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Events de Frigate (SQL, no Prometheus)",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Events por 5 min",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroupAlias(ts, '5m'),\n       label AS metric,\n       count(*) AS value\n  FROM (SELECT to_timestamp(start_time) AS ts, label\n          FROM event\n         WHERE $__unixEpochFilter(start_time)\n           AND camera = '$camera') e\n GROUP BY 1, 2\n ORDER BY 1"
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "axisBorderShow": false
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "description": "Un Event de Frigate por objeto seguido en TODA la cámara, no solo dentro de `area_cajas`: por eso hay muchos más Events que gente en la zona de cajas. Se aproximan a personas distintas (solo el 0,1 % parecen reanudaciones de un track perdido), pero quien pasa dos veces cuenta dos."
+    },
+    {
+      "type": "table",
+      "title": "Events por zona",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT jsonb_array_elements_text(zones) AS \"zona\",\n       count(*) AS \"events\",\n       round(avg(end_time - start_time)::numeric, 1) AS \"duración media (s)\"\n  FROM event\n WHERE $__unixEpochFilter(start_time)\n   AND camera = '$camera'\n GROUP BY 1\n ORDER BY 2 DESC"
+        }
+      ],
+      "options": {},
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "filterable": true,
+            "align": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "description": "“Pasó por la zona”, no aforo. El aforo instantáneo es `sv_zona_presentes`, arriba. Tabla y no gráfico de barras porque hoy solo hay una zona configurada."
+    },
+    {
+      "type": "stat",
+      "title": "Events en el rango",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) FILTER (WHERE start_time >= $__unixEpochFrom())\n         AS \"Events\",\n       count(*) FILTER (WHERE start_time < $__unixEpochFrom())\n         AS \"Periodo previo\"\n  FROM event\n WHERE camera = '$camera'\n   AND start_time >= $__unixEpochFrom()\n                   - ($__unixEpochTo() - $__unixEpochFrom())\n   AND start_time <= $__unixEpochTo()"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "description": "El segundo número es la ventana inmediatamente anterior, del mismo tamaño: sirve para saber si el rango que estás mirando es alto o bajo para esta cámara. Cuenta Events, no personas."
+    },
+    {
+      "type": "stat",
+      "title": "Cámara más activa",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 9,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT camera AS \"cámara\", count(*) AS \"events\"\n  FROM event\n WHERE $__unixEpochFilter(start_time)\n GROUP BY 1 ORDER BY 2 DESC LIMIT 1"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "description": "El único panel que NO se filtra por `$camera`: compara las cámaras entre sí, que es su razón de ser."
+    },
+    {
+      "type": "stat",
+      "title": "Objeto más frecuente",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 9,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT label AS \"etiqueta\", count(*) AS \"events\"\n  FROM event\n WHERE $__unixEpochFilter(start_time)\n   AND camera = '$camera'\n GROUP BY 1 ORDER BY 2 DESC LIMIT 1"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "description": "`tienda` solo produce `person`; `user` produce `car` y `person`."
+    },
+    {
+      "type": "stat",
+      "title": "Hora punta",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 9,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT to_char(to_timestamp(start_time), 'HH24') || ':00'\n         AS \"hora\",\n       count(*) AS \"events\"\n  FROM event\n WHERE $__unixEpochFilter(start_time)\n   AND camera = '$camera'\n GROUP BY 1 ORDER BY 2 DESC LIMIT 1"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "description": "⚠️ **Depende de la cámara.** En `tienda` NO significa nada: la fuente es un clip de 299 s en bucle, así que el tráfico es idéntico a todas horas y gana la hora en la que cupieron más vueltas. En `user`, que es un RTSP externo real, sí es un dato. La hora va en UTC."
+    },
+    {
+      "type": "table",
+      "title": "Events más largos (duración del track)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT to_timestamp(start_time) AS \"inicio\",\n       camera AS \"cámara\",\n       label AS \"etiqueta\",\n       round((end_time - start_time)::numeric, 1) AS \"duración (s)\",\n       id\n  FROM event\n WHERE end_time IS NOT NULL\n   AND $__unixEpochFilter(start_time)\n   AND camera = '$camera'\n ORDER BY (end_time - start_time) DESC\n LIMIT 10"
+        }
+      ],
+      "options": {},
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "filterable": true,
+            "align": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "description": "Duración del TRACK (`end_time - start_time`), NO permanencia en zona. El addon deprecado lo llamaba “Longest Events (Dwell Time)” y el nombre engañaba: en esta base hay un Event de 36.570 s (10 h) de un track que nunca cerró bien. La permanencia real en el polígono es `sv_zona_permanencia_*`."
+    },
+    {
+      "type": "row",
+      "title": "Heatmap espacial (imagen de platform-api)",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 21,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "text",
+      "title": "Rutas — por dónde se pasa",
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 12,
+        "h": 13
+      },
+      "options": {
+        "mode": "html",
+        "content": "<img src=\"/api/datasources/proxy/uid/deepfrigate-platform-api/v1/heatmap/$camera.jpg?weight=count&label=$label&zones=true&start=$__from&end=$__to\" style=\"width:100%;height:auto;display:block\" alt=\"Rutas — por dónde se pasa\">"
+      },
+      "description": "Filtra por `$label`: mezclar coches y personas aplasta a las personas. Medido en `user`: coches 38 puntos/celda de máximo, personas 8, así que en el mapa conjunto las personas son invisibles. Conteo de puntos de `path_data` por celda. OJO: `path_data` emite un punto por DISTANCIA recorrida, no por tiempo, así que este mapa es ciego a quien se para — alguien quieto 60 s aporta un punto igual que quien pasa de largo. Para eso está el panel de al lado."
+    },
+    {
+      "type": "text",
+      "title": "Permanencia — dónde se para la gente",
+      "gridPos": {
+        "x": 12,
+        "y": 22,
+        "w": 12,
+        "h": 13
+      },
+      "options": {
+        "mode": "html",
+        "content": "<img src=\"/api/datasources/proxy/uid/deepfrigate-platform-api/v1/heatmap/$camera.jpg?weight=dwell&label=$label&zones=true&start=$__from&end=$__to\" style=\"width:100%;height:auto;display:block\" alt=\"Permanencia — dónde se para la gente\">"
+      },
+      "description": "Cada punto pesa los segundos hasta el siguiente. Tope de 30 s por tramo: está justo por encima del p99 medido (27,4 s sobre 93.110 tramos), así que solo recorta el 1 % más sospechoso de ser oclusión. Medido: el 32,1 % de toda la permanencia cae FUERA de `area_cajas`, invisible para el resto de métricas. El polígono blanco y la línea cian son `zones.json`: si no abrazan los focos, la geometría está mal dibujada."
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "camera",
+        "label": "Cámara",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "frigate-smoke-pg"
+        },
+        "query": "SELECT DISTINCT camera FROM event ORDER BY 1",
+        "refresh": 1,
+        "sort": 1,
+        "includeAll": false,
+        "multi": false,
+        "current": {
+          "text": "tienda",
+          "value": "tienda"
+        }
+      },
+      {
+        "name": "label",
+        "label": "Etiqueta (solo heatmap)",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "frigate-smoke-pg"
+        },
+        "query": "SELECT DISTINCT label FROM event WHERE camera = '$camera' ORDER BY 1",
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "allValue": "",
+        "multi": false,
+        "current": {
+          "text": "Todas",
+          "value": "$__all"
+        }
+      }
+    ]
+  },
+  "schemaVersion": 39,
+  "version": 1
+}

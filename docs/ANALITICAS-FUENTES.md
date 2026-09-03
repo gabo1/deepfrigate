@@ -959,8 +959,16 @@ El eje correcto es **por cámara**, con variables de plantilla:
 
 | Dashboard | Variables | Notas |
 |---|---|---|
-| `analitica-deepfrigate` | `$camera`, `$label` | `$label` **solo afecta al heatmap**; el resto ya desglosa por etiqueta |
-| `pulc-atributos` | `$camera` | solo lista cámaras con `person_attributes`: los coches no tienen PULC |
+| `analitica-deepfrigate` | `$camera`, `$label` | Todo. `$label` **solo afecta al heatmap**; el resto ya desglosa por etiqueta |
+| `camara-eventos` | `$camera`, `$label` | Solo lo que funciona **en cualquier cámara**: SQL + heatmap, sin depender de `zones.json` |
+| `pulc-atributos` | `$camera` | Solo lista cámaras con `person_attributes`: los coches no tienen PULC |
+
+**`camara-eventos` está derivado**, no duplicado: su generador lee
+`analitica-deepfrigate.json`, se queda con las dos filas que no dependen de
+geometría y las recoloca. Si allí se arregla una consulta, aquí también. Existe
+porque para una cámara recién dada de alta el resto del dashboard grande está
+vacío —aforo, permanencia, cruces y overcrowding necesitan zonas— y un
+dashboard mayormente vacío no se mira. `user` es exactamente ese caso.
 
 Las variables se pueblan del catálogo real (`SELECT DISTINCT camera FROM
 event`), así que una cámara nueva aparece sola en cuanto produce su primer
