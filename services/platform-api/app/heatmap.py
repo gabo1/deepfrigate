@@ -80,6 +80,12 @@ RAMP = [
     (0.75, (245, 130, 35)), (1.00, (252, 230, 120)),
 ]
 
+# Valores que significan "sin filtro de etiqueta". `all` esta para que Grafana
+# pueda mandarlo como `allValue` de su variable: cuando la variable esta en
+# "Todas", Grafana NO manda cadena vacia -- manda `All` o `$__all` segun el
+# caso, y eso antes producia un mapa vacio indistinguible de "no hay datos".
+TODAS = {"", "all", "todas", "$__all", "All"}
+
 _cache: dict[tuple, tuple[float, bytes]] = {}
 
 
@@ -145,6 +151,8 @@ def _draw_zones(base: Image.Image, zones_path: Path, camera: str) -> None:
 def render(store_url: str, frigate_api_url: str, zones_path: Path,
            camera: str, start_s: float, end_s: float, weight: str,
            zones: bool, label: str = "") -> bytes:
+    if label in TODAS:
+        label = ""
     bucket = max(1.0, CACHE_TTL_S)
     start_s = round(start_s / bucket) * bucket
     end_s = round(end_s / bucket) * bucket
@@ -184,6 +192,19 @@ def render(store_url: str, frigate_api_url: str, zones_path: Path,
 
     if zones:
         _draw_zones(base, zones_path, camera)
+
+    if not cells:
+        # Antes, un rango sin datos y un parametro invalido daban exactamente
+        # la misma imagen oscura. Decirlo evita media hora de depuracion.
+        note = ImageDraw.Draw(base)
+        text = f"sin datos · {camera}/{label or 'todas'} en este rango"
+        width_px = int(note.textlength(text))
+        box = Image.new("RGBA", (width_px + 28, 38), (12, 12, 16, 210))
+        base.paste(box, ((FRAME_WIDTH - width_px - 28) // 2,
+                         FRAME_HEIGHT // 2 - 19), box)
+        note = ImageDraw.Draw(base)
+        note.text(((FRAME_WIDTH - width_px) // 2, FRAME_HEIGHT // 2 - 6),
+                  text, fill=(238, 238, 238))
 
     # Leyenda: una rampa multitono sin escala no se puede leer, y sobre una
     # foto cualquier texto suelto desaparece.

@@ -1601,7 +1601,7 @@
         "refresh": 2,
         "sort": 1,
         "includeAll": true,
-        "allValue": "",
+        "allValue": "all",
         "multi": false,
         "current": {
           "text": "Todas",

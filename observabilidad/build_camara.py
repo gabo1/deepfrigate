@@ -14,9 +14,18 @@ import json
 
 SRC = "analitica-deepfrigate.json"
 OUT = "camara-eventos.json"
-# Los títulos de fila que se llevan, en orden.
+# Los títulos de fila que se llevan enteras, en orden.
 FILAS = ["Events de Frigate (SQL, no Prometheus)",
          "Heatmap espacial (imagen de platform-api)"]
+
+# Métricas de Prometheus que son de TODA LA ESCENA y no dependen de zones.json,
+# así que valen para una cámara sin geometría. Se suben a una fila propia.
+#
+# Deliberadamente NO están «Merodeo ahora» ni el overcrowding: el merodeo sale
+# del dwell dentro de un polígono y el overcrowding de un umbral por zona. Sin
+# geometría no valen 0, es que no pueden existir -- y un cero permanente parece
+# un dato. Tampoco «En area_cajas» ni los cruces de línea, por lo mismo.
+SIN_GEOMETRIA = ["Objetos activos", "Estacionarios", "Confianza media"]
 
 source = json.load(open(SRC, encoding="utf-8"))
 by_row, current = {}, None
@@ -28,6 +37,29 @@ for panel in source["panels"]:
         by_row[current].append(panel)
 
 panels, y = [], 0
+
+# --- fila de estado que sí funciona sin geometría
+sueltos = {p["title"]: p for fila in by_row.values() for p in fila}
+panels.append({
+    "type": "row", "title": "Estado ahora (métricas de escena, sin geometría)",
+    "collapsed": False, "panels": [],
+    "gridPos": {"x": 0, "y": y, "w": 24, "h": 1},
+})
+y += 1
+for i, title in enumerate(SIN_GEOMETRIA):
+    origen = sueltos.get(title)
+    assert origen, f"panel no encontrado: {title}"
+    copy = json.loads(json.dumps(origen))
+    copy["gridPos"] = {"x": i * 8, "y": y, "w": 8, "h": 4}
+    copy["description"] = (
+        (copy.get("description") or "").rstrip(". ")
+        + ". Es de **toda la cámara**, no de una zona: por eso funciona sin "
+          "geometría en `zones.json`. Merodeo y overcrowding no están aquí "
+          "porque sí dependen de una zona."
+    ).lstrip(". ")
+    panels.append(copy)
+y += 4
+
 for title in FILAS:
     kept = by_row.get(title)
     assert kept, f"fila no encontrada: {title}"
@@ -47,8 +79,11 @@ dashboard = {
     "title": "Eventos y heatmap por cámara",
     "uid": "camara-eventos",
     "description": (
-        "Lo que funciona en CUALQUIER cámara desde su primer Event: SQL sobre "
-        "la tabla `event` y el heatmap. Sin dependencia de `zones.json`. "
+        "Lo que funciona en CUALQUIER cámara desde su primer Event: métricas "
+        "de escena (objetos activos, estacionarios, confianza), SQL sobre la "
+        "tabla `event` y el heatmap. Sin dependencia de `zones.json`. "
+        "NO están merodeo, aforo, cruces ni overcrowding: esos salen de una "
+        "zona o una línea, y sin geometría no valen 0, es que no existen. "
         "Derivado de `analitica-deepfrigate`, que además trae la analítica de "
         "Prometheus (aforo, permanencia, cruces, overcrowding) y para eso sí "
         "hace falta geometría."),

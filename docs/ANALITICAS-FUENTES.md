@@ -960,8 +960,25 @@ El eje correcto es **por cámara**, con variables de plantilla:
 | Dashboard | Variables | Notas |
 |---|---|---|
 | `analitica-deepfrigate` | `$camera`, `$label` | Todo. `$label` **solo afecta al heatmap**; el resto ya desglosa por etiqueta |
-| `camara-eventos` | `$camera`, `$label` | Solo lo que funciona **en cualquier cámara**: SQL + heatmap, sin depender de `zones.json` |
+| `camara-eventos` | `$camera`, `$label` | Solo lo que funciona **en cualquier cámara**: métricas de escena + SQL + heatmap, sin depender de `zones.json` |
 | `pulc-atributos` | `$camera` | Solo lista cámaras con `person_attributes`: los coches no tienen PULC |
+
+**Qué métrica de Prometheus vale sin geometría.** No es evidente y conviene
+tenerlo escrito:
+
+| Métrica | ¿Sin zonas? | Por qué |
+|---|---|---|
+| `sv_objetos_activos` | ✅ | cuenta tracks de **toda la cámara** |
+| `sv_estacionarios` | ✅ | idem, sale de `Lifecycle` |
+| `sv_confianza_media` | ✅ | idem |
+| `sv_merodeo_ahora` | ❌ | es dwell **dentro de un polígono** sobre `loitering_threshold_s` |
+| `sv_zona_presentes`, `sv_zona_permanencia_*` | ❌ | por zona, ni existe la serie |
+| `df_overcrowding_*` | ❌ | umbral **por zona** |
+| `sv_cruces_*`, `df_direction_match` | ❌ | necesitan línea o dirección |
+
+Los tres primeros están en `camara-eventos`. Los demás **no**, y a propósito:
+sin geometría no valen 0, es que no pueden existir, y un cero permanente en un
+panel parece un dato.
 
 **`camara-eventos` está derivado**, no duplicado: su generador lee
 `analitica-deepfrigate.json`, se queda con las dos filas que no dependen de
