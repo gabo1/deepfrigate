@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+import time
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
@@ -13,7 +14,9 @@ from urllib.request import Request, urlopen
 from uuid import UUID
 
 from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi.responses import Response
 from jsonschema import Draft202012Validator
+from . import heatmap as heatmap_render
 import psycopg
 from psycopg.rows import dict_row
 import yaml
@@ -451,6 +454,47 @@ def model_ready(name: str) -> bool:
 def require_admin(remote_role: str | None) -> None:
     if remote_role != "admin":
         raise HTTPException(status_code=403, detail="admin role required")
+
+
+@app.get("/v1/heatmap/{camera}.jpg", tags=["analytics"])
+def get_heatmap(
+    camera: str,
+    weight: str = Query("count", pattern="^(count|dwell)$"),
+    zones: bool = True,
+    start: float | None = Query(None, description="epoch ms; por defecto -24 h"),
+    end: float | None = Query(None, description="epoch ms; por defecto ahora"),
+) -> Response:
+    """Mapa de calor espacial, ya compuesto sobre el snapshot de la cámara.
+
+    Se sirve como imagen y no como datos porque **Grafana no tiene panel de
+    heatmap espacial**: el suyo es tiempo x bucket. Se embebe con un panel de
+    texto en HTML, que interpola `$__from`/`$__to` y hace que la imagen siga el
+    rango del dashboard.
+    """
+    store_url = os.getenv("FRIGATE_EVENT_STORE_URL", "").strip()
+    if not store_url:
+        raise HTTPException(
+            status_code=503, detail="FRIGATE_EVENT_STORE_URL not configured"
+        )
+    now_ms = time.time() * 1000
+    end_s = (now_ms if end is None else end) / 1000.0
+    start_s = ((now_ms - 86_400_000) if start is None else start) / 1000.0
+    if start_s >= end_s:
+        raise HTTPException(status_code=400, detail="start must be before end")
+    try:
+        payload = heatmap_render.render(
+            store_url, frigate_api_url, zones_config_path,
+            camera, start_s, end_s, weight, zones,
+        )
+    except psycopg.Error as error:
+        raise HTTPException(
+            status_code=503, detail="frigate event store unavailable"
+        ) from error
+    return Response(
+        content=payload,
+        media_type="image/jpeg",
+        headers={"Cache-Control": f"max-age={int(heatmap_render.CACHE_TTL_S)}"},
+    )
 
 
 @app.get("/v1/models", tags=["models"])

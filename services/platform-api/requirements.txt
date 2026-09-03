@@ -3,3 +3,4 @@ jsonschema==4.26.0
 psycopg[binary]==3.3.4
 PyYAML==6.0.3
 uvicorn[standard]==0.35.0
+pillow==11.3.0
