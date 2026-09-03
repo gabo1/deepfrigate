@@ -1,0 +1,104 @@
+{
+  "title": "Analítica de comportamiento",
+  "uid": "analitica",
+  "tags": ["frigate", "supervision"],
+  "timezone": "browser",
+  "refresh": "10s",
+  "time": { "from": "now-30m", "to": "now" },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Objetos activos",
+      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
+      "targets": [{ "expr": "sv_objetos_activos", "legendFormat": "{{camera}}" }],
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" },
+        "thresholds": { "steps": [
+          { "color": "green", "value": null },
+          { "color": "yellow", "value": 5 },
+          { "color": "red", "value": 10 } ] } } }
+    },
+    {
+      "type": "stat",
+      "title": "Merodeo ahora",
+      "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
+      "targets": [{ "expr": "sv_merodeo_ahora", "legendFormat": "{{camera}}" }],
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" },
+        "thresholds": { "steps": [
+          { "color": "green", "value": null },
+          { "color": "orange", "value": 1 },
+          { "color": "red", "value": 3 } ] } } }
+    },
+    {
+      "type": "stat",
+      "title": "Cruces entrada (5 min)",
+      "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
+      "targets": [{ "expr": "increase(sv_cruces_entrada_total[5m])",
+                    "legendFormat": "{{camera}}" }]
+    },
+    {
+      "type": "stat",
+      "title": "Cruces salida (5 min)",
+      "gridPos": { "x": 12, "y": 0, "w": 4, "h": 4 },
+      "targets": [{ "expr": "increase(sv_cruces_salida_total[5m])",
+                    "legendFormat": "{{camera}}" }]
+    },
+    {
+      "type": "stat",
+      "title": "Coste por mensaje",
+      "gridPos": { "x": 16, "y": 0, "w": 4, "h": 4 },
+      "targets": [{ "expr": "sv_proc_ms_por_mensaje", "legendFormat": "{{camera}}" }],
+      "fieldConfig": { "defaults": { "unit": "ms" } }
+    },
+    {
+      "type": "stat",
+      "title": "Objetos vistos (1 h)",
+      "gridPos": { "x": 20, "y": 0, "w": 4, "h": 4 },
+      "targets": [{ "expr": "increase(sv_objetos_vistos_total[1h])",
+                    "legendFormat": "{{camera}}" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Aforo por zona",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "targets": [{ "expr": "sv_zona_presentes", "legendFormat": "{{zona}}" }],
+      "fieldConfig": { "defaults": { "custom": {
+        "fillOpacity": 25, "lineWidth": 2, "showPoints": "never" } } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Permanencia en zona",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "sv_zona_permanencia_max_s", "legendFormat": "máx · {{zona}}" },
+        { "expr": "sv_zona_permanencia_media_s", "legendFormat": "media · {{zona}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s", "custom": {
+        "fillOpacity": 10, "lineWidth": 2, "showPoints": "never" } } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Ritmo de cruces por minuto",
+      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "rate(sv_cruces_entrada_total[2m]) * 60", "legendFormat": "entrada" },
+        { "expr": "rate(sv_cruces_salida_total[2m]) * 60", "legendFormat": "salida" }
+      ],
+      "fieldConfig": { "defaults": { "custom": {
+        "fillOpacity": 20, "lineWidth": 2, "showPoints": "never" } } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Actividad: activos, merodeo, estacionarios",
+      "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "sv_objetos_activos", "legendFormat": "activos" },
+        { "expr": "sv_merodeo_ahora", "legendFormat": "merodeo" },
+        { "expr": "sv_estacionarios", "legendFormat": "estacionarios" }
+      ],
+      "fieldConfig": { "defaults": { "custom": {
+        "fillOpacity": 10, "lineWidth": 2, "showPoints": "never" } } }
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}

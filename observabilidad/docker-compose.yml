@@ -1,0 +1,61 @@
+# Stack de observabilidad de DeepFrigate: Prometheus + Grafana.
+#
+# El despliegue vivo del lab corre desde /opt/observabilidad con las mismas
+# rutas. Este directorio es la FUENTE DE VERDAD; ver README.md para pasar el
+# despliegue a leer de aquí y dejar de mantener dos copias.
+services:
+  prometheus:
+    container_name: prometheus
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+      - --storage.tsdb.retention.size=2GB
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prom_data:/prometheus
+    extra_hosts:
+      # El exporter del detection-adapter escucha en 127.0.0.1:9110 del HOST.
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:9090:9090"
+
+  grafana:
+    container_name: grafana
+    image: grafana/grafana:latest
+    restart: unless-stopped
+    depends_on: [prometheus]
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD__FILE=/run/secrets/gf_pw
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_ANALYTICS_REPORTING_ENABLED=false
+      - GF_ANALYTICS_CHECK_FOR_UPDATES=false
+      # Grafana expande ${VAR} en los ficheros de provisioning. Así la
+      # contraseña de grafana_ro no se versiona. Ver .env.example.
+      - GRAFANA_RO_PASSWORD=${GRAFANA_RO_PASSWORD:?Set GRAFANA_RO_PASSWORD in observabilidad/.env}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./grafana/gf_pw:/run/secrets/gf_pw:ro
+      - graf_data:/var/lib/grafana
+    networks:
+      # deepfrigate: para llegar a pgvector-smoke-db (paneles SQL) y a
+      # platform-api (proxy del heatmap). Ninguno publica puerto al host, así
+      # que host.docker.internal no vale.
+      - default
+      - deepfrigate
+    ports:
+      # loopback + tailnet únicamente, nunca 0.0.0.0
+      - "127.0.0.1:3001:3000"
+      - "${GRAFANA_BIND_ADDRESS:-100.83.231.97}:3001:3000"
+
+networks:
+  deepfrigate:
+    external: true
+    name: deepfrigate_default
+
+volumes:
+  prom_data:
+  graf_data:

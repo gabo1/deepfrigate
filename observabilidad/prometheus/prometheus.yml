@@ -1,0 +1,25 @@
+global:
+  scrape_interval: 10s
+  evaluation_interval: 30s
+
+scrape_configs:
+  # Analitica sobre Frigate
+  - job_name: analitica_frigate
+    static_configs:
+      - targets: ['host.docker.internal:9108']
+        labels: {motor: frigate}
+
+  # Analitica sobre Savant (mismo esquema de metricas, label camera distinto)
+  - job_name: analitica_savant
+    static_configs:
+      - targets: ['host.docker.internal:9109']
+        labels: {motor: savant}
+
+  # Analitica sobre DeepStream, via el detection-adapter de DeepFrigate.
+  # Mismo catalogo sv_* que los dos jobs de arriba: el label `motor` es lo
+  # unico que separa estas series del historico del 26-31 ago, porque los
+  # paneles del dashboard `analitica` consultan nombres desnudos.
+  - job_name: analitica_deepfrigate
+    static_configs:
+      - targets: ['host.docker.internal:9110']
+        labels: {motor: deepfrigate}

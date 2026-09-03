@@ -1,0 +1,717 @@
+{
+  "title": "Atributos de persona (PULC)",
+  "uid": "pulc-atributos",
+  "description": "Atributos PULC (PaddleClas `PULC_person_attribute`) sobre la tabla `event` del Frigate smoke. Separado de `analitica-deepfrigate`, que es comportamiento. Fuente: clip de 299,1 s en bucle, así que sin lecturas por hora del día.",
+  "tags": [
+    "deepfrigate",
+    "pulc",
+    "atributos"
+  ],
+  "timezone": "browser",
+  "refresh": "1m",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "type": "text",
+      "title": "",
+      "transparent": true,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 5
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "### Fuente: clip de 299,1 s en bucle, no una tienda en vivo\n`fakecam` sirve `tienda_10.mp4` con `ffmpeg -re -stream_loop -1`, así que **las mismas 21 personas pasan cada 5 minutos**. Por eso aquí no hay ni un panel por hora del día: mostraría el bucle, no comportamiento.\n\nA cambio, el bucle es un **banco de pruebas de repetibilidad**: como la entrada no cambia nunca, toda la variación entre vueltas es ruido del modelo. Eso es la última fila.\n\nAtributos de `PULC_person_attribute` (PaddleClas), escritos por `frigate_bridge.py` en `data->'person_attributes'`. El comportamiento (aforo, permanencia, cruces, overcrowding) vive en [Analítica DeepFrigate](/d/analitica-deepfrigate)."
+      }
+    },
+    {
+      "type": "row",
+      "title": "Tipo de ropa",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "barchart",
+      "title": "Prenda inferior",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 10,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT data->'person_attributes'->'lower'->>'value' AS \"prenda\",\n       count(*) AS \"events\"\n  FROM event\n WHERE $__unixEpochFilter(start_time)\n   AND data->'person_attributes'->'lower'->>'value' IS NOT NULL\n GROUP BY 1 ORDER BY 2 DESC"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "auto",
+        "xTickLabelRotation": 0,
+        "barWidth": 0.7,
+        "legend": {
+          "showLegend": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 0,
+            "fillOpacity": 85
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "description": "Una serie, un color: la longitud de la barra ya lleva la magnitud, teñirla por valor sería gastar el único canal libre."
+    },
+    {
+      "type": "table",
+      "title": "Prenda × manga",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 10,
+        "y": 6,
+        "w": 14,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT data->'person_attributes'->'sleeve'->>'value' AS \"manga\",\n       data->'person_attributes'->'lower'->>'value' AS \"prenda\",\n       count(*) AS \"events\",\n       round(100.0 * count(*) / sum(count(*)) OVER (), 1) AS \"reparto (%)\"\n  FROM event\n WHERE $__unixEpochFilter(start_time)\n   AND data->'person_attributes'->'sleeve'->>'value' IS NOT NULL\n   AND data->'person_attributes'->'lower'->>'value' IS NOT NULL\n GROUP BY 1, 2 ORDER BY 3 DESC"
+        }
+      ],
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "filterable": true,
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "reparto (%)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "max",
+                "value": 60
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge",
+                  "mode": "basic",
+                  "valueDisplayMode": "text"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "description": "El cruce dice más que las dos por separado: LongSleeve+Trousers es ropa de abrigo, ShortSleeve+Shorts es de calor. Una tasa alta de combinaciones raras (LongSleeve+Shorts) es señal de que el modelo está adivinando, no de moda."
+    },
+    {
+      "type": "row",
+      "title": "Color de la ropa",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "table",
+      "title": "Conjuntos de ropa más vistos",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 15,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT u.v AS \"arriba\", l.v AS \"abajo\",\n       count(*) AS \"events\",\n       round(100.0 * count(*) / sum(count(*)) OVER (), 1) AS \"reparto (%)\"\n  FROM event,\n       LATERAL (SELECT data->'person_attributes'->'upper_color'->>'value') u(v),\n       LATERAL (SELECT data->'person_attributes'->'lower_color'->>'value') l(v)\n WHERE $__unixEpochFilter(start_time)\n   AND u.v IS NOT NULL AND l.v IS NOT NULL\n GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 15"
+        }
+      ],
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "filterable": true,
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "arriba"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "blue": {
+                        "color": "#2C6FD1",
+                        "index": 0
+                      },
+                      "white": {
+                        "color": "#D9DBE0",
+                        "index": 1
+                      },
+                      "black": {
+                        "color": "#26282D",
+                        "index": 2
+                      },
+                      "gray": {
+                        "color": "#8B8F98",
+                        "index": 3
+                      },
+                      "red": {
+                        "color": "#C6362F",
+                        "index": 4
+                      },
+                      "orange": {
+                        "color": "#E8862B",
+                        "index": 5
+                      },
+                      "green": {
+                        "color": "#3B9C4B",
+                        "index": 6
+                      },
+                      "yellow": {
+                        "color": "#D9B310",
+                        "index": 7
+                      },
+                      "pink": {
+                        "color": "#D96BA0",
+                        "index": 8
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 130
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "abajo"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "blue": {
+                        "color": "#2C6FD1",
+                        "index": 0
+                      },
+                      "white": {
+                        "color": "#D9DBE0",
+                        "index": 1
+                      },
+                      "black": {
+                        "color": "#26282D",
+                        "index": 2
+                      },
+                      "gray": {
+                        "color": "#8B8F98",
+                        "index": 3
+                      },
+                      "red": {
+                        "color": "#C6362F",
+                        "index": 4
+                      },
+                      "orange": {
+                        "color": "#E8862B",
+                        "index": 5
+                      },
+                      "green": {
+                        "color": "#3B9C4B",
+                        "index": 6
+                      },
+                      "yellow": {
+                        "color": "#D9B310",
+                        "index": 7
+                      },
+                      "pink": {
+                        "color": "#D96BA0",
+                        "index": 8
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 130
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "reparto (%)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "max",
+                "value": 20
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge",
+                  "mode": "basic",
+                  "valueDisplayMode": "text"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "description": "Cada celda va pintada del color que nombra. Mapear valor a color es correcto **solo aquí**: el color es la categoría, no una escala de magnitud disfrazada. `upper_color` acierta más que `lower_color`: la banda de piernas es más pequeña y se le cuela suelo por debajo de la caja."
+    },
+    {
+      "type": "row",
+      "title": "Todos los atributos",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "table",
+      "title": "Distribución de atributos",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 25,
+        "w": 24,
+        "h": 12
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT k AS \"atributo\", v->>'value' AS \"valor\",\n       count(*) AS \"events\",\n       round(100.0 * count(*) / sum(count(*)) OVER (PARTITION BY k), 1) AS \"reparto (%)\",\n       round(avg((v->>'score')::numeric) * 100, 0) AS \"confianza media (%)\"\n  FROM event, jsonb_each(data->'person_attributes') AS t(k, v)\n WHERE $__unixEpochFilter(start_time)\n   AND jsonb_typeof(v) = 'object'\n GROUP BY 1, 2 ORDER BY 1, 3 DESC"
+        }
+      ],
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": [
+          {
+            "displayName": "atributo",
+            "desc": false
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "filterable": true,
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "reparto (%)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "max",
+                "value": 100
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge",
+                  "mode": "basic",
+                  "valueDisplayMode": "text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "confianza media (%)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "atributo"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 180
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "valor"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 220
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "blue": {
+                        "color": "#2C6FD1",
+                        "index": 0
+                      },
+                      "white": {
+                        "color": "#D9DBE0",
+                        "index": 1
+                      },
+                      "black": {
+                        "color": "#26282D",
+                        "index": 2
+                      },
+                      "gray": {
+                        "color": "#8B8F98",
+                        "index": 3
+                      },
+                      "red": {
+                        "color": "#C6362F",
+                        "index": 4
+                      },
+                      "orange": {
+                        "color": "#E8862B",
+                        "index": 5
+                      },
+                      "green": {
+                        "color": "#3B9C4B",
+                        "index": 6
+                      },
+                      "yellow": {
+                        "color": "#D9B310",
+                        "index": 7
+                      },
+                      "pink": {
+                        "color": "#D96BA0",
+                        "index": 8
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "description": "Dos porcentajes distintos: **reparto** es la cuota del valor dentro de su atributo (suman 100 por atributo); **confianza media** es el score del modelo. Poco reparto + poca confianza es ruido, no una tendencia. `updated_at` es un número y no un objeto, de ahí el filtro `jsonb_typeof`."
+    },
+    {
+      "type": "row",
+      "title": "Fiabilidad: repetibilidad entre vueltas del bucle",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 37,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "table",
+      "title": "Ruido del modelo sobre entrada idéntica",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 38,
+        "w": 24,
+        "h": 11
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH v AS (\n  SELECT floor(start_time / 299.1) AS vuelta,\n         t.k AS atributo, t.v->>'value' AS valor\n    FROM event, jsonb_each(data->'person_attributes') AS t(k, v)\n   WHERE $__unixEpochFilter(start_time)\n     AND jsonb_typeof(t.v) = 'object'),\nc AS (\n  SELECT vuelta, atributo, valor, count(*) AS n,\n         sum(count(*)) OVER (PARTITION BY vuelta, atributo) AS n_attr\n    FROM v GROUP BY 1, 2, 3)\nSELECT atributo AS \"atributo\", valor AS \"valor\",\n       round(avg(100.0 * n / n_attr), 1) AS \"cuota media (%)\",\n       round(stddev(100.0 * n / n_attr), 1) AS \"ruido (pp)\",\n       count(*) AS \"vueltas\"\n  FROM c GROUP BY 1, 2 HAVING count(*) >= 5\n ORDER BY 4 DESC NULLS LAST"
+        }
+      ],
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "filterable": true,
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cuota media (%)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "max",
+                "value": 100
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "text"
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge",
+                  "mode": "basic",
+                  "valueDisplayMode": "text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ruido (pp)"
+            },
+            "properties": [
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "max",
+                "value": 10
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 4
+                    },
+                    {
+                      "color": "red",
+                      "value": 7
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "description": "El vídeo es el mismo en cada vuelta de 299,1 s, así que la verdad no cambia: **toda esta desviación es ruido del clasificador**. Léelo como el margen de error de los paneles de arriba — si la cuota de un valor se mueve menos que su ruido, no ha pasado nada. Medido: `bag` ±8,8 pp y `gender` ±6,1 pp, que es mucho para un binario sobre entrada idéntica."
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}

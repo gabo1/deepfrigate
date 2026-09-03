@@ -1,0 +1,1574 @@
+{
+  "title": "Analítica DeepFrigate (en vivo)",
+  "uid": "analitica-deepfrigate",
+  "description": "Analítica calculada en vivo por el detection-adapter de DeepFrigate (DeepStream YOLO26 + NvDCF). Todas las consultas están acotadas a motor=\"deepfrigate\"; el histórico de Savant del 26-31 ago vive en el dashboard `analitica` bajo motor=\"savant\" y un job huérfano sin label. Ver docs/ANALITICAS-FUENTES.md.",
+  "tags": [
+    "deepfrigate",
+    "analitica",
+    "supervision"
+  ],
+  "timezone": "browser",
+  "refresh": "10s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Estado ahora",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Objetos activos",
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "sv_objetos_activos{motor=\"deepfrigate\"}",
+          "legendFormat": "{{camera}}"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "En area_cajas",
+      "gridPos": {
+        "x": 4,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "sv_zona_presentes{motor=\"deepfrigate\"}",
+          "legendFormat": "{{zona}}"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 3
+              },
+              {
+                "color": "red",
+                "value": 4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Aforo instantáneo. El umbral de overcrowding de la zona es 4."
+    },
+    {
+      "type": "stat",
+      "title": "Merodeo ahora",
+      "gridPos": {
+        "x": 8,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "sv_merodeo_ahora{motor=\"deepfrigate\"}",
+          "legendFormat": "{{camera}}"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Tracks con permanencia ≥ 15 s en una zona con `loitering_threshold_s`. Mismo umbral que el `supera_s: 15` de Savant, para que la serie sea comparable con el histórico."
+    },
+    {
+      "type": "stat",
+      "title": "Estacionarios",
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "sv_estacionarios{motor=\"deepfrigate\"}",
+          "legendFormat": "{{camera}}"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "purple"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Cruces entrada (5 min)",
+      "gridPos": {
+        "x": 16,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "increase(sv_cruces_entrada_total{motor=\"deepfrigate\"}[5m])",
+          "legendFormat": "{{camera}}"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Cruces salida (5 min)",
+      "gridPos": {
+        "x": 20,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "increase(sv_cruces_salida_total{motor=\"deepfrigate\"}[5m])",
+          "legendFormat": "{{camera}}"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "row",
+      "title": "Aforo y permanencia en ROI",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Aforo por zona",
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sv_zona_presentes{motor=\"deepfrigate\"}",
+          "legendFormat": "{{zona}}"
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "gradientMode": "none",
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "La línea roja es el umbral de overcrowding configurado en config/zones.json."
+    },
+    {
+      "type": "timeseries",
+      "title": "Permanencia en ROI (por visita)",
+      "gridPos": {
+        "x": 12,
+        "y": 6,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sv_zona_permanencia_max_s{motor=\"deepfrigate\"}",
+          "legendFormat": "máx · {{zona}}"
+        },
+        {
+          "expr": "sv_zona_permanencia_media_s{motor=\"deepfrigate\"}",
+          "legendFormat": "media · {{zona}}"
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "gradientMode": "none"
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "máx · area_cajas"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "media · area_cajas"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "description": "Tiempo dentro del polígono, por visita. NO es `end_time - start_time` de un Event de Frigate, que es la duración del track: eso está en \"Events más largos\", abajo. Dos cantidades distintas."
+    },
+    {
+      "type": "row",
+      "title": "Zonas, líneas y dirección",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "state-timeline",
+      "title": "Overcrowding: estado",
+      "gridPos": {
+        "x": 0,
+        "y": 15,
+        "w": 24,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "df_overcrowding_state{motor=\"deepfrigate\"}",
+          "legendFormat": "{{zona}}"
+        }
+      ],
+      "options": {
+        "showValue": "never",
+        "mergeValues": true,
+        "alignValue": "left",
+        "rowHeight": 0.9,
+        "legend": {
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "normal",
+                  "index": 0
+                },
+                "1": {
+                  "text": "overcrowding",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 0
+          }
+        },
+        "overrides": []
+      },
+      "description": "Estado con histéresis: entra en `count >= 4`, sale en `count <= 2`, y el cambio tiene que aguantar 10 s. Antes, con flanco desnudo en `count >= 4`, el aforo oscilando entre 3 y 4 producía ~14 flancos cada 10 min, un Event de Frigate cada uno. Los 10 s salen de muestrear el aforo a 1 Hz: los bajones por debajo del umbral de salida duraron 8 s."
+    },
+    {
+      "type": "timeseries",
+      "title": "Overcrowding: flancos (5 min)",
+      "gridPos": {
+        "x": 0,
+        "y": 19,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "increase(df_overcrowding_total{motor=\"deepfrigate\"}[5m])",
+          "legendFormat": "supera · {{zona}}"
+        },
+        {
+          "expr": "increase(df_overcrowding_clear_total{motor=\"deepfrigate\"}[5m])",
+          "legendFormat": "normaliza · {{zona}}"
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "gradientMode": "none",
+            "barAlignment": 0
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "supera · area_cajas"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "normaliza · area_cajas"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "description": "Flancos, no estado (el estado está arriba). Con histéresis deberían ser pocos; un reinicio del adapter vuelve a flanco limpio y resetea los counters."
+    },
+    {
+      "type": "timeseries",
+      "title": "Entradas y salidas de zona (por minuto)",
+      "gridPos": {
+        "x": 12,
+        "y": 19,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "rate(df_zone_enter_total{motor=\"deepfrigate\"}[2m]) * 60",
+          "legendFormat": "entra · {{zona}}"
+        },
+        {
+          "expr": "rate(df_zone_exit_total{motor=\"deepfrigate\"}[2m]) * 60",
+          "legendFormat": "sale · {{zona}}"
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "gradientMode": "none"
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "entra · area_cajas"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "sale · area_cajas"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Cruces de línea (por minuto)",
+      "gridPos": {
+        "x": 0,
+        "y": 27,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "rate(sv_cruces_entrada_total{motor=\"deepfrigate\"}[2m]) * 60",
+          "legendFormat": "entrada"
+        },
+        {
+          "expr": "rate(sv_cruces_salida_total{motor=\"deepfrigate\"}[2m]) * 60",
+          "legendFormat": "salida"
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "gradientMode": "none"
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "entrada"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "salida"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "description": "Línea `pasillo_cajas`. Un cruce por track como máximo: el LineEngine marca la línea como cruzada y no la reevalúa."
+    },
+    {
+      "type": "timeseries",
+      "title": "Coincidencias de dirección (5 min)",
+      "gridPos": {
+        "x": 12,
+        "y": 27,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "increase(df_direction_match_total{motor=\"deepfrigate\"}[5m])",
+          "legendFormat": "{{direccion}}"
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "gradientMode": "none",
+            "barAlignment": 0
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "description": "Una vez por track, ±45° sobre el rumbo configurado."
+    },
+    {
+      "type": "row",
+      "title": "Distribución de permanencia por visita",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 35,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Percentiles de permanencia",
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum by (le, zona) (rate(df_zone_dwell_seconds_bucket{motor=\"deepfrigate\"}[10m])))",
+          "legendFormat": "p50 · {{zona}}"
+        },
+        {
+          "expr": "histogram_quantile(0.9, sum by (le, zona) (rate(df_zone_dwell_seconds_bucket{motor=\"deepfrigate\"}[10m])))",
+          "legendFormat": "p90 · {{zona}}"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, zona) (rate(df_zone_dwell_seconds_bucket{motor=\"deepfrigate\"}[10m])))",
+          "legendFormat": "p99 · {{zona}}"
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "gradientMode": "none"
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p50 · area_cajas"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "light-blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p90 · area_cajas"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "p99 · area_cajas"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "dark-blue"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "description": "Solo visitas CERRADAS (se observa en el zone_exit). Tiempo dentro del polígono, por visita. NO es `end_time - start_time` de un Event de Frigate, que es la duración del track: eso está en \"Events más largos\", abajo. Dos cantidades distintas."
+    },
+    {
+      "type": "timeseries",
+      "title": "Visitas cerradas (por minuto)",
+      "gridPos": {
+        "x": 12,
+        "y": 36,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "rate(df_zone_dwell_seconds_count{motor=\"deepfrigate\"}[5m]) * 60",
+          "legendFormat": "{{zona}}"
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisBorderShow": false,
+            "gradientMode": "none"
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "row",
+      "title": "Events de Frigate (SQL, no Prometheus)",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 44,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Events por 5 min",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 45,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroupAlias(ts, '5m'),\n       label AS metric,\n       count(*) AS value\n  FROM (SELECT to_timestamp(start_time) AS ts, label\n          FROM event\n         WHERE $__unixEpochFilter(start_time)) e\n GROUP BY 1, 2\n ORDER BY 1"
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "axisBorderShow": false
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "description": "Un Event de Frigate por objeto seguido en TODA la cámara, no solo dentro de `area_cajas`: por eso hay muchos más Events que gente en la zona de cajas. Se aproximan a personas distintas (solo el 0,1 % parecen reanudaciones de un track perdido), pero quien pasa dos veces cuenta dos."
+    },
+    {
+      "type": "table",
+      "title": "Events por zona",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 45,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT jsonb_array_elements_text(zones) AS \"zona\",\n       count(*) AS \"events\",\n       round(avg(end_time - start_time)::numeric, 1) AS \"duración media (s)\"\n  FROM event\n WHERE $__unixEpochFilter(start_time)\n GROUP BY 1\n ORDER BY 2 DESC"
+        }
+      ],
+      "options": {},
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "filterable": true,
+            "align": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "description": "“Pasó por la zona”, no aforo. El aforo instantáneo es `sv_zona_presentes`, arriba. Tabla y no gráfico de barras porque hoy solo hay una zona configurada."
+    },
+    {
+      "type": "stat",
+      "title": "Events en el rango",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 53,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) FILTER (WHERE start_time >= $__unixEpochFrom())\n         AS \"Events\",\n       count(*) FILTER (WHERE start_time < $__unixEpochFrom())\n         AS \"Periodo previo\"\n  FROM event\n WHERE camera = 'tienda'\n   AND start_time >= $__unixEpochFrom()\n                   - ($__unixEpochTo() - $__unixEpochFrom())\n   AND start_time <= $__unixEpochTo()"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "description": "El segundo número es la ventana inmediatamente anterior, del mismo tamaño: sirve para saber si el rango que estás mirando es alto o bajo para esta cámara. Cuenta Events, no personas."
+    },
+    {
+      "type": "stat",
+      "title": "Cámara más activa",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 53,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT camera AS \"cámara\", count(*) AS \"events\"\n  FROM event\n WHERE $__unixEpochFilter(start_time)\n GROUP BY 1 ORDER BY 2 DESC LIMIT 1"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "description": "Hoy solo hay una cámara configurada (`tienda`), así que este panel dirá siempre lo mismo hasta que se añada otra."
+    },
+    {
+      "type": "stat",
+      "title": "Objeto más frecuente",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 53,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT label AS \"etiqueta\", count(*) AS \"events\"\n  FROM event\n WHERE $__unixEpochFilter(start_time)\n GROUP BY 1 ORDER BY 2 DESC LIMIT 1"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "description": "El pipeline solo publica `person` a día de hoy; cambiará cuando el detector emita más clases."
+    },
+    {
+      "type": "stat",
+      "title": "Hora punta",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 53,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT to_char(to_timestamp(start_time), 'HH24') || ':00'\n         AS \"hora\",\n       count(*) AS \"events\"\n  FROM event\n WHERE $__unixEpochFilter(start_time)\n GROUP BY 1 ORDER BY 2 DESC LIMIT 1"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "description": "⚠️ Mientras la fuente sea `fakecam` esto NO significa nada: es un clip de 299 s en bucle, así que el tráfico es idéntico a todas horas y la “hora punta” es la que más vueltas cupieron, no la que más gente hubo. Tendrá sentido con cámara real. La hora va en UTC."
+    },
+    {
+      "type": "table",
+      "title": "Events más largos (duración del track)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 57,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT to_timestamp(start_time) AS \"inicio\",\n       camera AS \"cámara\",\n       label AS \"etiqueta\",\n       round((end_time - start_time)::numeric, 1) AS \"duración (s)\",\n       id\n  FROM event\n WHERE end_time IS NOT NULL\n   AND $__unixEpochFilter(start_time)\n ORDER BY (end_time - start_time) DESC\n LIMIT 10"
+        }
+      ],
+      "options": {},
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "filterable": true,
+            "align": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "description": "Duración del TRACK (`end_time - start_time`), NO permanencia en zona. El addon deprecado lo llamaba “Longest Events (Dwell Time)” y el nombre engañaba: en esta base hay un Event de 36.570 s (10 h) de un track que nunca cerró bien. La permanencia real en el polígono es `sv_zona_permanencia_*`."
+    },
+    {
+      "type": "row",
+      "title": "Heatmap espacial (imagen de platform-api)",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 65,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "text",
+      "title": "Rutas — por dónde se camina",
+      "gridPos": {
+        "x": 0,
+        "y": 66,
+        "w": 12,
+        "h": 13
+      },
+      "options": {
+        "mode": "html",
+        "content": "<img src=\"/api/datasources/proxy/uid/deepfrigate-platform-api/v1/heatmap/tienda.jpg?weight=count&zones=true&start=$__from&end=$__to\" style=\"width:100%;height:auto;display:block\" alt=\"Rutas — por dónde se camina\">"
+      },
+      "description": "Conteo de puntos de `path_data` por celda. OJO: `path_data` emite un punto por DISTANCIA recorrida, no por tiempo, así que este mapa es ciego a quien se para — alguien quieto 60 s aporta un punto igual que quien pasa de largo. Para eso está el panel de al lado."
+    },
+    {
+      "type": "text",
+      "title": "Permanencia — dónde se para la gente",
+      "gridPos": {
+        "x": 12,
+        "y": 66,
+        "w": 12,
+        "h": 13
+      },
+      "options": {
+        "mode": "html",
+        "content": "<img src=\"/api/datasources/proxy/uid/deepfrigate-platform-api/v1/heatmap/tienda.jpg?weight=dwell&zones=true&start=$__from&end=$__to\" style=\"width:100%;height:auto;display:block\" alt=\"Permanencia — dónde se para la gente\">"
+      },
+      "description": "Cada punto pesa los segundos hasta el siguiente. Tope de 30 s por tramo: está justo por encima del p99 medido (27,4 s sobre 93.110 tramos), así que solo recorta el 1 % más sospechoso de ser oclusión. Medido: el 32,1 % de toda la permanencia cae FUERA de `area_cajas`, invisible para el resto de métricas. El polígono blanco y la línea cian son `zones.json`: si no abrazan los focos, la geometría está mal dibujada."
+    },
+    {
+      "type": "row",
+      "title": "Salud del exporter",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 79,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Scrape",
+      "gridPos": {
+        "x": 0,
+        "y": 80,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "up{job=\"analitica_deepfrigate\"}",
+          "legendFormat": "{{instance}}"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN",
+                  "color": "red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "UP",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Coste por mensaje",
+      "gridPos": {
+        "x": 6,
+        "y": 80,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "sv_proc_ms_por_mensaje{motor=\"deepfrigate\"}",
+          "legendFormat": "{{camera}}"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "decimals": 2,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "description": "EWMA del tiempo de proceso de un mensaje MQTT en el adapter."
+    },
+    {
+      "type": "stat",
+      "title": "Objetos vistos (1 h)",
+      "gridPos": {
+        "x": 12,
+        "y": 80,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "increase(sv_objetos_vistos_total{motor=\"deepfrigate\"}[1h])",
+          "legendFormat": "{{camera}}"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Confianza media",
+      "gridPos": {
+        "x": 18,
+        "y": 80,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "expr": "sv_confianza_media{motor=\"deepfrigate\"}",
+          "legendFormat": "{{camera}}"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 2,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}

@@ -1,0 +1,16 @@
+apiVersion: 1
+datasources:
+  # No es una fuente de metricas: se usa como PROXY. platform-api escucha solo
+  # en 127.0.0.1:8082 del host, asi que el navegador no lo alcanza. Grafana si
+  # (comparte la red deepfrigate_default), y su proxy de datasource reutiliza
+  # la sesion del usuario, de modo que la imagen no queda expuesta sin auth.
+  - name: DeepFrigate Platform API
+    uid: deepfrigate-platform-api
+    type: prometheus
+    access: proxy
+    url: http://platform-api:8080
+    isDefault: false
+    editable: false
+    jsonData:
+      httpMethod: GET
+      manageAlerts: false

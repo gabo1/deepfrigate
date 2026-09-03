@@ -1,0 +1,23 @@
+apiVersion: 1
+datasources:
+  - name: Frigate smoke (PG)
+    uid: frigate-smoke-pg
+    type: grafana-postgresql-datasource
+    access: proxy
+    # La base vive en deepfrigate_default; grafana esta conectada a esa red
+    # ademas de a observabilidad_default. Ver docker-compose.yml.
+    #
+    # La contrasena NO se versiona: Grafana expande ${VAR} en los ficheros de
+    # provisioning desde el entorno del contenedor. Va en observabilidad/.env,
+    # que esta en .gitignore. Es el usuario `grafana_ro`, solo SELECT.
+    url: pgvector-smoke-db:5432
+    user: grafana_ro
+    database: frigate_pgvector_smoke
+    isDefault: false
+    editable: false
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: false
+    secureJsonData:
+      password: "${GRAFANA_RO_PASSWORD}"
