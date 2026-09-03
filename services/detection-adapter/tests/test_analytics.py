@@ -296,3 +296,51 @@ def test_crowd_engine_rejects_useless_settings() -> None:
         CrowdEngine(zones, clear_margin=0)
     with pytest.raises(ValueError):
         CrowdEngine(zones, hold_s=-1)
+
+
+def test_prune_drops_tracks_the_lifecycle_forgot() -> None:
+    """La fuga que dejó el aforo en 48 con 6 objetos activos.
+
+    `Lifecycle.expire()` borra sin emitir END los tracks que nunca llegaron a
+    START, y `ZoneEngine.end()` -- la única limpieza -- cuelga del END.
+    """
+    from app.lifecycle import Lifecycle
+
+    clock = {"t": 1000.0}
+    life = Lifecycle(lost_after=5, end_after=5, clock=lambda: clock["t"],
+                     detect_fps=5)
+    zones = ZoneEngine(CROWD_CONFIG)
+    lines = LineEngine(CONFIG)
+    directions = DirectionEngine(CONFIG)
+
+    for track_id in range(1, 31):          # vistos una vez: nunca arrancan
+        clock["t"] += 1
+        detection = person(track_id, clock["t"], 40)
+        life.observe(detection)
+        zones.observe(detection)
+        lines.observe(detection)
+        directions.observe(detection)
+
+    clock["t"] += 60
+    assert [u for u in life.expire()
+            if u["data"]["lifecycle_event"] == "END"] == []
+    assert life.live_keys() == set()
+    assert zones.occupancy("tienda")["cajas"] == 30      # la fuga
+
+    assert zones.prune(life.live_keys()) == 30
+    lines.prune(life.live_keys())
+    directions.prune(life.live_keys())
+    assert zones.occupancy("tienda") == {}
+    assert zones._tracks == {}
+
+
+def test_prune_keeps_live_tracks_and_their_history() -> None:
+    zones = ZoneEngine(CROWD_CONFIG)
+    zones.observe(person(1, 0, 40))
+    zones.end("tienda", 1, 10)                # visita cerrada: 10 s
+    zones.observe(person(2, 20, 40))          # sigue viva
+
+    assert zones.prune({("tienda", 2)}) == 0
+    stats = zones.snapshot("tienda")["zones"]["cajas"]
+    assert stats["presentes"] == 1
+    assert stats["permanencia_max_s"] == 10.0  # el histórico no se toca

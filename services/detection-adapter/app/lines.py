@@ -94,6 +94,15 @@ class LineEngine:
             )
         return updates
 
+    def prune(self, live: set[tuple[str, int]]) -> int:
+        """Misma poda que en ZoneEngine: los tracks que nunca llegaron a
+        START no emiten END, asi que `end()` nunca los limpia."""
+        dead = [key for key in self._last if key not in live]
+        for key in dead:
+            self._last.pop(key, None)
+            self._crossed.pop(key, None)
+        return len(dead)
+
     def end(self, camera_id: str, track_id: int) -> None:
         key = (camera_id, track_id)
         self._last.pop(key, None)

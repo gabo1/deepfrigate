@@ -229,6 +229,24 @@ class ZoneEngine:
             )
         return updates
 
+    def prune(self, live: set[tuple[str, int]]) -> int:
+        """Suelta los tracks que el Lifecycle ya no conoce.
+
+        Sin esto `occupancy()` crece sin parar: `Lifecycle.expire()` borra sin
+        emitir END los tracks que nunca llegaron a START, y `end()` -- la unica
+        limpieza -- cuelga precisamente del END. Medido en el lab: el aforo de
+        `area_cajas` subio a 48 con 6 objetos activos, y dejo el overcrowding
+        pegado en 1. Es la misma fuga que Savant documenta en `primitivas.py`.
+
+        La visita NO se pliega en el historico: estos tracks nunca fueron
+        objetos confirmados, y contarlos ensuciaria la permanencia con visitas
+        fantasma.
+        """
+        dead = [key for key in self._tracks if key not in live]
+        for key in dead:
+            del self._tracks[key]
+        return len(dead)
+
     def _fold(self, camera_id: str, zone_name: str, dwell: float) -> None:
         """Close one visit into the per-zone history."""
         if dwell <= 0:

@@ -204,6 +204,16 @@ class Adapter:
         if now - self._last_refresh < self._refresh_interval:
             return
         self._last_refresh = now
+
+        # Podar ANTES de leer los gauges. Si no, `occupancy()` cuenta tracks
+        # que el Lifecycle ya enterró sin END (los que nunca llegaron a START)
+        # y el aforo sube sin bajar nunca.
+        live = self.lifecycle.live_keys()
+        dropped = (self.zones.prune(live) + self.lines.prune(live)
+                   + self.directions.prune(live))
+        if dropped:
+            logger.debug("Podados %s tracks huérfanos", dropped)
+
         for camera in set(self.zones.cameras()) | self.lifecycle.cameras():
             self.metrics.refresh(
                 camera,

@@ -216,6 +216,16 @@ class Lifecycle:
     def cameras(self) -> set[str]:
         return {camera_id for camera_id, _ in self._tracks}
 
+    def live_keys(self) -> set[tuple[str, int]]:
+        """Claves (camara, track) que este Lifecycle sigue conociendo.
+
+        Los motores de geometria se podan contra esto. Hace falta porque
+        `expire()` borra en silencio los tracks que nunca llegaron a START
+        (menos de `min_initialized` aciertos): no emiten END, asi que nadie
+        avisa a ZoneEngine de que han muerto.
+        """
+        return set(self._tracks)
+
     def snapshot(self, camera_id: str) -> dict[str, float]:
         """Started tracks that are not LOST, for the live gauges.
 
