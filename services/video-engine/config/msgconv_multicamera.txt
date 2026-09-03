@@ -4,13 +4,32 @@ type=Camera
 id=tienda
 description=Tienda
 
+[sensor1]
+enable=1
+type=Camera
+id=user
+description=User
+
 [place0]
 enable=1
 id=tienda
 type=retail
 name=Tienda
 
+[place1]
+enable=1
+id=user
+type=retail
+name=User
+
 [analytics0]
+enable=1
+id=deepfrigate-yolo26
+description=YOLO26 object detection and NvTracker
+source=DeepFrigate
+version=1.0
+
+[analytics1]
 enable=1
 id=deepfrigate-yolo26
 description=YOLO26 object detection and NvTracker

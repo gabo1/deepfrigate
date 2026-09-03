@@ -347,6 +347,7 @@ services:
         condition: service_healthy
     environment:
       RTSP_TIENDA: ${RTSP_TIENDA:-rtsp://frigate:8554/tienda}
+      RTSP_USER: ${RTSP_USER:-rtsp://100.83.231.97:8554/user}
       PIPELINE_CONFIG: /opt/deepfrigate/config/pipeline.yaml
       PIPELINE_SCHEMA: /opt/contracts/pipeline.schema.json
       ZONES_CONFIG: /opt/config/zones.json

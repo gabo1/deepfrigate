@@ -7,6 +7,9 @@ pipeline:
     - id: tienda
       source_env: RTSP_TIENDA
       gpu: 0
+    - id: user
+      source_env: RTSP_USER
+      gpu: 0
 
   detection:
     model: object-detector
