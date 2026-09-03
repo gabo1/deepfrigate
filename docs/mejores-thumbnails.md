@@ -77,6 +77,15 @@ Si el thumb de DS aún no está, recorta el jpg con el bbox del MQTT y la **mism
 
 El `track_id` lo saca del `object_id` (`tienda-42` → `42`).
 
+El destino **no** es `data/`. `FRIGATE_CLIPS_DIR` es `/media/frigate/clips` dentro del contenedor. Ese mount lo elige `FRIGATE_BRIDGE_MEDIA_VOLUME` (`compose.yaml` → volumen `frigate-bridge-media`):
+
+| Destino | Volumen | Quién lo lee |
+|---|---|---|
+| Lab `:3005` | `frigate-pg_pgvector-smoke-media` | `frigate-pgvector-smoke` |
+| Default / NVR producto | `deepfrigate_frigate-media` | `deepfrigate-frigate-1` |
+
+Si se recrea `event-engine` sin `FRIGATE_BRIDGE_MEDIA_VOLUME=frigate-pg_pgvector-smoke-media`, el crop (~5 KiB) cae en el volumen del NVR y Explore en `:3005` sigue mostrando el WebP que Frigate saca de la grabación (escena, ~70 KiB). El recorte no se rompe: se escribe en el disco equivocado. Comando y diagnóstico: `HANDOFF.md`.
+
 ---
 
 ## Qué no entra aquí

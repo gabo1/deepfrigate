@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
+from threading import Lock
 from typing import Any
 
 import psycopg
@@ -15,14 +16,25 @@ class FrigateEventStore:
         self.db_path = db_path
         self.timeout = timeout
         self.is_postgresql = db_path.startswith(("postgres://", "postgresql://"))
+        self._pg: psycopg.Connection | None = None
+        self._pg_lock = Lock()
 
     def _connect(self) -> sqlite3.Connection | psycopg.Connection:
         if self.is_postgresql:
-            return psycopg.connect(self.db_path, connect_timeout=int(self.timeout))
+            return self._postgres()
         connection = sqlite3.connect(self.db_path, timeout=self.timeout)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA busy_timeout = 30000")
         return connection
+
+    def _postgres(self) -> psycopg.Connection:
+        if self._pg is None or self._pg.closed:
+            connection = psycopg.connect(
+                self.db_path, connect_timeout=int(self.timeout)
+            )
+            connection.autocommit = True
+            self._pg = connection
+        return self._pg
 
     def wait_for_event(self, event_id: str, timeout: float = 5) -> dict[str, Any] | None:
         deadline = time.monotonic() + timeout
@@ -34,15 +46,16 @@ class FrigateEventStore:
         return None
 
     def get_event(self, event_id: str) -> dict[str, Any] | None:
-        with self._connect() as connection:
-            if self.is_postgresql:
-                with connection.cursor() as cursor:
+        if self.is_postgresql:
+            with self._pg_lock:
+                with self._postgres().cursor() as cursor:
                     cursor.execute(
                         "SELECT id, data, zones FROM event WHERE id = %s",
                         (event_id,),
                     )
                     row = cursor.fetchone()
-            else:
+        else:
+            with self._connect() as connection:
                 row = connection.execute(
                     "SELECT id, data, zones FROM event WHERE id = ?",
                     (event_id,),
@@ -112,56 +125,57 @@ class FrigateEventStore:
             assignments.append("end_time = ?")
             values.append(float(end_time))
         values.append(event_id)
-        with self._connect() as connection:
-            if self.is_postgresql:
-                assignments = [
-                    assignment.replace("?", "%s::jsonb")
-                    if assignment.startswith(("data =", "zones =", "box =", "region ="))
-                    else assignment.replace("?", "%s")
-                    for assignment in assignments
-                ]
-                with connection.cursor() as cursor:
+        if self.is_postgresql:
+            assignments = [
+                assignment.replace("?", "%s::jsonb")
+                if assignment.startswith(("data =", "zones =", "box =", "region ="))
+                else assignment.replace("?", "%s")
+                for assignment in assignments
+            ]
+            with self._pg_lock:
+                with self._postgres().cursor() as cursor:
                     cursor.execute(
                         f"UPDATE event SET {', '.join(assignments)} WHERE id = %s",
                         values,
                     )
-                    updated = cursor.rowcount == 1
-            else:
-                cursor = connection.execute(
-                    f"UPDATE event SET {', '.join(assignments)} WHERE id = ?",
-                    values,
-                )
-                updated = cursor.rowcount == 1
+                    return cursor.rowcount == 1
+        with self._connect() as connection:
+            cursor = connection.execute(
+                f"UPDATE event SET {', '.join(assignments)} WHERE id = ?",
+                values,
+            )
+            updated = cursor.rowcount == 1
             connection.commit()
             return updated
 
     def replace_api_timeline(self, event_id: str) -> None:
-        with self._connect() as connection:
-            if self.is_postgresql:
-                with connection.cursor() as cursor:
+        if self.is_postgresql:
+            with self._pg_lock:
+                with self._postgres().cursor() as cursor:
                     cursor.execute(
                         "DELETE FROM timeline WHERE source_id = %s AND class_type = 'external'",
                         (event_id,),
                     )
-            else:
-                connection.execute(
-                    "DELETE FROM timeline WHERE source_id = ? AND class_type = 'external'",
-                    (event_id,),
-                )
+            return
+        with self._connect() as connection:
+            connection.execute(
+                "DELETE FROM timeline WHERE source_id = ? AND class_type = 'external'",
+                (event_id,),
+            )
             connection.commit()
 
     def add_timeline(self, entry: dict[str, Any]) -> None:
-        with self._connect() as connection:
-            values = (
-                float(entry["timestamp"]),
-                str(entry["camera"]),
-                str(entry.get("source") or "tracked_object"),
-                str(entry["source_id"]),
-                str(entry["class_type"]),
-                json.dumps(entry.get("data") or {}, separators=(",", ":")),
-            )
-            if self.is_postgresql:
-                with connection.cursor() as cursor:
+        values = (
+            float(entry["timestamp"]),
+            str(entry["camera"]),
+            str(entry.get("source") or "tracked_object"),
+            str(entry["source_id"]),
+            str(entry["class_type"]),
+            json.dumps(entry.get("data") or {}, separators=(",", ":")),
+        )
+        if self.is_postgresql:
+            with self._pg_lock:
+                with self._postgres().cursor() as cursor:
                     cursor.execute(
                         """
                         INSERT INTO timeline
@@ -170,15 +184,16 @@ class FrigateEventStore:
                         """,
                         values,
                     )
-            else:
-                connection.execute(
-                    """
-                    INSERT INTO timeline
-                        (timestamp, camera, source, source_id, class_type, data)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    """,
-                    values,
-                )
+            return
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO timeline
+                    (timestamp, camera, source, source_id, class_type, data)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                values,
+            )
             connection.commit()
 
 

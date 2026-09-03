@@ -95,6 +95,28 @@ def test_dwell_updates_are_deduplicated_per_zone_visit() -> None:
     assert first["id"] != next_bucket["id"]
 
 
+def test_line_crowd_and_direction_map_to_domain_names() -> None:
+    normalizer = EventNormalizer()
+
+    assert normalizer.normalize(
+        update("line", {"event": "line_in", "line": "pasillo_cajas"})
+    )["event_type"] == "line_crossed_in"
+    assert normalizer.normalize(
+        update("line", {"event": "line_out", "line": "pasillo_cajas"})
+    )["event_type"] == "line_crossed_out"
+    crowded = normalizer.normalize(
+        update(
+            "overcrowding",
+            {"event": "overcrowding", "zone": "area_cajas", "count": 4},
+        )
+    )
+    assert crowded["event_type"] == "overcrowding"
+    assert crowded["severity"] == "warning"
+    assert normalizer.normalize(
+        update("direction", {"event": "direction_match", "direction": "hacia_cajas"})
+    )["event_type"] == "direction_match"
+
+
 def test_optional_event_sources_are_filtered() -> None:
     normalizer = EventNormalizer()
 

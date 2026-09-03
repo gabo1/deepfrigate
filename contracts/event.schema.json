@@ -27,7 +27,12 @@
         "object_stationary",
         "specific_plate",
         "visual_match",
-        "dwell_time"
+        "dwell_time",
+        "line_crossed_in",
+        "line_crossed_out",
+        "overcrowding",
+        "overcrowding_clear",
+        "direction_match"
       ]
     },
     "object_id": {"type": "string", "minLength": 1},
@@ -40,7 +45,10 @@
         "zone",
         "stationary",
         "plate",
-        "visual_match"
+        "visual_match",
+        "line",
+        "overcrowding",
+        "direction"
       ]
     },
     "severity": {"enum": ["info", "warning", "critical"]},

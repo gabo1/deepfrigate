@@ -220,6 +220,44 @@ def test_end_closes_active_manual_event(monkeypatch):
     assert repository.links[detected_event()["id"]]["state"] == "ended"
 
 
+def test_create_500_does_not_block_worker(monkeypatch):
+    repository = FakeRepository()
+    store = FakeStore()
+    bridge = FrigateReviewBridge(
+        "http://frigate:5000/api",
+        repository,
+        store=store,
+        camera_sizes={"tienda": (1280, 720)},
+    )
+
+    def fail_create(method, path, payload=None):
+        raise HTTPError(
+            f"http://frigate:5000/api{path}", 500, "Internal Server Error", None, None
+        )
+
+    monkeypatch.setattr(bridge, "_request", fail_create)
+    start = detected_event()
+    bridge.observe(
+        _detection("START", 100.0, false_positive=True, position_changes=0),
+        start,
+    )
+    bridge.observe(_detection("UPDATE", 101.6, **_quality()))
+    assert repository.links[start["id"]]["frigate_event_id"] is None
+    assert store.timeline == []
+    calls = {"n": 0}
+
+    def count_create(method, path, payload=None):
+        calls["n"] += 1
+        raise HTTPError(
+            f"http://frigate:5000/api{path}", 500, "Internal Server Error", None, None
+        )
+
+    monkeypatch.setattr(bridge, "_request", count_create)
+    bridge.observe(_detection("UPDATE", 102.0, **_quality()))
+    bridge.observe(_detection("UPDATE", 102.2, **_quality()))
+    assert calls["n"] == 0
+
+
 def test_missing_frigate_end_does_not_block(monkeypatch):
     repository = FakeRepository()
     bridge = FrigateReviewBridge("http://frigate:5000/api", repository)
@@ -388,6 +426,79 @@ def test_observe_update_appends_path_and_zone(monkeypatch):
     assert [item["class_type"] for item in store.timeline] == [
         "visible",
         "entered_zone",
+    ]
+
+
+def test_analytics_wait_until_event_exists(monkeypatch):
+    repository = FakeRepository()
+    store = FakeStore()
+    bridge = FrigateReviewBridge(
+        "http://frigate:5000/api",
+        repository,
+        store=store,
+        camera_sizes={"tienda": (1280, 720)},
+    )
+    monkeypatch.setattr(
+        bridge,
+        "_request",
+        lambda method, path, payload=None: (
+            [] if method == "GET" else {"event_id": "frigate-event-1"}
+        ),
+    )
+    start = detected_event()
+    bridge.observe(
+        _detection("START", 100.0, false_positive=True, position_changes=0),
+        start,
+    )
+    bbox = {"x": 900, "y": 300, "width": 120, "height": 180}
+    bridge.observe(
+        {
+            "object_id": "tienda-42",
+            "camera_id": "tienda",
+            "timestamp": 100.4,
+            "update_type": "line",
+            "data": {
+                "event": "line_in",
+                "line": "pasillo_cajas",
+                "label": "person",
+                "bbox": bbox,
+            },
+        },
+        {
+            "id": "line-event",
+            "event_type": "line_crossed_in",
+            "object_id": "tienda-42",
+            "camera_id": "tienda",
+            "timestamp": 100.4,
+        },
+    )
+    bridge.observe(
+        {
+            "object_id": "tienda-42",
+            "camera_id": "tienda",
+            "timestamp": 100.5,
+            "update_type": "direction",
+            "data": {
+                "event": "direction_match",
+                "direction": "hacia_cajas",
+                "label": "person",
+                "bbox": bbox,
+            },
+        },
+        {
+            "id": "dir-event",
+            "event_type": "direction_match",
+            "object_id": "tienda-42",
+            "camera_id": "tienda",
+            "timestamp": 100.5,
+        },
+    )
+    assert store.timeline == []
+    bridge.observe(_detection("UPDATE", 101.6, **_quality()))
+    assert [item["class_type"] for item in store.timeline] == [
+        "visible",
+        "line_crossed_in",
+        "direction_match",
     ]
 
 

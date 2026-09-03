@@ -237,6 +237,11 @@ class EventEngine:
                                 "object_entered_zone",
                                 "object_exited_zone",
                                 "object_stationary",
+                                "line_crossed_in",
+                                "line_crossed_out",
+                                "overcrowding",
+                                "overcrowding_clear",
+                                "direction_match",
                                 "specific_plate",
                                 "visual_match",
                             }

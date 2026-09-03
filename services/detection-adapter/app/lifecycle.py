@@ -213,6 +213,33 @@ class Lifecycle:
         self._side_updates = []
         return updates
 
+    def cameras(self) -> set[str]:
+        return {camera_id for camera_id, _ in self._tracks}
+
+    def snapshot(self, camera_id: str) -> dict[str, float]:
+        """Started tracks that are not LOST, for the live gauges.
+
+        A LOST track still sits in _tracks until END_AFTER_SECONDS; counting it
+        as active would keep the aforo up for seconds after the object left.
+        """
+        active = 0
+        stationary = 0
+        confidence = 0.0
+        for (track_camera, _track_id), track in self._tracks.items():
+            if track_camera != camera_id or not track.started:
+                continue
+            if track.lost_at is not None:
+                continue
+            active += 1
+            if track.stationary:
+                stationary += 1
+            confidence += track.detection.confidence
+        return {
+            "active": active,
+            "stationary": stationary,
+            "confidence_mean": (confidence / active) if active else 0.0,
+        }
+
     def observe(self, detection: Detection) -> dict[str, Any] | None:
         now = self._clock()
         key = (detection.camera_id, detection.track_id)

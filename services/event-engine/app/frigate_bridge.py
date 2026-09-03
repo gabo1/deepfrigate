@@ -57,6 +57,9 @@ class _PendingTrack:
     last_update: dict[str, Any] = field(default_factory=dict)
     last_zone: dict[str, Any] | None = None
     last_classification: dict[str, Any] | None = None
+    pending_analytics: list[tuple[dict[str, Any], dict[str, Any]]] = field(
+        default_factory=list
+    )
     created: bool = False
 
 
@@ -90,7 +93,11 @@ class FrigateReviewBridge:
         self._zone_sets: dict[str, set[str]] = {}
         self._pending: dict[str, _PendingTrack] = {}
         self._early_classifications: dict[str, dict[str, Any]] = {}
+        self._early_analytics: dict[
+            str, list[tuple[dict[str, Any], dict[str, Any]]]
+        ] = {}
         self._attribute_items: dict[str, list[tuple[str, str, float]]] = {}
+        self._create_backoff_until: dict[str, float] = {}
 
     def observe(
         self, update: dict[str, Any], event: dict[str, Any] | None = None
@@ -106,6 +113,9 @@ class FrigateReviewBridge:
                 early = self._early_classifications.pop(object_id, None)
                 if early is not None:
                     pending.last_classification = early
+                pending.pending_analytics.extend(
+                    self._early_analytics.pop(object_id, [])
+                )
                 self._pending[object_id] = pending
                 self._maybe_publish(object_id)
             elif lifecycle == "UPDATE":
@@ -140,12 +150,15 @@ class FrigateReviewBridge:
                 pending = self._pending.pop(object_id, None)
                 self._attribute_items.pop(object_id, None)
                 self._early_classifications.pop(object_id, None)
+                self._early_analytics.pop(object_id, None)
                 if pending is not None and pending.created:
                     if not self._is_false_positive(update):
                         self._path(update)
                     self._end(event, last_update=pending.last_update)
         elif update_type == "classification":
             self._classification_update(update)
+        elif update_type in {"line", "overcrowding", "direction"} and event is not None:
+            self._queue_or_write_analytics(update, event)
         elif update_type == "zone" and event is not None:
             object_id = str(update.get("object_id", ""))
             pending = self._pending.get(object_id)
@@ -168,6 +181,10 @@ class FrigateReviewBridge:
         pending.created = bool(link and link.get("frigate_event_id"))
         if pending.created and pending.last_zone is not None:
             self._zones_update(pending.last_zone)
+        if pending.created:
+            for queued_update, queued_event in pending.pending_analytics:
+                self._analytics_timeline(queued_update, queued_event)
+            pending.pending_analytics.clear()
         if pending.created and object_id in self._attribute_items:
             self._persist_classification(
                 object_id,
@@ -236,9 +253,15 @@ class FrigateReviewBridge:
         if self.labels is not None and label not in self.labels:
             return
 
+        if time.monotonic() < self._create_backoff_until.get(start_event_id, 0):
+            return
+
         marker = self._marker(event)
         self.repository.begin_frigate_link(event, marker)
-        frigate_event_id = self._find_event(event["camera_id"], marker)
+        # Do not GET /events on the hot path: that listing exhausts Frigate's
+        # Peewee pool (MaxConnectionsExceeded → API 500) when many tracks
+        # confirm at once. DeepStream events are always created here.
+        frigate_event_id = None
         if frigate_event_id is None:
             score = min(1.0, max(0.0, float(event["data"].get("confidence", 0))))
             box = self._box(event["camera_id"], event["data"].get("bbox"))
@@ -261,17 +284,36 @@ class FrigateReviewBridge:
                     payload,
                 )
             except HTTPError as error:
-                if error.code not in {400, 404}:
-                    raise
+                if error.code in {400, 404}:
+                    logger.warning(
+                        "Skipping Frigate review create for object=%s (%s)",
+                        event["object_id"],
+                        error.code,
+                    )
+                    self.repository.end_frigate_link(
+                        start_event_id, event["timestamp"]
+                    )
+                    return
                 logger.warning(
-                    "Skipping Frigate review create for object=%s (%s)",
+                    "Frigate review create failed for object=%s: %s",
                     event["object_id"],
-                    error.code,
+                    error,
                 )
-                self.repository.end_frigate_link(
-                    start_event_id, event["timestamp"]
+                self._create_backoff_until[start_event_id] = (
+                    time.monotonic() + 30
                 )
                 return
+            except (URLError, TimeoutError, OSError) as error:
+                logger.warning(
+                    "Frigate review create failed for object=%s: %s",
+                    event["object_id"],
+                    error,
+                )
+                self._create_backoff_until[start_event_id] = (
+                    time.monotonic() + 30
+                )
+                return
+            self._create_backoff_until.pop(start_event_id, None)
             frigate_event_id = str(response["event_id"])
         self.repository.activate_frigate_link(
             start_event_id, frigate_event_id
@@ -455,6 +497,46 @@ class FrigateReviewBridge:
                 zones=current,
                 object_id=object_id,
             )
+
+    def _queue_or_write_analytics(
+        self, update: dict[str, Any], event: dict[str, Any]
+    ) -> None:
+        object_id = str(update.get("object_id") or event.get("object_id") or "")
+        pending = self._pending.get(object_id)
+        if pending is None:
+            self._early_analytics.setdefault(object_id, []).append(
+                (update, event)
+            )
+            return
+        if not pending.created:
+            pending.pending_analytics.append((update, event))
+            return
+        self._analytics_timeline(update, event)
+
+    def _analytics_timeline(
+        self, update: dict[str, Any], event: dict[str, Any]
+    ) -> None:
+        object_id = str(update.get("object_id") or event.get("object_id") or "")
+        pending = self._pending.get(object_id)
+        if pending is None or not pending.created:
+            return
+        link = self.repository.get_active_frigate_link(object_id)
+        if link is None or not link.get("frigate_event_id"):
+            return
+        data = update.get("data") or {}
+        zones = None
+        zone = data.get("zone")
+        if zone:
+            zones = [str(zone)]
+        self._write_timeline(
+            str(link["frigate_event_id"]),
+            str(update.get("camera_id") or event["camera_id"]),
+            float(update.get("timestamp") or event["timestamp"]),
+            data,
+            str(event["event_type"]),
+            zones=zones,
+            object_id=object_id,
+        )
 
     def _seed_geometry(self, frigate_event_id: str, event: dict[str, Any]) -> None:
         box = self._box(event["camera_id"], event["data"].get("bbox"))
@@ -745,7 +827,15 @@ class FrigateReviewBridge:
     ) -> str | None:
         query = urlencode({"camera": camera_id, "limit": 100})
         for attempt in range(attempts):
-            events = self._request("GET", f"/events?{query}")
+            try:
+                events = self._request("GET", f"/events?{query}")
+            except (HTTPError, URLError, TimeoutError, OSError) as error:
+                logger.warning(
+                    "Frigate event lookup failed camera=%s: %s",
+                    camera_id,
+                    error,
+                )
+                events = []
             for candidate in events:
                 if candidate.get("sub_label") == marker:
                     return str(candidate["id"])

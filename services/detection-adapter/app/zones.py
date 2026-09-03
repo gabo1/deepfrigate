@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .geometry import foot_point
 from .lifecycle import Detection
 
 
@@ -16,6 +17,11 @@ class Zone:
     coordinates: tuple[tuple[float, float], ...]
     objects: frozenset[str]
     inertia: int
+    filter: bool = False
+    overcrowding_threshold: int | None = None
+    overcrowding_clear_threshold: int | None = None
+    overcrowding_hold_s: float | None = None
+    loitering_threshold_s: float | None = None
 
 
 @dataclass
@@ -41,6 +47,10 @@ class ZoneEngine:
         self._dwell_update_interval = dwell_update_interval
         self._cameras: dict[str, tuple[float, float, tuple[Zone, ...]]] = {}
         self._tracks: dict[tuple[str, int], ZoneTrack] = {}
+        # Closed visits, folded per (camera, zone). Without this the exported
+        # permanencia_max_s would reset every time somebody leaves the polygon,
+        # which is the whole reason Savant's Permanencia keeps a _hist.
+        self._history: dict[tuple[str, str], dict[str, float]] = {}
 
         cameras = config.get("cameras", {})
         if not isinstance(cameras, dict):
@@ -66,12 +76,54 @@ class ZoneEngine:
                 inertia = int(raw_zone.get("inertia", 3))
                 if inertia <= 0:
                     raise ValueError(f"{camera_id}.{name} inertia must be positive")
+                threshold = raw_zone.get("overcrowding_threshold")
+                if threshold is not None:
+                    threshold = int(threshold)
+                    if threshold <= 0:
+                        raise ValueError(
+                            f"{camera_id}.{name} overcrowding_threshold "
+                            "must be positive"
+                        )
+                clear_threshold = raw_zone.get("overcrowding_clear_threshold")
+                if clear_threshold is not None:
+                    if threshold is None:
+                        raise ValueError(
+                            f"{camera_id}.{name} overcrowding_clear_threshold "
+                            "needs overcrowding_threshold"
+                        )
+                    clear_threshold = int(clear_threshold)
+                    if not 0 <= clear_threshold < threshold:
+                        raise ValueError(
+                            f"{camera_id}.{name} overcrowding_clear_threshold "
+                            "must be in [0, overcrowding_threshold)"
+                        )
+                hold_s = raw_zone.get("overcrowding_hold_s")
+                if hold_s is not None:
+                    hold_s = float(hold_s)
+                    if hold_s < 0:
+                        raise ValueError(
+                            f"{camera_id}.{name} overcrowding_hold_s "
+                            "must be >= 0"
+                        )
+                loitering = raw_zone.get("loitering_threshold_s")
+                if loitering is not None:
+                    loitering = float(loitering)
+                    if loitering <= 0:
+                        raise ValueError(
+                            f"{camera_id}.{name} loitering_threshold_s "
+                            "must be positive"
+                        )
                 zones.append(
                     Zone(
                         name=name,
                         coordinates=coordinates,
                         objects=frozenset(raw_zone.get("objects", [])),
                         inertia=inertia,
+                        filter=bool(raw_zone.get("filter", False)),
+                        overcrowding_threshold=threshold,
+                        overcrowding_clear_threshold=clear_threshold,
+                        overcrowding_hold_s=hold_s,
+                        loitering_threshold_s=loitering,
                     )
                 )
             self._cameras[camera_id] = (width, height, tuple(zones))
@@ -93,10 +145,7 @@ class ZoneEngine:
         key = (detection.camera_id, detection.track_id)
         track = self._tracks.setdefault(key, ZoneTrack(detection=detection))
         track.detection = detection
-        point = (
-            (detection.bbox["x"] + detection.bbox["width"] / 2) / width,
-            (detection.bbox["y"] + detection.bbox["height"]) / height,
-        )
+        point = foot_point(detection, width, height)
         updates: list[dict[str, Any]] = []
 
         for zone in zones:
@@ -115,6 +164,7 @@ class ZoneEngine:
             elif zone.name in track.current_zones and score == 0:
                 dwell = self._dwell(track, zone.name, detection.timestamp)
                 track.current_zones.remove(zone.name)
+                self._fold(detection.camera_id, zone.name, dwell)
                 updates.append(self._message(track, zone.name, "zone_exit", dwell))
                 track.entry_times.pop(zone.name, None)
                 track.last_dwell_updates.pop(zone.name, None)
@@ -128,6 +178,41 @@ class ZoneEngine:
                     )
         return updates
 
+    def occupancy(self, camera_id: str) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for (track_camera, _track_id), track in self._tracks.items():
+            if track_camera != camera_id:
+                continue
+            for zone_name in track.current_zones:
+                counts[zone_name] = counts.get(zone_name, 0) + 1
+        return counts
+
+    def overcrowding_thresholds(self, camera_id: str) -> dict[str, int]:
+        camera = self._cameras.get(camera_id)
+        if camera is None:
+            return {}
+        return {
+            zone.name: zone.overcrowding_threshold
+            for zone in camera[2]
+            if zone.overcrowding_threshold is not None
+        }
+
+    def overcrowding_rules(self, camera_id: str) -> dict[str, dict[str, Any]]:
+        """Per-zone crowd config. `clear` and `hold_s` are None when the zone
+        does not override the CrowdEngine defaults."""
+        camera = self._cameras.get(camera_id)
+        if camera is None:
+            return {}
+        return {
+            zone.name: {
+                "threshold": zone.overcrowding_threshold,
+                "clear": zone.overcrowding_clear_threshold,
+                "hold_s": zone.overcrowding_hold_s,
+            }
+            for zone in camera[2]
+            if zone.overcrowding_threshold is not None
+        }
+
     def end(
         self, camera_id: str, track_id: int, timestamp: float
     ) -> list[dict[str, Any]]:
@@ -137,16 +222,78 @@ class ZoneEngine:
         updates: list[dict[str, Any]] = []
         for zone_name in sorted(track.current_zones):
             track.current_zones.remove(zone_name)
+            dwell = self._dwell(track, zone_name, timestamp)
+            self._fold(camera_id, zone_name, dwell)
             updates.append(
-                self._message(
-                    track,
-                    zone_name,
-                    "zone_exit",
-                    self._dwell(track, zone_name, timestamp),
-                    timestamp,
-                )
+                self._message(track, zone_name, "zone_exit", dwell, timestamp)
             )
         return updates
+
+    def _fold(self, camera_id: str, zone_name: str, dwell: float) -> None:
+        """Close one visit into the per-zone history."""
+        if dwell <= 0:
+            return
+        entry = self._history.setdefault(
+            (camera_id, zone_name), {"n": 0.0, "sum": 0.0, "max": 0.0}
+        )
+        entry["n"] += 1
+        entry["sum"] += dwell
+        entry["max"] = max(entry["max"], dwell)
+
+    def zone_names(self, camera_id: str) -> tuple[str, ...]:
+        camera = self._cameras.get(camera_id)
+        return tuple(zone.name for zone in camera[2]) if camera else ()
+
+    def cameras(self) -> tuple[str, ...]:
+        return tuple(self._cameras)
+
+    def snapshot(self, camera_id: str) -> dict[str, Any]:
+        """Live occupancy plus permanence stats, per visit.
+
+        Permanence spans closed visits and the ones still open, so the max does
+        not drop when somebody walks out. Open visits are measured against the
+        track's own last timestamp (source PTS), never wall clock: a stalled
+        tracker must not inflate permanencia.
+        """
+        camera = self._cameras.get(camera_id)
+        if camera is None:
+            return {"zones": {}, "loitering": 0}
+        zones = camera[2]
+        thresholds = {
+            zone.name: zone.loitering_threshold_s
+            for zone in zones
+            if zone.loitering_threshold_s is not None
+        }
+        live: dict[str, list[float]] = {zone.name: [] for zone in zones}
+        loitering: set[int] = set()
+        for (track_camera, track_id), track in self._tracks.items():
+            if track_camera != camera_id:
+                continue
+            for zone_name in track.current_zones:
+                dwell = self._dwell(track, zone_name, track.detection.timestamp)
+                live.setdefault(zone_name, []).append(dwell)
+                threshold = thresholds.get(zone_name)
+                if threshold is not None and dwell >= threshold:
+                    loitering.add(track_id)
+
+        names = set(live) | {
+            zone_name for camera_key, zone_name in self._history
+            if camera_key == camera_id
+        }
+        stats: dict[str, dict[str, float]] = {}
+        for zone_name in names:
+            open_visits = live.get(zone_name, [])
+            history = self._history.get(
+                (camera_id, zone_name), {"n": 0.0, "sum": 0.0, "max": 0.0}
+            )
+            count = len(open_visits) + history["n"]
+            total = sum(open_visits) + history["sum"]
+            stats[zone_name] = {
+                "presentes": len(open_visits),
+                "permanencia_max_s": max(open_visits + [history["max"]]),
+                "permanencia_media_s": (total / count) if count else 0.0,
+            }
+        return {"zones": stats, "loitering": len(loitering)}
 
     @staticmethod
     def _dwell(track: ZoneTrack, zone_name: str, timestamp: float) -> float:

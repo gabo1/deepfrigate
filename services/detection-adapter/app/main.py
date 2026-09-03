@@ -8,12 +8,17 @@ import os
 from pathlib import Path
 import signal
 from threading import Event
+import time
 from typing import Any
 
 from jsonschema import Draft202012Validator
 import paho.mqtt.client as mqtt
 
-from .lifecycle import InvalidDetection, Lifecycle, parse_deepstream_payload
+from .crowd import CrowdEngine
+from .direction import DirectionEngine
+from .lifecycle import Detection, InvalidDetection, Lifecycle, parse_deepstream_payload
+from .lines import LineEngine
+from .metrics import Metrics
 from .zones import ZoneEngine
 
 logging.basicConfig(
@@ -54,12 +59,21 @@ class Adapter:
             ),
             threshold=float(os.getenv("OBJECT_THRESHOLD", "0.7")),
         )
-        self.zones = ZoneEngine.from_path(
-            Path(os.getenv("ZONES_CONFIG", "/app/config/zones.json")),
+        zones_path = Path(os.getenv("ZONES_CONFIG", "/app/config/zones.json"))
+        zones_config = json.loads(zones_path.read_text(encoding="utf-8"))
+        self.zones = ZoneEngine(
+            zones_config,
             dwell_update_interval=_positive_float(
                 "ZONE_DWELL_UPDATE_SECONDS", "1"
             ),
         )
+        self.crowd = CrowdEngine(
+            self.zones,
+            clear_margin=int(os.getenv("OVERCROWDING_CLEAR_MARGIN", "2")),
+            hold_s=float(os.getenv("OVERCROWDING_HOLD_SECONDS", "10")),
+        )
+        self.lines = LineEngine(zones_config)
+        self.directions = DirectionEngine(zones_config)
         self.input_prefix = os.getenv(
             "DETECTIONS_TOPIC_PREFIX", "deepfrigate/detections"
         ).rstrip("/")
@@ -84,6 +98,11 @@ class Adapter:
         )
         self.client.on_connect = self._on_connect
         self.client.on_message = self._on_message
+        self.metrics = Metrics()
+        self.metrics_port = int(os.getenv("METRICS_PORT", "9110"))
+        self.metrics_address = os.getenv("METRICS_ADDRESS", "0.0.0.0")
+        self._refresh_interval = _positive_float("METRICS_REFRESH_SECONDS", "1")
+        self._last_refresh = 0.0
         self.min_confidence = float(os.getenv("MIN_DETECTION_CONFIDENCE", "0.5"))
         self.min_area = float(os.getenv("MIN_DETECTION_AREA", "0"))
         self.client.on_disconnect = self._on_disconnect
@@ -120,12 +139,15 @@ class Adapter:
         self, _client: mqtt.Client, _userdata: Any, message: mqtt.MQTTMessage
     ) -> None:
         camera_id = topic_camera_id(message.topic, self.input_prefix)
+        started_at = time.perf_counter()
+        cameras_seen: set[str] = set()
         try:
             payload = json.loads(message.payload)
             if not isinstance(payload, dict):
                 raise InvalidDetection("payload root must be an object")
             detections = parse_deepstream_payload(payload, camera_id)
             for detection in detections:
+                cameras_seen.add(detection.camera_id)
                 if not self._usable(detection):
                     continue
                 tracked = self.lifecycle.observe(detection)
@@ -135,6 +157,15 @@ class Adapter:
                     self._publish(extra)
                 for update in self.zones.observe(detection):
                     self._publish(update)
+                for update in self.crowd.observe(detection):
+                    self._publish(update)
+                for update in self.lines.observe(detection):
+                    self._publish(update)
+                for update in self.directions.observe(detection):
+                    self._publish(update)
+            elapsed_ms = (time.perf_counter() - started_at) * 1000
+            for seen in cameras_seen:
+                self.metrics.observe_message_cost(seen, elapsed_ms)
         except (InvalidDetection, json.JSONDecodeError, TypeError, ValueError) as error:
             logger.warning("Discarded payload on %s: %s", message.topic, error)
         except Exception:
@@ -157,6 +188,7 @@ class Adapter:
         if result.rc != mqtt.MQTT_ERR_SUCCESS:
             logger.error("Could not queue %s for publication: %s", update, result.rc)
             return
+        self.metrics.observe_update(update)
         event = update["data"].get("lifecycle_event", update["data"].get("event"))
         logger.log(
             logging.DEBUG if event in {"UPDATE", "dwell_time"} else logging.INFO,
@@ -166,12 +198,28 @@ class Adapter:
             topic,
         )
 
+    def refresh_metrics(self, now: float | None = None) -> None:
+        """Recompute the live gauges. Called from the MQTT thread only."""
+        now = time.monotonic() if now is None else now
+        if now - self._last_refresh < self._refresh_interval:
+            return
+        self._last_refresh = now
+        for camera in set(self.zones.cameras()) | self.lifecycle.cameras():
+            self.metrics.refresh(
+                camera,
+                self.lifecycle.snapshot(camera),
+                self.zones.snapshot(camera),
+                self.crowd.snapshot(camera),
+            )
+
     def run(self) -> None:
         host = os.getenv("MQTT_HOST", "mqtt")
         port = int(os.getenv("MQTT_PORT", "1883"))
+        self.metrics.serve(self.metrics_port, self.metrics_address)
         self.client.connect(host, port, keepalive=60)
         while not shutdown_requested.is_set():
             self.client.loop(timeout=0.5)
+            self.refresh_metrics()
             for update in self.lifecycle.expire():
                 if update["data"]["lifecycle_event"] == "END":
                     for zone_update in self.zones.end(
@@ -180,6 +228,22 @@ class Adapter:
                         update["timestamp"],
                     ):
                         self._publish(zone_update)
+                    ended = Detection(
+                        camera_id=update["camera_id"],
+                        track_id=update["track_id"],
+                        timestamp=update["timestamp"],
+                        label=str(update["data"].get("label") or "object"),
+                        confidence=float(
+                            update["data"].get("confidence") or 0
+                        ),
+                        bbox=update["data"]["bbox"],
+                    )
+                    for crowd_update in self.crowd.observe(
+                        ended, update["timestamp"]
+                    ):
+                        self._publish(crowd_update)
+                    self.lines.end(update["camera_id"], update["track_id"])
+                    self.directions.end(update["camera_id"], update["track_id"])
                 self._publish(update)
         self.client.disconnect()
         self.client.loop(timeout=1)

@@ -6,6 +6,9 @@ Instancia de trabajo: **Frigate PostgreSQL + pgvector aislado**, no el NVR
 SQLite original. DeepStream está **arriba** y escribe Events en esta
 instancia. El bloque «video-engine caído» del 31 ago está **obsoleto**.
 Runbook de corte (aún no ejecutado): `frigate-pg/docs/CUTOVER.md`.
+Mapa de analíticas (fuentes, recreate, no-hacer): `docs/ANALITICAS-FUENTES.md`.
+Checklist vivo / deuda / Grafana: sección **Analíticas y Grafana (3 sep)**
+abajo. No reinvestigar eso desde cero.
 
 - UI: `https://100.83.231.97:3005` (bind Tailscale:
   `FRIGATE_PGVECTOR_SMOKE_BIND_ADDRESS=100.83.231.97`; el default de compose
@@ -42,6 +45,8 @@ Runbook de corte (aún no ejecutado): `frigate-pg/docs/CUTOVER.md`.
 - `FRIGATE_DB_PATH` vacío
 - `FRIGATE_EVENT_STORE_URL=postgresql://…@pgvector-smoke-db:5432/frigate_pgvector_smoke`
 - `FRIGATE_BRIDGE_MEDIA_VOLUME=frigate-pg_pgvector-smoke-media`
+  (sin esto, `compose.yaml` monta `deepfrigate_frigate-media` y Explore
+  muestra la escena completa en vez del crop; ver 2–3 sep 2026)
 - `FrigateEventStore` escribe `event.box`, `region`, `area`,
   `data.type=object`, `path_data`, zonas y Timeline. Sin eso el Event
   quedaba `type=api`, `box` NULL, y desaparecía «Buscar similares».
@@ -63,6 +68,24 @@ Runbook de corte (aún no ejecutado): `frigate-pg/docs/CUTOVER.md`.
   swap). El overlay Explore (`search_type=deep`) ya está en la imagen
   smoke. Sí vale rebuild Python-only: `Dockerfile.postgres-smoke` y
   `event-engine`.
+- No recrear `event-engine` solo con `.env.example`. Ese archivo no
+  lleva el puente al smoke. Hay que exportar las cuatro variables
+  juntas (API, `FRIGATE_DB_PATH` vacío, store URL y
+  `FRIGATE_BRIDGE_MEDIA_VOLUME=frigate-pg_pgvector-smoke-media`) o
+  Explore vuelve a servir thumbs de escena (~70 KiB) y el crop se
+  escribe en el volumen del NVR de producto. Comando:
+
+  ```bash
+  FRIGATE_API_URL=http://frigate-pgvector-smoke:5000/api \
+  FRIGATE_DB_PATH= \
+  FRIGATE_EVENT_STORE_URL=postgresql://frigate_pgvector:frigate_pgvector_smoke@pgvector-smoke-db:5432/frigate_pgvector_smoke \
+  FRIGATE_BRIDGE_MEDIA_VOLUME=frigate-pg_pgvector-smoke-media \
+  docker compose --env-file .env.example up -d --build --no-deps event-engine
+  ```
+
+  Diagnóstico rápido: `ls -l` en
+  `frigate-pgvector-smoke:/media/frigate/clips/thumbs/tienda` —
+  crop bueno ≈ 3–8 KiB; escena de Frigate ≈ 68–73 KiB.
 - No backfill masivo por `POST .../thumbnail/embed`: satura FastAPI
   (`/auth` 504) y tumba la UI. **Deprecado:** no se indexará el
   histórico anterior al enganche Jina.
@@ -77,6 +100,61 @@ Runbook de corte (aún no ejecutado): `frigate-pg/docs/CUTOVER.md`.
   (`matches: true`, 104.989 filas). Runbook:
   `frigate-pg/docs/CUTOVER.md`. Imagen:
   `deepfrigate-frigate-pg:pgvector-smoke`.
+- Analíticas Grafana: **fila C SQL** y salud Frigate `/api/metrics`.
+  Deuda (no hacer salvo pedido): matriz OD, heatmap de frame,
+  `filter` de zona, i18n Timeline. Ver sección 3 sep abajo.
+
+## Analíticas y Grafana (3 sep 2026)
+
+Detalle y trampas: `docs/ANALITICAS-FUENTES.md` (§8 plan, §12 OD, §13
+Supervision, §14 heatmap). Dashboard provisionado en
+`/opt/observabilidad/grafana/dashboards/` — **no** editar
+`analitica-deepfrigate` desde la UI.
+
+**Vivo**
+
+- Exporter adapter `/metrics` `:9110`, job Prom `analitica_deepfrigate`
+  (`motor=deepfrigate`). `:9108`/`:9109` DOWN (histórico Savant 26–31 ago).
+- Grafana `:3001`: `analitica` = archivo Savant; **`analitica-deepfrigate`**
+  = en vivo (aforo, permanencia ROI, merodeo 15 s, cruces, overcrowding,
+  dirección, percentiles de visita, scrape).
+- Reporter `:5008`: heatmap de **Events** (centroide de `event.box`, rango
+  del date picker; default ~30 d). `heatmap.js` va en `/static/` (el CDN
+  404’eaba y `h337` no existía).
+- Merodeo: `loitering_threshold_s: 15` en `config/zones.json`.
+- Label discriminante: **`motor`**, no `fuente`.
+
+**Pendiente (siguiente trabajo útil)**
+
+1. **Fila C (SQL / Infinity, no Prom):** Events/hora, Events por zona,
+   duración del Event (**no** titularla Dwell/Permanencia). Heatmap y LPR
+   en Grafana; el heatmap del reporter ya cubre Events. Más denso: leer
+   `path_data` en vez de solo `box`.
+2. **Salud Frigate** `GET /api/metrics` (CPU/ffmpeg). Otro row o dashboard.
+   No es aforo.
+
+**Deuda (documentada; no implementar solos)**
+
+- **Matriz OD** (`sv_flujo`): viajes origen→destino por rol/grupo. No
+  rellenar a 0 con `line_in` / `direction_match`. Copiar `Transicion` de
+  `/opt/analitica` el día que se pida.
+- **Heatmap tipo Supervision:** pies por fotograma (`HeatMapAnnotator` /
+  `histogram2d`). Distinto del addon. No meter `supervision` en el adapter.
+- **`filter: true`** en zonas: se parsea y **no** recorta Events.
+- **i18n Timeline** (`line_crossed_*`, `overcrowding`, `direction_match`):
+  salen sin texto. `entered_zone` sí. Requiere rebuild Vite — **no** en
+  esta VM.
+- **Supervision / Roboflow:** no cambiar. Ellos solo usaban geometría
+  (dónde); el cuándo es NumPy/`ZoneEngine`. Workflows offline = Enterprise.
+
+**No mezclar**
+
+- Permanencia Grafana = segundos **en el polígono** (`sv_zona_permanencia_*`).
+- “Dwell” del reporter = `end_time - start_time` del Event (duración del
+  track).
+- Review Frigate ≠ lista de analíticas (van en Explore → Tracking details).
+- `area_cajas` ≠ `caja_centro`/`caja_derecha` (otro polígono, otro `motor`).
+- Transiciones cámara→cámara del reporter: `[]` en DeepStream.
 
 **Deprecado (1 sep 2026)**
 
@@ -531,10 +609,14 @@ curl http://localhost:8083/healthz
 
 ## Siguiente objetivo
 
-Inmediato: ejecutar el corte SQLite → PostgreSQL
-(`frigate-pg/docs/CUTOVER.md`). `video-engine` ya está arriba (1 sep).
-`recording-sync` / MinIO y el backfill Jina del histórico están
+Inmediato producto: corte SQLite → PostgreSQL (`frigate-pg/docs/CUTOVER.md`)
+cuando lo pida el usuario; no empezar solo. `video-engine` ya está arriba
+(1 sep). `recording-sync` / MinIO y el backfill Jina del histórico están
 **deprecados**.
+
+Inmediato analíticas (si se sigue el plan): **fila C SQL** en Grafana o
+`path_data` en el heatmap del reporter. No OD ni heatmap Supervision
+salvo pedido. Ver sección 3 sep arriba.
 
 Los **Milestones 2 a 6**, la robustez de PP-ShiTu, el **Milestone 8 — Event
 Engine**, el **Milestone 9 — UI Review/Timeline + detalle enriquecido**, la
@@ -919,3 +1001,15 @@ user=1, userreviewstatus=9, regions=2). Frigate throwaway healthy en
 base dropeados). Lab `:3005` y NVR SQLite
 intactos. Pendiente: noche de corte a la base `frigate`. No importar
 SQLite a `frigate_pgvector_smoke`.
+
+### Thumbs de escena tras recrear event-engine (2–3 sep 2026)
+
+Al rebuild de `event-engine` (fix del pool Peewee / GET `/api/events` 500)
+se usó solo `.env.example`. Faltó
+`FRIGATE_BRIDGE_MEDIA_VOLUME=frigate-pg_pgvector-smoke-media`. Compose
+remontó `deepfrigate_frigate-media`. DeepStream seguía recortando
+(~5 KiB); Frigate smoke servía su WebP de grabación (~70 KiB, escena).
+Se remontó el volumen smoke, se copiaron 549 crops encima de esos
+thumbs, y los Events nuevos volvieron a 3–8 KiB. El recorte no se
+rompió: el destino sí. Ver «No hacer» arriba y
+`docs/mejores-thumbnails.md`.

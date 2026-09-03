@@ -10,7 +10,8 @@ def _db(tmp_path) -> str:
     connection.execute(
         """
         CREATE TABLE event (
-            id TEXT PRIMARY KEY, data TEXT, zones TEXT, end_time REAL
+            id TEXT PRIMARY KEY, data TEXT, zones TEXT, end_time REAL,
+            box TEXT, region TEXT, area INTEGER
         )
         """
     )

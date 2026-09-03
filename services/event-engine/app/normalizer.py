@@ -19,7 +19,12 @@ class EventNormalizer:
         identity_time = self._identity_time(
             event_type, timestamp, data
         )
-        discriminator = str(data.get("zone", ""))
+        discriminator = str(
+            data.get("zone")
+            or data.get("line")
+            or data.get("direction")
+            or ""
+        )
         identity = "|".join(
             (
                 str(update["camera_id"]),
@@ -71,6 +76,20 @@ class EventNormalizer:
                 "zone_exit": "object_exited_zone",
                 "dwell_time": "dwell_time",
             }.get(data.get("event"))
+        if update_type == "line":
+            return {
+                "line_in": "line_crossed_in",
+                "line_out": "line_crossed_out",
+            }.get(data.get("event"))
+        if update_type == "overcrowding":
+            return {
+                "overcrowding": "overcrowding",
+                "overcrowding_clear": "overcrowding_clear",
+            }.get(data.get("event"))
+        if update_type == "direction":
+            return {
+                "direction_match": "direction_match",
+            }.get(data.get("event"))
         if update_type == "stationary":
             return "object_stationary"
         if update_type == "visual_match":
@@ -84,6 +103,10 @@ class EventNormalizer:
 
     @staticmethod
     def _severity(event_type: str) -> str:
-        if event_type in {"object_stationary", "specific_plate"}:
+        if event_type in {
+            "object_stationary",
+            "specific_plate",
+            "overcrowding",
+        }:
             return "warning"
         return "info"

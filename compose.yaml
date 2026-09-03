@@ -179,8 +179,20 @@ services:
       OBJECT_THRESHOLD: ${OBJECT_THRESHOLD:-0.7}
       ZONES_CONFIG: /app/config/zones.json
       ZONE_DWELL_UPDATE_SECONDS: ${ZONE_DWELL_UPDATE_SECONDS:-1}
+      # Antiparpadeo del overcrowding. Los valores por zona en zones.json
+      # (overcrowding_clear_threshold / overcrowding_inertia) mandan sobre estos.
+      OVERCROWDING_CLEAR_MARGIN: ${OVERCROWDING_CLEAR_MARGIN:-2}
+      OVERCROWDING_HOLD_SECONDS: ${OVERCROWDING_HOLD_SECONDS:-10}
       MIN_DETECTION_CONFIDENCE: ${MIN_DETECTION_CONFIDENCE:-0.5}
       MIN_DETECTION_AREA: ${MIN_DETECTION_AREA:-0}
+      METRICS_PORT: ${METRICS_PORT:-9110}
+      METRICS_REFRESH_SECONDS: ${METRICS_REFRESH_SECONDS:-1}
+      # One useless series per counter otherwise; nothing queries them.
+      PROMETHEUS_DISABLE_CREATED_SERIES: "true"
+    # Prometheus lives on observabilidad_default and scrapes via
+    # host.docker.internal, like the 9108/9109 jobs it replaces.
+    ports:
+      - "${METRICS_PORT:-9110}:${METRICS_PORT:-9110}"
     volumes:
       - ./config/zones.json:/app/config/zones.json:ro
     depends_on:
