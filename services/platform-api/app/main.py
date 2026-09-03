@@ -461,6 +461,9 @@ def get_heatmap(
     camera: str,
     weight: str = Query("count", pattern="^(count|dwell)$"),
     zones: bool = True,
+    label: str = Query(
+        "", description="filtra por etiqueta (car, person…); vacío = todas"
+    ),
     start: float | None = Query(None, description="epoch ms; por defecto -24 h"),
     end: float | None = Query(None, description="epoch ms; por defecto ahora"),
 ) -> Response:
@@ -484,7 +487,7 @@ def get_heatmap(
     try:
         payload = heatmap_render.render(
             store_url, frigate_api_url, zones_config_path,
-            camera, start_s, end_s, weight, zones,
+            camera, start_s, end_s, weight, zones, label,
         )
     except psycopg.Error as error:
         raise HTTPException(

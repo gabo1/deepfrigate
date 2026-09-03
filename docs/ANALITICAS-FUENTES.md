@@ -946,6 +946,38 @@ Dos consecuencias que hay que tener presentes:
   Frigate pero no están configurados; la velocidad necesita `distances` en las
   zonas. Es config de Frigate, no de dashboard.
 
+### Dashboards: una pareja parametrizada, no un juego por especie
+
+**No hay un dashboard "de personas" y otro "de autos".** Sería el eje
+equivocado: `user` tiene las dos cosas (698 coches y 114 personas, y esas
+personas sí traen PULC), y las primitivas son idénticas — una zona con dwell es
+"cola" en gente y "aparcamiento" en coches, un cruce de línea es aforo o
+conteo de vehículos. Lo que cambia son los **umbrales**, y `zones.json` ya los
+admite por zona. Duplicar dashboards solo duplica el mantenimiento.
+
+El eje correcto es **por cámara**, con variables de plantilla:
+
+| Dashboard | Variables | Notas |
+|---|---|---|
+| `analitica-deepfrigate` | `$camera`, `$label` | `$label` **solo afecta al heatmap**; el resto ya desglosa por etiqueta |
+| `pulc-atributos` | `$camera` | solo lista cámaras con `person_attributes`: los coches no tienen PULC |
+
+Las variables se pueblan del catálogo real (`SELECT DISTINCT camera FROM
+event`), así que una cámara nueva aparece sola en cuanto produce su primer
+Event. **Todas las consultas SQL llevan `AND camera = '$camera'`** — sin eso,
+con dos cámaras cada panel sumaría las dos. La única excepción deliberada es
+"Cámara más activa", que existe precisamente para compararlas.
+
+### El heatmap filtra por etiqueta, y hace falta
+
+Mezclar coches y personas en el mismo mapa **aplasta a las personas**. Medido
+en `user` sobre 6 h: coches **38** puntos por celda de máximo, personas **8**.
+En el mapa conjunto el máximo es 38, así que las personas quedan invisibles.
+De ahí `?label=` en el endpoint (vacío = todas) y la variable `$label`.
+
+Y son mapas distintos, no solo escalas distintas: los coches dibujan dos
+carriles nítidos; las personas salen dispersas, con foco en la acera.
+
 ### La cámara se cayó y no volvió (3 sep, corregido)
 
 `user` emitió de 19:12 a 20:51 y se paró. El pipeline siguió tan tranquilo con

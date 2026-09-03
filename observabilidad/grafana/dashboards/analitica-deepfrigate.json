@@ -37,7 +37,7 @@
       },
       "targets": [
         {
-          "expr": "sv_objetos_activos{motor=\"deepfrigate\"}",
+          "expr": "sv_objetos_activos{motor=\"deepfrigate\",camera=\"$camera\"}",
           "legendFormat": "{{camera}}"
         }
       ],
@@ -75,7 +75,7 @@
       },
       "targets": [
         {
-          "expr": "sv_zona_presentes{motor=\"deepfrigate\"}",
+          "expr": "sv_zona_presentes{motor=\"deepfrigate\",camera=\"$camera\"}",
           "legendFormat": "{{zona}}"
         }
       ],
@@ -130,7 +130,7 @@
       },
       "targets": [
         {
-          "expr": "sv_merodeo_ahora{motor=\"deepfrigate\"}",
+          "expr": "sv_merodeo_ahora{motor=\"deepfrigate\",camera=\"$camera\"}",
           "legendFormat": "{{camera}}"
         }
       ],
@@ -181,7 +181,7 @@
       },
       "targets": [
         {
-          "expr": "sv_estacionarios{motor=\"deepfrigate\"}",
+          "expr": "sv_estacionarios{motor=\"deepfrigate\",camera=\"$camera\"}",
           "legendFormat": "{{camera}}"
         }
       ],
@@ -219,7 +219,7 @@
       },
       "targets": [
         {
-          "expr": "increase(sv_cruces_entrada_total{motor=\"deepfrigate\"}[5m])",
+          "expr": "increase(sv_cruces_entrada_total{motor=\"deepfrigate\",camera=\"$camera\"}[5m])",
           "legendFormat": "{{camera}}"
         }
       ],
@@ -258,7 +258,7 @@
       },
       "targets": [
         {
-          "expr": "increase(sv_cruces_salida_total{motor=\"deepfrigate\"}[5m])",
+          "expr": "increase(sv_cruces_salida_total{motor=\"deepfrigate\",camera=\"$camera\"}[5m])",
           "legendFormat": "{{camera}}"
         }
       ],
@@ -309,7 +309,7 @@
       },
       "targets": [
         {
-          "expr": "sv_zona_presentes{motor=\"deepfrigate\"}",
+          "expr": "sv_zona_presentes{motor=\"deepfrigate\",camera=\"$camera\"}",
           "legendFormat": "{{zona}}"
         }
       ],
@@ -373,11 +373,11 @@
       },
       "targets": [
         {
-          "expr": "sv_zona_permanencia_max_s{motor=\"deepfrigate\"}",
+          "expr": "sv_zona_permanencia_max_s{motor=\"deepfrigate\",camera=\"$camera\"}",
           "legendFormat": "máx · {{zona}}"
         },
         {
-          "expr": "sv_zona_permanencia_media_s{motor=\"deepfrigate\"}",
+          "expr": "sv_zona_permanencia_media_s{motor=\"deepfrigate\",camera=\"$camera\"}",
           "legendFormat": "media · {{zona}}"
         }
       ],
@@ -468,7 +468,7 @@
       },
       "targets": [
         {
-          "expr": "df_overcrowding_state{motor=\"deepfrigate\"}",
+          "expr": "df_overcrowding_state{motor=\"deepfrigate\",camera=\"$camera\"}",
           "legendFormat": "{{zona}}"
         }
       ],
@@ -537,11 +537,11 @@
       },
       "targets": [
         {
-          "expr": "increase(df_overcrowding_total{motor=\"deepfrigate\"}[5m])",
+          "expr": "increase(df_overcrowding_total{motor=\"deepfrigate\",camera=\"$camera\"}[5m])",
           "legendFormat": "supera · {{zona}}"
         },
         {
-          "expr": "increase(df_overcrowding_clear_total{motor=\"deepfrigate\"}[5m])",
+          "expr": "increase(df_overcrowding_clear_total{motor=\"deepfrigate\",camera=\"$camera\"}[5m])",
           "legendFormat": "normaliza · {{zona}}"
         }
       ],
@@ -621,11 +621,11 @@
       },
       "targets": [
         {
-          "expr": "rate(df_zone_enter_total{motor=\"deepfrigate\"}[2m]) * 60",
+          "expr": "rate(df_zone_enter_total{motor=\"deepfrigate\",camera=\"$camera\"}[2m]) * 60",
           "legendFormat": "entra · {{zona}}"
         },
         {
-          "expr": "rate(df_zone_exit_total{motor=\"deepfrigate\"}[2m]) * 60",
+          "expr": "rate(df_zone_exit_total{motor=\"deepfrigate\",camera=\"$camera\"}[2m]) * 60",
           "legendFormat": "sale · {{zona}}"
         }
       ],
@@ -703,11 +703,11 @@
       },
       "targets": [
         {
-          "expr": "rate(sv_cruces_entrada_total{motor=\"deepfrigate\"}[2m]) * 60",
+          "expr": "rate(sv_cruces_entrada_total{motor=\"deepfrigate\",camera=\"$camera\"}[2m]) * 60",
           "legendFormat": "entrada"
         },
         {
-          "expr": "rate(sv_cruces_salida_total{motor=\"deepfrigate\"}[2m]) * 60",
+          "expr": "rate(sv_cruces_salida_total{motor=\"deepfrigate\",camera=\"$camera\"}[2m]) * 60",
           "legendFormat": "salida"
         }
       ],
@@ -786,7 +786,7 @@
       },
       "targets": [
         {
-          "expr": "increase(df_direction_match_total{motor=\"deepfrigate\"}[5m])",
+          "expr": "increase(df_direction_match_total{motor=\"deepfrigate\",camera=\"$camera\"}[5m])",
           "legendFormat": "{{direccion}}"
         }
       ],
@@ -847,15 +847,15 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.5, sum by (le, zona) (rate(df_zone_dwell_seconds_bucket{motor=\"deepfrigate\"}[10m])))",
+          "expr": "histogram_quantile(0.5, sum by (le, zona) (rate(df_zone_dwell_seconds_bucket{motor=\"deepfrigate\",camera=\"$camera\"}[10m])))",
           "legendFormat": "p50 · {{zona}}"
         },
         {
-          "expr": "histogram_quantile(0.9, sum by (le, zona) (rate(df_zone_dwell_seconds_bucket{motor=\"deepfrigate\"}[10m])))",
+          "expr": "histogram_quantile(0.9, sum by (le, zona) (rate(df_zone_dwell_seconds_bucket{motor=\"deepfrigate\",camera=\"$camera\"}[10m])))",
           "legendFormat": "p90 · {{zona}}"
         },
         {
-          "expr": "histogram_quantile(0.99, sum by (le, zona) (rate(df_zone_dwell_seconds_bucket{motor=\"deepfrigate\"}[10m])))",
+          "expr": "histogram_quantile(0.99, sum by (le, zona) (rate(df_zone_dwell_seconds_bucket{motor=\"deepfrigate\",camera=\"$camera\"}[10m])))",
           "legendFormat": "p99 · {{zona}}"
         }
       ],
@@ -949,7 +949,7 @@
       },
       "targets": [
         {
-          "expr": "rate(df_zone_dwell_seconds_count{motor=\"deepfrigate\"}[5m]) * 60",
+          "expr": "rate(df_zone_dwell_seconds_count{motor=\"deepfrigate\",camera=\"$camera\"}[5m]) * 60",
           "legendFormat": "{{zona}}"
         }
       ],
@@ -1019,7 +1019,7 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT $__timeGroupAlias(ts, '5m'),\n       label AS metric,\n       count(*) AS value\n  FROM (SELECT to_timestamp(start_time) AS ts, label\n          FROM event\n         WHERE $__unixEpochFilter(start_time)) e\n GROUP BY 1, 2\n ORDER BY 1"
+          "rawSql": "SELECT $__timeGroupAlias(ts, '5m'),\n       label AS metric,\n       count(*) AS value\n  FROM (SELECT to_timestamp(start_time) AS ts, label\n          FROM event\n         WHERE $__unixEpochFilter(start_time)\n           AND camera = '$camera') e\n GROUP BY 1, 2\n ORDER BY 1"
         }
       ],
       "options": {
@@ -1071,7 +1071,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT jsonb_array_elements_text(zones) AS \"zona\",\n       count(*) AS \"events\",\n       round(avg(end_time - start_time)::numeric, 1) AS \"duración media (s)\"\n  FROM event\n WHERE $__unixEpochFilter(start_time)\n GROUP BY 1\n ORDER BY 2 DESC"
+          "rawSql": "SELECT jsonb_array_elements_text(zones) AS \"zona\",\n       count(*) AS \"events\",\n       round(avg(end_time - start_time)::numeric, 1) AS \"duración media (s)\"\n  FROM event\n WHERE $__unixEpochFilter(start_time)\n   AND camera = '$camera'\n GROUP BY 1\n ORDER BY 2 DESC"
         }
       ],
       "options": {},
@@ -1108,7 +1108,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT count(*) FILTER (WHERE start_time >= $__unixEpochFrom())\n         AS \"Events\",\n       count(*) FILTER (WHERE start_time < $__unixEpochFrom())\n         AS \"Periodo previo\"\n  FROM event\n WHERE camera = 'tienda'\n   AND start_time >= $__unixEpochFrom()\n                   - ($__unixEpochTo() - $__unixEpochFrom())\n   AND start_time <= $__unixEpochTo()"
+          "rawSql": "SELECT count(*) FILTER (WHERE start_time >= $__unixEpochFrom())\n         AS \"Events\",\n       count(*) FILTER (WHERE start_time < $__unixEpochFrom())\n         AS \"Periodo previo\"\n  FROM event\n WHERE camera = '$camera'\n   AND start_time >= $__unixEpochFrom()\n                   - ($__unixEpochTo() - $__unixEpochFrom())\n   AND start_time <= $__unixEpochTo()"
         }
       ],
       "options": {
@@ -1186,7 +1186,7 @@
         },
         "overrides": []
       },
-      "description": "Hoy solo hay una cámara configurada (`tienda`), así que este panel dirá siempre lo mismo hasta que se añada otra."
+      "description": "El único panel que NO se filtra por `$camera`: compara las cámaras entre sí, que es su razón de ser."
     },
     {
       "type": "stat",
@@ -1210,7 +1210,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT label AS \"etiqueta\", count(*) AS \"events\"\n  FROM event\n WHERE $__unixEpochFilter(start_time)\n GROUP BY 1 ORDER BY 2 DESC LIMIT 1"
+          "rawSql": "SELECT label AS \"etiqueta\", count(*) AS \"events\"\n  FROM event\n WHERE $__unixEpochFilter(start_time)\n   AND camera = '$camera'\n GROUP BY 1 ORDER BY 2 DESC LIMIT 1"
         }
       ],
       "options": {
@@ -1237,7 +1237,7 @@
         },
         "overrides": []
       },
-      "description": "El pipeline solo publica `person` a día de hoy; cambiará cuando el detector emita más clases."
+      "description": "`tienda` solo produce `person`; `user` produce `car` y `person`."
     },
     {
       "type": "stat",
@@ -1261,7 +1261,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT to_char(to_timestamp(start_time), 'HH24') || ':00'\n         AS \"hora\",\n       count(*) AS \"events\"\n  FROM event\n WHERE $__unixEpochFilter(start_time)\n GROUP BY 1 ORDER BY 2 DESC LIMIT 1"
+          "rawSql": "SELECT to_char(to_timestamp(start_time), 'HH24') || ':00'\n         AS \"hora\",\n       count(*) AS \"events\"\n  FROM event\n WHERE $__unixEpochFilter(start_time)\n   AND camera = '$camera'\n GROUP BY 1 ORDER BY 2 DESC LIMIT 1"
         }
       ],
       "options": {
@@ -1288,7 +1288,7 @@
         },
         "overrides": []
       },
-      "description": "⚠️ Mientras la fuente sea `fakecam` esto NO significa nada: es un clip de 299 s en bucle, así que el tráfico es idéntico a todas horas y la “hora punta” es la que más vueltas cupieron, no la que más gente hubo. Tendrá sentido con cámara real. La hora va en UTC."
+      "description": "⚠️ **Depende de la cámara.** En `tienda` NO significa nada: la fuente es un clip de 299 s en bucle, así que el tráfico es idéntico a todas horas y gana la hora en la que cupieron más vueltas. En `user`, que es un RTSP externo real, sí es un dato. La hora va en UTC."
     },
     {
       "type": "table",
@@ -1312,7 +1312,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT to_timestamp(start_time) AS \"inicio\",\n       camera AS \"cámara\",\n       label AS \"etiqueta\",\n       round((end_time - start_time)::numeric, 1) AS \"duración (s)\",\n       id\n  FROM event\n WHERE end_time IS NOT NULL\n   AND $__unixEpochFilter(start_time)\n ORDER BY (end_time - start_time) DESC\n LIMIT 10"
+          "rawSql": "SELECT to_timestamp(start_time) AS \"inicio\",\n       camera AS \"cámara\",\n       label AS \"etiqueta\",\n       round((end_time - start_time)::numeric, 1) AS \"duración (s)\",\n       id\n  FROM event\n WHERE end_time IS NOT NULL\n   AND $__unixEpochFilter(start_time)\n   AND camera = '$camera'\n ORDER BY (end_time - start_time) DESC\n LIMIT 10"
         }
       ],
       "options": {},
@@ -1341,7 +1341,7 @@
     },
     {
       "type": "text",
-      "title": "Rutas — por dónde se camina",
+      "title": "Rutas — por dónde se pasa",
       "gridPos": {
         "x": 0,
         "y": 66,
@@ -1350,9 +1350,9 @@
       },
       "options": {
         "mode": "html",
-        "content": "<img src=\"/api/datasources/proxy/uid/deepfrigate-platform-api/v1/heatmap/tienda.jpg?weight=count&zones=true&start=$__from&end=$__to\" style=\"width:100%;height:auto;display:block\" alt=\"Rutas — por dónde se camina\">"
+        "content": "<img src=\"/api/datasources/proxy/uid/deepfrigate-platform-api/v1/heatmap/$camera.jpg?weight=count&label=$label&zones=true&start=$__from&end=$__to\" style=\"width:100%;height:auto;display:block\" alt=\"Rutas — por dónde se pasa\">"
       },
-      "description": "Conteo de puntos de `path_data` por celda. OJO: `path_data` emite un punto por DISTANCIA recorrida, no por tiempo, así que este mapa es ciego a quien se para — alguien quieto 60 s aporta un punto igual que quien pasa de largo. Para eso está el panel de al lado."
+      "description": "Filtra por `$label`: mezclar coches y personas aplasta a las personas. Medido en `user`: coches 38 puntos/celda de máximo, personas 8, así que en el mapa conjunto las personas son invisibles. Conteo de puntos de `path_data` por celda. OJO: `path_data` emite un punto por DISTANCIA recorrida, no por tiempo, así que este mapa es ciego a quien se para — alguien quieto 60 s aporta un punto igual que quien pasa de largo. Para eso está el panel de al lado."
     },
     {
       "type": "text",
@@ -1365,7 +1365,7 @@
       },
       "options": {
         "mode": "html",
-        "content": "<img src=\"/api/datasources/proxy/uid/deepfrigate-platform-api/v1/heatmap/tienda.jpg?weight=dwell&zones=true&start=$__from&end=$__to\" style=\"width:100%;height:auto;display:block\" alt=\"Permanencia — dónde se para la gente\">"
+        "content": "<img src=\"/api/datasources/proxy/uid/deepfrigate-platform-api/v1/heatmap/$camera.jpg?weight=dwell&label=$label&zones=true&start=$__from&end=$__to\" style=\"width:100%;height:auto;display:block\" alt=\"Permanencia — dónde se para la gente\">"
       },
       "description": "Cada punto pesa los segundos hasta el siguiente. Tope de 30 s por tramo: está justo por encima del p99 medido (27,4 s sobre 93.110 tramos), así que solo recorta el 1 % más sospechoso de ser oclusión. Medido: el 32,1 % de toda la permanencia cae FUERA de `area_cajas`, invisible para el resto de métricas. El polígono blanco y la línea cian son `zones.json`: si no abrazan los focos, la geometría está mal dibujada."
     },
@@ -1459,7 +1459,7 @@
       },
       "targets": [
         {
-          "expr": "sv_proc_ms_por_mensaje{motor=\"deepfrigate\"}",
+          "expr": "sv_proc_ms_por_mensaje{motor=\"deepfrigate\",camera=\"$camera\"}",
           "legendFormat": "{{camera}}"
         }
       ],
@@ -1500,7 +1500,7 @@
       },
       "targets": [
         {
-          "expr": "increase(sv_objetos_vistos_total{motor=\"deepfrigate\"}[1h])",
+          "expr": "increase(sv_objetos_vistos_total{motor=\"deepfrigate\",camera=\"$camera\"}[1h])",
           "legendFormat": "{{camera}}"
         }
       ],
@@ -1539,7 +1539,7 @@
       },
       "targets": [
         {
-          "expr": "sv_confianza_media{motor=\"deepfrigate\"}",
+          "expr": "sv_confianza_media{motor=\"deepfrigate\",camera=\"$camera\"}",
           "legendFormat": "{{camera}}"
         }
       ],
@@ -1569,6 +1569,47 @@
       }
     }
   ],
+  "templating": {
+    "list": [
+      {
+        "name": "camera",
+        "label": "Cámara",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "frigate-smoke-pg"
+        },
+        "query": "SELECT DISTINCT camera FROM event ORDER BY 1",
+        "refresh": 1,
+        "sort": 1,
+        "includeAll": false,
+        "multi": false,
+        "current": {
+          "text": "tienda",
+          "value": "tienda"
+        }
+      },
+      {
+        "name": "label",
+        "label": "Etiqueta (solo heatmap)",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "frigate-smoke-pg"
+        },
+        "query": "SELECT DISTINCT label FROM event WHERE camera = '$camera' ORDER BY 1",
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "allValue": "",
+        "multi": false,
+        "current": {
+          "text": "Todas",
+          "value": "$__all"
+        }
+      }
+    ]
+  },
   "schemaVersion": 39,
   "version": 1
 }

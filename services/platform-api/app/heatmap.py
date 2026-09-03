@@ -55,6 +55,7 @@ WITH pts AS (
          jsonb_array_elements(e.data->'path_data') WITH ORDINALITY AS a(pt, ord)
    WHERE jsonb_typeof(e.data->'path_data') = 'array'
      AND e.start_time >= %s AND e.start_time <= %s AND e.camera = %s
+     AND (%s = '' OR e.label = %s)
 ),
 w AS (
   SELECT least(greatest(x, 0.0), 0.999999) AS x,
@@ -92,10 +93,11 @@ def _color(t: float) -> tuple[int, int, int]:
 
 
 def _cells(store_url: str, camera: str, start_s: float, end_s: float,
-           weight: str) -> dict[tuple[int, int], float]:
+           weight: str, label: str) -> dict[tuple[int, int], float]:
     with psycopg.connect(store_url, row_factory=dict_row) as connection:
         rows = connection.execute(
-            SQL, (start_s, end_s, camera, DWELL_CAP_S, GRID_X, GRID_Y)
+            SQL,
+            (start_s, end_s, camera, label, label, DWELL_CAP_S, GRID_X, GRID_Y),
         ).fetchall()
     out = {}
     for row in rows:
@@ -142,16 +144,16 @@ def _draw_zones(base: Image.Image, zones_path: Path, camera: str) -> None:
 
 def render(store_url: str, frigate_api_url: str, zones_path: Path,
            camera: str, start_s: float, end_s: float, weight: str,
-           zones: bool) -> bytes:
+           zones: bool, label: str = "") -> bytes:
     bucket = max(1.0, CACHE_TTL_S)
     start_s = round(start_s / bucket) * bucket
     end_s = round(end_s / bucket) * bucket
-    key = (camera, weight, zones, start_s, end_s)
+    key = (camera, weight, zones, start_s, end_s, label)
     hit = _cache.get(key)
     if hit and hit[0] > time.time():
         return hit[1]
 
-    cells = _cells(store_url, camera, start_s, end_s, weight)
+    cells = _cells(store_url, camera, start_s, end_s, weight, label)
     base = _background(frigate_api_url, camera)
     peak = max(cells.values(), default=0.0)
 
@@ -187,8 +189,9 @@ def render(store_url: str, frigate_api_url: str, zones_path: Path,
     # foto cualquier texto suelto desaparece.
     draw = ImageDraw.Draw(base)
     unit = "s acumulados" if weight == "dwell" else "puntos"
-    title = (f"{'permanencia' if weight == 'dwell' else 'rutas'} · 0 a "
-             f"{peak:,.0f} {unit} por celda · rejilla {GRID_X}x{GRID_Y}")
+    title = (f"{'permanencia' if weight == 'dwell' else 'rutas'} · "
+             f"{camera}/{label or 'todo'} · 0 a {peak:,.0f} {unit} por celda "
+             f"· rejilla {GRID_X}x{GRID_Y}")
     bar_w, bar_h = 260, 10
     box_w = max(bar_w + 24, int(draw.textlength(title)) + 24)
     box_x, box_y = 12, FRAME_HEIGHT - 64

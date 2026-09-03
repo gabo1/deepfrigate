@@ -26,7 +26,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "### Fuente: clip de 299,1 s en bucle, no una tienda en vivo\n`fakecam` sirve `tienda_10.mp4` con `ffmpeg -re -stream_loop -1`, así que **las mismas 21 personas pasan cada 5 minutos**. Por eso aquí no hay ni un panel por hora del día: mostraría el bucle, no comportamiento.\n\nA cambio, el bucle es un **banco de pruebas de repetibilidad**: como la entrada no cambia nunca, toda la variación entre vueltas es ruido del modelo. Eso es la última fila.\n\nAtributos de `PULC_person_attribute` (PaddleClas), escritos por `frigate_bridge.py` en `data->'person_attributes'`. El comportamiento (aforo, permanencia, cruces, overcrowding) vive en [Analítica DeepFrigate](/d/analitica-deepfrigate)."
+        "content": "### Ojo con la fuente de cada cámara\n**`tienda` es un clip de 299,1 s en bucle**: `fakecam` lo sirve con `ffmpeg -re -stream_loop -1`, así que las mismas 21 personas pasan cada 5 minutos. Ningún panel por hora del día significaría nada, y por eso no hay ninguno. A cambio el bucle es un **banco de pruebas de repetibilidad**: como la entrada no cambia nunca, toda la variación entre vueltas es ruido del modelo. Eso es la última fila.\n\n**`user` es un RTSP externo real**, así que ahí sí hay tráfico genuino — pero la fila de repetibilidad **no aplica**: sin bucle no hay entrada repetida contra la que medir el ruido.\n\nSolo aparecen cámaras que producen atributos: los coches no tienen PULC.\n\nAtributos de `PULC_person_attribute` (PaddleClas), escritos por `frigate_bridge.py` en `data->'person_attributes'`. El comportamiento (aforo, permanencia, cruces, overcrowding) vive en [Analítica DeepFrigate](/d/analitica-deepfrigate)."
       }
     },
     {
@@ -63,7 +63,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT data->'person_attributes'->'lower'->>'value' AS \"prenda\",\n       count(*) AS \"events\"\n  FROM event\n WHERE $__unixEpochFilter(start_time)\n   AND data->'person_attributes'->'lower'->>'value' IS NOT NULL\n GROUP BY 1 ORDER BY 2 DESC"
+          "rawSql": "SELECT data->'person_attributes'->'lower'->>'value' AS \"prenda\",\n       count(*) AS \"events\"\n  FROM event\n WHERE $__unixEpochFilter(start_time)\n   AND camera = '$camera'\n   AND data->'person_attributes'->'lower'->>'value' IS NOT NULL\n GROUP BY 1 ORDER BY 2 DESC"
         }
       ],
       "options": {
@@ -112,7 +112,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT data->'person_attributes'->'sleeve'->>'value' AS \"manga\",\n       data->'person_attributes'->'lower'->>'value' AS \"prenda\",\n       count(*) AS \"events\",\n       round(100.0 * count(*) / sum(count(*)) OVER (), 1) AS \"reparto (%)\"\n  FROM event\n WHERE $__unixEpochFilter(start_time)\n   AND data->'person_attributes'->'sleeve'->>'value' IS NOT NULL\n   AND data->'person_attributes'->'lower'->>'value' IS NOT NULL\n GROUP BY 1, 2 ORDER BY 3 DESC"
+          "rawSql": "SELECT data->'person_attributes'->'sleeve'->>'value' AS \"manga\",\n       data->'person_attributes'->'lower'->>'value' AS \"prenda\",\n       count(*) AS \"events\",\n       round(100.0 * count(*) / sum(count(*)) OVER (), 1) AS \"reparto (%)\"\n  FROM event\n WHERE $__unixEpochFilter(start_time)\n   AND camera = '$camera'\n   AND data->'person_attributes'->'sleeve'->>'value' IS NOT NULL\n   AND data->'person_attributes'->'lower'->>'value' IS NOT NULL\n GROUP BY 1, 2 ORDER BY 3 DESC"
         }
       ],
       "options": {
@@ -202,7 +202,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT u.v AS \"arriba\", l.v AS \"abajo\",\n       count(*) AS \"events\",\n       round(100.0 * count(*) / sum(count(*)) OVER (), 1) AS \"reparto (%)\"\n  FROM event,\n       LATERAL (SELECT data->'person_attributes'->'upper_color'->>'value') u(v),\n       LATERAL (SELECT data->'person_attributes'->'lower_color'->>'value') l(v)\n WHERE $__unixEpochFilter(start_time)\n   AND u.v IS NOT NULL AND l.v IS NOT NULL\n GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 15"
+          "rawSql": "SELECT u.v AS \"arriba\", l.v AS \"abajo\",\n       count(*) AS \"events\",\n       round(100.0 * count(*) / sum(count(*)) OVER (), 1) AS \"reparto (%)\"\n  FROM event,\n       LATERAL (SELECT data->'person_attributes'->'upper_color'->>'value') u(v),\n       LATERAL (SELECT data->'person_attributes'->'lower_color'->>'value') l(v)\n WHERE $__unixEpochFilter(start_time)\n   AND camera = '$camera'\n   AND u.v IS NOT NULL AND l.v IS NOT NULL\n GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 15"
         }
       ],
       "options": {
@@ -422,7 +422,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT k AS \"atributo\", v->>'value' AS \"valor\",\n       count(*) AS \"events\",\n       round(100.0 * count(*) / sum(count(*)) OVER (PARTITION BY k), 1) AS \"reparto (%)\",\n       round(avg((v->>'score')::numeric) * 100, 0) AS \"confianza media (%)\"\n  FROM event, jsonb_each(data->'person_attributes') AS t(k, v)\n WHERE $__unixEpochFilter(start_time)\n   AND jsonb_typeof(v) = 'object'\n GROUP BY 1, 2 ORDER BY 1, 3 DESC"
+          "rawSql": "SELECT k AS \"atributo\", v->>'value' AS \"valor\",\n       count(*) AS \"events\",\n       round(100.0 * count(*) / sum(count(*)) OVER (PARTITION BY k), 1) AS \"reparto (%)\",\n       round(avg((v->>'score')::numeric) * 100, 0) AS \"confianza media (%)\"\n  FROM event, jsonb_each(data->'person_attributes') AS t(k, v)\n WHERE $__unixEpochFilter(start_time)\n   AND camera = '$camera'\n   AND jsonb_typeof(v) = 'object'\n GROUP BY 1, 2 ORDER BY 1, 3 DESC"
         }
       ],
       "options": {
@@ -606,7 +606,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "WITH v AS (\n  SELECT floor(start_time / 299.1) AS vuelta,\n         t.k AS atributo, t.v->>'value' AS valor\n    FROM event, jsonb_each(data->'person_attributes') AS t(k, v)\n   WHERE $__unixEpochFilter(start_time)\n     AND jsonb_typeof(t.v) = 'object'),\nc AS (\n  SELECT vuelta, atributo, valor, count(*) AS n,\n         sum(count(*)) OVER (PARTITION BY vuelta, atributo) AS n_attr\n    FROM v GROUP BY 1, 2, 3)\nSELECT atributo AS \"atributo\", valor AS \"valor\",\n       round(avg(100.0 * n / n_attr), 1) AS \"cuota media (%)\",\n       round(stddev(100.0 * n / n_attr), 1) AS \"ruido (pp)\",\n       count(*) AS \"vueltas\"\n  FROM c GROUP BY 1, 2 HAVING count(*) >= 5\n ORDER BY 4 DESC NULLS LAST"
+          "rawSql": "WITH v AS (\n  SELECT floor(start_time / 299.1) AS vuelta,\n         t.k AS atributo, t.v->>'value' AS valor\n    FROM event, jsonb_each(data->'person_attributes') AS t(k, v)\n   WHERE $__unixEpochFilter(start_time)\n     AND camera = '$camera'\n     AND jsonb_typeof(t.v) = 'object'),\nc AS (\n  SELECT vuelta, atributo, valor, count(*) AS n,\n         sum(count(*)) OVER (PARTITION BY vuelta, atributo) AS n_attr\n    FROM v GROUP BY 1, 2, 3)\nSELECT atributo AS \"atributo\", valor AS \"valor\",\n       round(avg(100.0 * n / n_attr), 1) AS \"cuota media (%)\",\n       round(stddev(100.0 * n / n_attr), 1) AS \"ruido (pp)\",\n       count(*) AS \"vueltas\"\n  FROM c GROUP BY 1, 2 HAVING count(*) >= 5\n ORDER BY 4 DESC NULLS LAST"
         }
       ],
       "options": {
@@ -712,6 +712,28 @@
       "description": "El vídeo es el mismo en cada vuelta de 299,1 s, así que la verdad no cambia: **toda esta desviación es ruido del clasificador**. Léelo como el margen de error de los paneles de arriba — si la cuota de un valor se mueve menos que su ruido, no ha pasado nada. Medido: `bag` ±8,8 pp y `gender` ±6,1 pp, que es mucho para un binario sobre entrada idéntica."
     }
   ],
+  "templating": {
+    "list": [
+      {
+        "name": "camera",
+        "label": "Cámara",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "frigate-smoke-pg"
+        },
+        "query": "SELECT DISTINCT camera FROM event WHERE data ? 'person_attributes' ORDER BY 1",
+        "refresh": 1,
+        "sort": 1,
+        "includeAll": false,
+        "multi": false,
+        "current": {
+          "text": "tienda",
+          "value": "tienda"
+        }
+      }
+    ]
+  },
   "schemaVersion": 39,
   "version": 1
 }
