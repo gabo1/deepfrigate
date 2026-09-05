@@ -111,6 +111,20 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
   eventos debido a timeouts del único worker MQTT es un trabajo aparte:
   desacoplar HTTP Frigate/coalescer por `object_id`; no reiniciar ni purgar
   MQTT para “arreglarlo”. Ver `docs/mejores-thumbnails.md`.
+- **END con hora real de salida (5 sep 04:00):** el adapter emite LOST y
+  END juntos `END_AFTER_SECONDS=5` (`LOST_AFTER_SECONDS=5`) tras la última
+  detección (medido en MQTT: 5.00–5.18 s). Antes Frigate cerraba el evento
+  con el timestamp de emisión → `end_time`, fila `gone` y clip 5 s más
+  largos que la presencia real. Ahora cada mensaje del adapter lleva
+  `data.last_seen_at` (frame time de la última detección) y event-engine usa
+  ese valor en el END para `PUT /events/{id}/end`, `end_time` en el store,
+  la fila `gone` y el último punto del path. La gracia de 5 s se mantiene
+  (no se parten tracks). Verificado: `end_time − emisión END = −5.0 s`,
+  `gone == end_time == fin del path` en eventos nuevos. Tests: adapter
+  51 + 1 fallo preexistente (`test_checked_in_tienda_config_loads_line_and_direction`:
+  `config/zones.json` sin commit ya no tiene `area_cajas`), event-engine 58.
+  Desplegado: detection-adapter y event-engine reconstruidos (event-engine
+  con las 4 variables smoke).
 - **Detalle de seguimiento: el trazo volvía atrás (5 sep 03:40):**
   `ObjectTrackOverlay.tsx` une `path_data` con el pie de cada `timeline.data.box`
   ordenado por timestamp. `_write_timeline` escribía en todas las filas la caja

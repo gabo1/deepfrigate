@@ -1304,7 +1304,13 @@ def test_timeline_rows_carry_the_live_box_not_the_thumbnail_box(monkeypatch):
     )
     final = {"x": 600, "y": 400, "width": 80, "height": 80}
     bridge.observe(
-        _detection("END", 112.5, **_quality(confidence=0.75, bbox=final, thumbnail_changed=False)),
+        _detection(
+            "END",
+            112.5,
+            **_quality(
+                confidence=0.75, bbox=final, thumbnail_changed=False, last_seen_at=107.5
+            ),
+        ),
         {
             "id": "end-1",
             "event_type": "object_ended",
@@ -1324,9 +1330,13 @@ def test_timeline_rows_carry_the_live_box_not_the_thumbnail_box(monkeypatch):
         round(80 / 720, 6),
     ]
     assert gone["data"]["score"] == 0.75
-    # ...and the path ends at that same foot point.
+    # ...and the path ends at that same foot point, stamped with the exit time.
     path = store.rows["frigate-event-1"]["data"]["path_data"]
     assert path[-1][0] == [round(600 / 1280 + 80 / 1280 / 2, 4), round(400 / 720 + 80 / 720, 4)]
+    assert path[-1][1] == 107.5
+    # END arrived 5 s after the last detection; Frigate closes at the exit time.
+    assert gone["timestamp"] == 107.5
+    assert store.rows["frigate-event-1"]["end_time"] == 107.5
     # The Event box itself still belongs to the installed snapshot.
     assert store.rows["frigate-event-1"]["data"]["box"] == [
         round(700 / 1280, 6),

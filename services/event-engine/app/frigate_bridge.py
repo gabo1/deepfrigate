@@ -27,6 +27,18 @@ logger = logging.getLogger("event-engine.frigate")
 _COLOR_FIELDS = frozenset({"upper_color", "lower_color"})
 
 
+def _last_seen_at(update: dict[str, Any]) -> float:
+    """Exit time of a track: the END message's last detection frame time."""
+    data = update.get("data") or {}
+    value = data.get("last_seen_at")
+    try:
+        if value is not None:
+            return float(value)
+    except (TypeError, ValueError):
+        pass
+    return float(update.get("timestamp") or 0)
+
+
 def _pre_capture_seconds(event: dict[str, Any]) -> int:
     """Frigate create() uses wall-clock `now` and subtracts this.
 
@@ -180,17 +192,23 @@ class FrigateReviewBridge:
                 self._early_classifications.pop(object_id, None)
                 self._early_analytics.pop(object_id, None)
                 if pending is not None and pending.created:
+                    # The END message carries the last seen bbox and
+                    # `last_seen_at`, the frame time of that detection. The
+                    # adapter emits END `END_AFTER_SECONDS` later as a grace
+                    # period; Frigate's end_time, the "gone" row and the path
+                    # end must use the real exit time, not the emission time.
+                    # The coalesced pending.last_update can be up to
+                    # FRIGATE_BRIDGE_UPDATE_SECONDS older, so prefer END data.
+                    ended_at = _last_seen_at(update)
+                    update_end = {**update, "timestamp": ended_at}
                     if not self._is_false_positive(update):
-                        self._path(update)
-                    # The END message carries the last seen bbox. The
-                    # coalesced pending.last_update can be up to
-                    # FRIGATE_BRIDGE_UPDATE_SECONDS older, and the "gone"
-                    # timeline row must land where the path ends.
+                        self._path(update_end)
                     self._end(
                         event,
-                        last_update=update if update.get("data") else pending.last_update,
+                        last_update=update_end if update.get("data") else pending.last_update,
                         thumbnail_bbox=pending.thumbnail_bbox,
                         snapshot_box=pending.snapshot_box,
+                        end_time=ended_at,
                     )
         elif update_type == "classification":
             self._classification_update(update)
@@ -404,7 +422,9 @@ class FrigateReviewBridge:
         last_update: dict[str, Any] | None = None,
         thumbnail_bbox: dict[str, Any] | None = None,
         snapshot_box: list[float] | None = None,
+        end_time: float | None = None,
     ) -> None:
+        ended = float(end_time if end_time is not None else event["timestamp"])
         link = self.repository.get_active_frigate_link(event["object_id"])
         if link is None:
             logger.debug(
@@ -436,7 +456,7 @@ class FrigateReviewBridge:
         self._flush_geometry(
             str(frigate_event_id),
             event["object_id"],
-            end_time=float(event["timestamp"]),
+            end_time=ended,
         )
         # Frigate does not rewrite the snapshot at END. A later NvTracker
         # occupant would replace the best frame if we copied `{track}.jpg`.
@@ -453,7 +473,7 @@ class FrigateReviewBridge:
         self._write_timeline(
             str(frigate_event_id),
             event["camera_id"],
-            event["timestamp"],
+            ended,
             (last_update or {}).get("data") or event.get("data") or {},
             "gone",
             object_id=event.get("object_id"),
@@ -462,7 +482,7 @@ class FrigateReviewBridge:
             self._request(
                 "PUT",
                 f"/events/{quote(str(frigate_event_id), safe='')}/end",
-                {"end_time": event["timestamp"]},
+                {"end_time": ended},
             )
         except HTTPError as error:
             if error.code not in {400, 404}:
@@ -473,9 +493,7 @@ class FrigateReviewBridge:
                 error.code,
                 event["object_id"],
             )
-        self.repository.end_frigate_link(
-            start_event_id, event["timestamp"]
-        )
+        self.repository.end_frigate_link(start_event_id, ended)
         self._paths.pop(event["object_id"], None)
         self._zones.pop(event["object_id"], None)
         self._zone_sets.pop(event["object_id"], None)

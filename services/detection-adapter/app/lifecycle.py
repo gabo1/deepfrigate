@@ -396,6 +396,10 @@ class Lifecycle:
                 "label": detection.label,
                 "confidence": detection.confidence,
                 "bbox": detection.bbox,
+                # Frame time of the last detection of this track. LOST/END are
+                # emitted END_AFTER_SECONDS later; consumers that want the
+                # real exit time (Frigate end_time, path end) read this.
+                "last_seen_at": detection.timestamp,
                 "false_positive": track.false_positive,
                 "computed_score": track.computed_score,
                 "top_score": track.top_score,

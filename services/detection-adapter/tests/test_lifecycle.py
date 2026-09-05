@@ -301,3 +301,6 @@ def test_end_matches_frigate_max_disappeared() -> None:
     now[0] = 5.2
     expired = lifecycle.expire()
     assert [item["data"]["lifecycle_event"] for item in expired] == ["LOST", "END"]
+    # END is emitted after the grace period but names the real exit frame.
+    assert expired[-1]["timestamp"] == 5.2
+    assert expired[-1]["data"]["last_seen_at"] == 0.2
