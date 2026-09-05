@@ -125,7 +125,12 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
   completo con `PUT /api/reindex` a las 02:19: 30 861 eventos a ~4.4/s ≈
   2 h; durante el reindex Frigate ~120 % CPU (preprocesado de imagen) y
   GPU 84 %. Progreso: `select count(*) from vec_thumbnails;`. Régimen
-  normal tras reindex: ~0.3 eventos/s × 0.2 s ≈ 6 % GPU. Si v2 resulta
+  normal tras reindex: ~0.3 eventos/s × 0.2 s ≈ 6 % GPU. **Reindex
+  detenido a las 03:12** por decisión del usuario (Explore queda bloqueado
+  mientras dura: "Explorar no está disponible"); se cortó con un `docker
+  restart` (no hay API de cancelación). Quedaron 13 922 vectores v2: los
+  ~17 000 eventos más antiguos no aparecen en búsqueda semántica. Todo
+  evento nuevo sí se embebe al END. Si v2 resulta
   caro, `model: jinav1` + `model_size: large` (fp16 ya en caché) es 13×
   más rápido pero solo inglés y exige otro reindex.
 - **Jina y por qué colgaba FastAPI (5 sep 01:40):** `semantic_search`
