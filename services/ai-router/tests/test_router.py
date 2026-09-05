@@ -26,6 +26,8 @@ def _consumer() -> FrameRefConsumer:
     consumer.min_crop_height = 32
     consumer.attribute_min_crop_width = 64
     consumer.attribute_min_crop_height = 96
+    consumer.vehicle_min_crop_width = 80
+    consumer.vehicle_min_crop_height = 48
     consumer.color_sample_seconds = 1.0
     consumer.color_vote_window = 10
     consumer.color_frame_width = 1280
@@ -82,6 +84,29 @@ def test_router_only_queues_person_for_attributes() -> None:
 
     assert consumer.work.get_nowait() == ("trafico", 8, "person")
     assert consumer.work.empty()
+
+
+def test_router_queues_car_when_vehicle_attributes_enabled() -> None:
+    consumer = _consumer()
+    consumer.attribute_labels = {"person", "car"}
+
+    consumer._on_message(None, None, _message("car"))
+    assert consumer.work.get_nowait() == ("trafico", 7, "car")
+
+    consumer.pending.discard(("trafico", 7))
+    consumer.inference_counts[("trafico", 7)] = 2
+    consumer._on_message(None, None, _message("car"))
+    assert consumer.work.empty()
+
+
+def test_router_vehicle_min_crop_is_wider_than_person() -> None:
+    consumer = _consumer()
+    consumer.attribute_labels = {"person", "car"}
+
+    assert consumer._crop_is_eligible({"width": 80, "height": 48}, "car")
+    assert not consumer._crop_is_eligible({"width": 79, "height": 48}, "car")
+    assert not consumer._crop_is_eligible({"width": 80, "height": 47}, "car")
+    assert not consumer._crop_is_eligible({"width": 80, "height": 48}, "person")
 
 
 def test_router_embeds_explore_thumb_once_on_end() -> None:

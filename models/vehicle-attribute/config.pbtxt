@@ -1,0 +1,32 @@
+name: "vehicle-attribute"
+platform: "tensorrt_plan"
+max_batch_size: 16
+
+input [
+  {
+    name: "x"
+    data_type: TYPE_FP32
+    dims: [3, 192, 256]
+  }
+]
+
+output [
+  {
+    name: "scores"
+    data_type: TYPE_FP32
+    dims: [19]
+  }
+]
+
+instance_group [
+  {
+    kind: KIND_GPU
+    count: 1
+    gpus: [0]
+  }
+]
+
+dynamic_batching {
+  preferred_batch_size: [1, 2, 4, 8, 16]
+  max_queue_delay_microseconds: 10000
+}

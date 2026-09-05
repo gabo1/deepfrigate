@@ -32,6 +32,10 @@ from .clothing_color import (
 )
 from .embedding import VehicleEmbeddingService
 from .explore_thumb import load_explore_thumb
+from .vehicle_attribute import (
+    MODEL_VERSION as VEHICLE_MODEL_VERSION,
+    VehicleAttributeService,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -106,6 +110,17 @@ class FrameRefConsumer:
             or self.attribute_min_crop_height <= 0
         ):
             raise ValueError("attribute crop dimensions must be positive")
+        self.vehicle_min_crop_width = int(
+            os.getenv("VEHICLE_ATTRIBUTE_MIN_CROP_WIDTH", "80")
+        )
+        self.vehicle_min_crop_height = int(
+            os.getenv("VEHICLE_ATTRIBUTE_MIN_CROP_HEIGHT", "48")
+        )
+        if (
+            self.vehicle_min_crop_width <= 0
+            or self.vehicle_min_crop_height <= 0
+        ):
+            raise ValueError("vehicle attribute crop dimensions must be positive")
         self.color_sample_seconds = float(
             os.getenv("COLOR_SAMPLE_SECONDS", "1.0")
         )
@@ -147,6 +162,12 @@ class FrameRefConsumer:
             triton_url=os.getenv("TRITON_URL", "triton:8001"),
             model_name=os.getenv(
                 "ATTRIBUTE_TRITON_MODEL", "person-attribute"
+            ),
+        )
+        self.vehicle_attributes = VehicleAttributeService(
+            triton_url=os.getenv("TRITON_URL", "triton:8001"),
+            model_name=os.getenv(
+                "VEHICLE_ATTRIBUTE_TRITON_MODEL", "vehicle-attribute"
             ),
         )
         with open(
@@ -259,7 +280,8 @@ class FrameRefConsumer:
                     < self.attribute_max_per_track
                 )
                 color_due = (
-                    time.time() - self.last_color_at.get(key, 0.0)
+                    label == "person"
+                    and time.time() - self.last_color_at.get(key, 0.0)
                     >= self.color_sample_seconds
                 )
                 if not need_pulc and not color_due:
@@ -348,11 +370,11 @@ class FrameRefConsumer:
         ref_id = ref["id"]
         if label not in self.attribute_labels:
             return False
-        infer_person = self._should_infer_person(ref)
-        sample_color = self._color_sample_allowed(ref)
-        if infer_person and not self._crop_is_eligible(ref, label):
-            infer_person = False
-        if not infer_person and not sample_color:
+        infer_attrs = self._should_infer_attributes(ref, label)
+        sample_color = label == "person" and self._color_sample_allowed(ref)
+        if infer_attrs and not self._crop_is_eligible(ref, label):
+            infer_attrs = False
+        if not infer_attrs and not sample_color:
             if not self._crop_is_eligible(ref, label):
                 min_width, min_height = self._min_crop(label)
                 logger.info(
@@ -368,15 +390,16 @@ class FrameRefConsumer:
                 )
             else:
                 logger.info(
-                    "Skipped person FrameRef %s camera=%s track=%s "
+                    "Skipped %s FrameRef %s camera=%s track=%s "
                     "size=%sx%s quality=%.1f",
+                    label,
                     ref_id,
                     ref["camera_id"],
                     ref["track_id"],
                     ref["width"],
                     ref["height"],
-                    person_crop_quality(
-                        int(ref["width"]), int(ref["height"])
+                    self._crop_quality(
+                        label, int(ref["width"]), int(ref["height"])
                     ),
                 )
             return False
@@ -403,11 +426,11 @@ class FrameRefConsumer:
                 label,
                 ref_id,
                 age_ms,
-                infer_person=infer_person,
+                infer_attrs=infer_attrs,
                 sample_color=sample_color,
             )
-            if infer_person:
-                self._remember_person_crop(ref)
+            if infer_attrs:
+                self._remember_crop_quality(ref, label)
             if update is not None:
                 self._publish_update(
                     update,
@@ -418,7 +441,7 @@ class FrameRefConsumer:
                     age_ms,
                     first_for_track,
                 )
-            return infer_person
+            return infer_attrs
         finally:
             try:
                 self._request(
@@ -482,13 +505,20 @@ class FrameRefConsumer:
         label: str,
         ref_id: str,
         age_ms: float,
-        infer_person: bool = True,
+        infer_attrs: bool = True,
         sample_color: bool = True,
     ) -> dict[str, Any] | None:
         key = (str(ref["camera_id"]), int(ref["track_id"]))
         inference_ms = 0.0
-        if infer_person:
-            result = self.attributes.enrich(ref, pixels)
+        model_name = self.attributes.model_name
+        model_version = MODEL_VERSION
+        if infer_attrs:
+            if label == "car":
+                result = self.vehicle_attributes.enrich(ref, pixels)
+                model_name = self.vehicle_attributes.model_name
+                model_version = VEHICLE_MODEL_VERSION
+            else:
+                result = self.attributes.enrich(ref, pixels)
             inference_ms = result.inference_ms
             with self.lock:
                 self.pulc_items[key] = result.attributes
@@ -510,8 +540,8 @@ class FrameRefConsumer:
             "timestamp": time.time(),
             "update_type": "classification",
             "data": {
-                "model": self.attributes.model_name,
-                "model_version": MODEL_VERSION,
+                "model": model_name,
+                "model_version": model_version,
                 "label": label,
                 "attributes": [
                     {
@@ -697,9 +727,18 @@ class FrameRefConsumer:
             return self.attribute_max_per_track
         return self.max_per_track
 
-    def _should_infer_person(self, ref: dict[str, Any]) -> bool:
+    def _crop_quality(self, label: str, width: int, height: int) -> float:
+        if label == "person":
+            return person_crop_quality(width, height)
+        return float(width * height)
+
+    def _should_infer_attributes(
+        self, ref: dict[str, Any], label: str
+    ) -> bool:
         key = (str(ref["camera_id"]), int(ref["track_id"]))
-        quality = person_crop_quality(int(ref["width"]), int(ref["height"]))
+        quality = self._crop_quality(
+            label, int(ref["width"]), int(ref["height"])
+        )
         with self.lock:
             best = self.best_crop_quality.get(key)
             count = self.inference_counts.get(key, 0)
@@ -707,17 +746,30 @@ class FrameRefConsumer:
             return True
         return should_replace_person_crop(quality, best)
 
-    def _remember_person_crop(self, ref: dict[str, Any]) -> None:
+    def _should_infer_person(self, ref: dict[str, Any]) -> bool:
+        return self._should_infer_attributes(ref, "person")
+
+    def _remember_crop_quality(self, ref: dict[str, Any], label: str) -> None:
         key = (str(ref["camera_id"]), int(ref["track_id"]))
-        quality = person_crop_quality(int(ref["width"]), int(ref["height"]))
+        quality = self._crop_quality(
+            label, int(ref["width"]), int(ref["height"])
+        )
         with self.lock:
             self.best_crop_quality[key] = quality
 
+    def _remember_person_crop(self, ref: dict[str, Any]) -> None:
+        self._remember_crop_quality(ref, "person")
+
     def _min_crop(self, label: str) -> tuple[int, int]:
-        if label in self.attribute_labels:
+        if label == "person" and label in self.attribute_labels:
             return (
                 self.attribute_min_crop_width,
                 self.attribute_min_crop_height,
+            )
+        if label == "car" and label in self.attribute_labels:
+            return (
+                self.vehicle_min_crop_width,
+                self.vehicle_min_crop_height,
             )
         return self.min_crop_width, self.min_crop_height
 

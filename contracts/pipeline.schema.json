@@ -162,7 +162,8 @@
                 "enum": [
                   "pp-shitu",
                   "plate-recognition",
-                  "pulc-person"
+                  "pulc-person",
+                  "pulc-vehicle"
                 ]
               },
               "labels": {

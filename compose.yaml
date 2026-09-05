@@ -68,6 +68,7 @@ services:
       - --load-model=object-detector
       - --load-model=vehicle-embedding
       - --load-model=person-attribute
+      - --load-model=vehicle-attribute
       - --strict-model-config=true
     ports:
       - "127.0.0.1:${TRITON_HTTP_PORT:-8010}:8000"
@@ -95,7 +96,7 @@ services:
       ZONES_CONFIG: /app/config/zones.json
       TRITON_MODEL_REPOSITORY: /app/models
       TRITON_HTTP_URL: http://triton:8000
-      TRITON_REQUIRED_MODELS: ${TRITON_REQUIRED_MODELS:-object-detector,vehicle-embedding,person-attribute}
+      TRITON_REQUIRED_MODELS: ${TRITON_REQUIRED_MODELS:-object-detector,vehicle-embedding,person-attribute,vehicle-attribute}
       MODEL_MANAGEMENT_ALLOW_UNLOAD: ${MODEL_MANAGEMENT_ALLOW_UNLOAD:-false}
     volumes:
       - ./services/video-engine/config:/app/pipeline-config
@@ -131,11 +132,14 @@ services:
       EMBEDDING_MIN_CROP_WIDTH: ${EMBEDDING_MIN_CROP_WIDTH:-48}
       EMBEDDING_MIN_CROP_HEIGHT: ${EMBEDDING_MIN_CROP_HEIGHT:-32}
       DS_SNAPSHOT_DIR: /opt/ds-snapshots
-      ATTRIBUTE_LABELS: ${ATTRIBUTE_LABELS:-person}
+      ATTRIBUTE_LABELS: ${ATTRIBUTE_LABELS:-person,car}
       ATTRIBUTE_TRITON_MODEL: ${ATTRIBUTE_TRITON_MODEL:-person-attribute}
+      VEHICLE_ATTRIBUTE_TRITON_MODEL: ${VEHICLE_ATTRIBUTE_TRITON_MODEL:-vehicle-attribute}
       ATTRIBUTE_MAX_PER_TRACK: ${ATTRIBUTE_MAX_PER_TRACK:-2}
       ATTRIBUTE_MIN_CROP_WIDTH: ${ATTRIBUTE_MIN_CROP_WIDTH:-64}
       ATTRIBUTE_MIN_CROP_HEIGHT: ${ATTRIBUTE_MIN_CROP_HEIGHT:-96}
+      VEHICLE_ATTRIBUTE_MIN_CROP_WIDTH: ${VEHICLE_ATTRIBUTE_MIN_CROP_WIDTH:-80}
+      VEHICLE_ATTRIBUTE_MIN_CROP_HEIGHT: ${VEHICLE_ATTRIBUTE_MIN_CROP_HEIGHT:-48}
     volumes:
       - ./data/ds-snapshots:/opt/ds-snapshots:ro
     depends_on:
@@ -210,6 +214,10 @@ services:
       TRACKED_OBJECTS_TOPIC: deepfrigate/tracked-objects/+
       EVENTS_TOPIC: deepfrigate/events/{camera_id}
       EVENT_QUEUE_SIZE: ${EVENT_QUEUE_SIZE:-1024}
+      # HTTP calls to Frigate consume this separate queue; MQTT persistence
+      # never waits for a slow Frigate API.
+      FRIGATE_BRIDGE_QUEUE_SIZE: ${FRIGATE_BRIDGE_QUEUE_SIZE:-8192}
+      FRIGATE_BRIDGE_UPDATE_SECONDS: ${FRIGATE_BRIDGE_UPDATE_SECONDS:-1}
       FRIGATE_REVIEW_BRIDGE: ${FRIGATE_REVIEW_BRIDGE:-true}
       FRIGATE_REVIEW_LABELS: ${FRIGATE_REVIEW_LABELS:-person,car}
       FRIGATE_API_URL: ${FRIGATE_API_URL:-http://frigate:5000/api}

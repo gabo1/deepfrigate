@@ -66,7 +66,9 @@ def test_duplicate_camera_ids_are_rejected(tmp_path: Path) -> None:
 
 def test_unknown_rule_camera_is_rejected(tmp_path: Path) -> None:
     document = _document()
-    document["pipeline"]["rules"][0]["camera"] = "unknown"
+    document["pipeline"]["rules"] = [
+        {"type": "zone", "camera": "unknown", "zone": "area_cajas"}
+    ]
 
     with pytest.raises(PipelineConfigError, match="unknown camera"):
         load_pipeline(
@@ -101,6 +103,10 @@ def test_schema_rejects_unknown_fields(tmp_path: Path) -> None:
 
 
 def test_unknown_zone_reference_is_rejected(tmp_path: Path) -> None:
+    document = _document()
+    document["pipeline"]["rules"] = [
+        {"type": "zone", "camera": "tienda", "zone": "area_cajas"}
+    ]
     zones = tmp_path / "zones.json"
     zones.write_text(
         '{"cameras":{"tienda":{"zones":{}}}}',
@@ -109,7 +115,7 @@ def test_unknown_zone_reference_is_rejected(tmp_path: Path) -> None:
 
     with pytest.raises(PipelineConfigError, match="unknown zone"):
         load_pipeline(
-            CONFIG,
+            _write(tmp_path, document),
             schema_path=SCHEMA,
             environment=ENVIRONMENT,
             zones_path=zones,
@@ -120,7 +126,12 @@ def test_model_and_version_references_are_validated(
     tmp_path: Path,
 ) -> None:
     models = tmp_path / "models"
-    for model in ("object-detector", "vehicle-embedding", "person-attribute"):
+    for model in (
+        "object-detector",
+        "vehicle-embedding",
+        "person-attribute",
+        "vehicle-attribute",
+    ):
         (models / model).mkdir(parents=True)
         (models / model / "config.pbtxt").write_text(
             f'name: "{model}"', encoding="utf-8"

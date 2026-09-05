@@ -36,7 +36,7 @@ triton_url = os.getenv("TRITON_HTTP_URL", "http://triton:8000").rstrip(
 required_models = {
     model.strip()
     for model in os.getenv(
-        "TRITON_REQUIRED_MODELS", "object-detector,vehicle-embedding,person-attribute"
+        "TRITON_REQUIRED_MODELS", "object-detector,vehicle-embedding,person-attribute,vehicle-attribute"
     ).split(",")
     if model.strip()
 }

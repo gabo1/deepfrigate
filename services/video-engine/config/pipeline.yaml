@@ -39,8 +39,7 @@ pipeline:
       family: pulc-person
       labels:
         - person
-
-  rules:
-    - type: zone
-      camera: tienda
-      zone: area_cajas
+    - model: vehicle-attribute
+      family: pulc-vehicle
+      labels:
+        - car
