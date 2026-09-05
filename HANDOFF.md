@@ -1,14 +1,16 @@
 # Handoff — DeepFrigate
 
-## Estado actual (1 sep 2026, ~05:05 UTC)
+## Estado actual (4 sep 2026, ~18:00 UTC)
 
 Instancia de trabajo: **Frigate PostgreSQL + pgvector aislado**, no el NVR
 SQLite original. DeepStream está **arriba** y escribe Events en esta
 instancia. El bloque «video-engine caído» del 31 ago está **obsoleto**.
 Runbook de corte (aún no ejecutado): `frigate-pg/docs/CUTOVER.md`.
-Mapa de analíticas (fuentes, recreate, no-hacer): `docs/ANALITICAS-FUENTES.md`.
-Checklist vivo / deuda / Grafana: sección **Analíticas y Grafana (3 sep)**
-abajo. No reinvestigar eso desde cero.
+Arquitectura DeepFrigate (grafo, PGIE vs atributos): `docs/ARQUITECTURA.md`.
+`/home/agent/arquitectura.md` es **Savant** — no tocarlo.
+Mapa de analíticas: `docs/ANALITICAS-FUENTES.md`. Checklist Grafana:
+sección **Analíticas y Grafana (3 sep)** abajo.
+Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
 
 - UI: `https://100.83.231.97:3005` (bind Tailscale:
   `FRIGATE_PGVECTOR_SMOKE_BIND_ADDRESS=100.83.231.97`; el default de compose
@@ -22,12 +24,38 @@ abajo. No reinvestigar eso desde cero.
   `frigate-pg/docs/RECREAR-IMAGEN-3005.md`.
 - Contenedores: `frigate-pgvector-smoke`, `frigate-pgvector-smoke-db`
   (`pgvector/pgvector:pg17`, base `frigate_pgvector_smoke`)
-- Detector nativo: **apagado** (`detect.enabled: false`, `detectors.cpu`
-  idle). Las detecciones las hace **DeepStream** (`video-engine` +
-  `detection-adapter` + `event-engine`)
-- Cámara: `tienda` real, grabación continua 1 día
-- Validado ~05:02 UTC: Events nuevos (`dxlbv1`, `v9iqc3`, …) con
-  `data.type=object` y fila en `vec_thumbnails`
+- Detector nativo: **apagado**. Frigate **no decodifica**: go2rtc
+  proxy `#video=copy` de MediaMTX; ffmpeg solo `-c:v copy` a
+  segmentos. DeepStream (`video-engine` + adapter + event-engine)
+  es el único decoder analítico (`tienda` + `user`).
+- `semantic_search` / Jina: **apagado** en smoke (4 sep tarde).
+  Cargaba CLIP en el hilo FastAPI y, con `/thumbnail/embed` de
+  event-engine, colgaba `:3005` (HTML 200, API timeout, health
+  unhealthy). «Buscar similares» de producto sigue siendo Qdrant.
+- tmpfs `/tmp/cache`: **512 MB** (antes 128 MB; se llenó de
+  `preview_frames` → ffmpeg `No space left` → API muerta).
+- Cámaras en el pipeline vivo y en smoke `:3005`: `tienda` (Hik
+  `210235C8NP3246000069` bajado a **1920×1080 @ 10 fps** con
+  `tienda-transcode` / NVENC en la T4 — no libx264 en fakecam; pull
+  nativo del Hik remoto) y **`user`** (RTSP real
+  `rtsp://cyberw.io:15190/?inst=1`, restream
+  `rtsp://100.83.231.97:8554/user`). Grabación continua 1 día en
+  ambas. Relato y trampas: `docs/CAMARA-USER.md`.
+- Cámaras **solo live+record** en smoke (sin DeepStream):
+  `c4aac4f4eee2`, `c4aac4f4ef0a`, `c4aac4f4ef24` (640×480 @ 15).
+  **`c4aac4f4eefe` deshabilitada** (origen remoto 404).
+  `cam_210235c8np` ya no está: el Hik solo entra como `tienda` (1080p10).
+  Origen `rtsp://10.252.128.4:8554/<PATH>` (MediaMTX remoto; los UUID
+  de Nx `:7001` pedían Digest). Restream local
+  `rtsp://100.83.231.97:8554/<id>`. Frigate lee
+  `rtsp://127.0.0.1:8554/<id>` (go2rtc del contenedor).
+- Validado ~05:02 UTC (`tienda`): Events nuevos (`dxlbv1`, `v9iqc3`, …)
+  con `data.type=object` y fila en `vec_thumbnails`
+- Validado ~19:15 UTC 3 sep (`user`): Events `car`/`person`,
+  `data.type=object`, crop 2–5 KiB, live JPEG 200. ShiTu ya embebe
+  los coches. PULC `vehicle_attribute` escribe color + tipo de
+  carrocería en `event.data.vehicle_attributes`. No hay marca/modelo
+  en el zoo PaddleClas.
 
 **Dos búsquedas distintas**
 
@@ -36,8 +64,9 @@ abajo. No reinvestigar eso desde cero.
   Qdrant se filtra a object_ids con Event en **esta** PostgreSQL; si no,
   devolvía `[]` (vecinos score 1.0 de tracks viejos del NVR SQLite).
 - Explore nativo (texto / `search_type=similarity`): Jina 768 +
-  `vec_thumbnails`. Ya indexa Events DeepStream, no solo detecciones
-  internas de Frigate.
+  `vec_thumbnails`. **Apagado en smoke** (4 sep) para no tumbar
+  FastAPI. El código y `vec_thumbnails` siguen; no reactivar sin
+  quitar `/embed` del hot path.
 
 **Puente DeepStream → esta instancia**
 
@@ -50,9 +79,11 @@ abajo. No reinvestigar eso desde cero.
 - `FrigateEventStore` escribe `event.box`, `region`, `area`,
   `data.type=object`, `path_data`, zonas y Timeline. Sin eso el Event
   quedaba `type=api`, `box` NULL, y desaparecía «Buscar similares».
-- Tras el recorte: **un** `POST /api/events/{id}/thumbnail/embed` por Event
-  (no en cada `thumbnail_changed`). En el END se reescribe el crop antes
-  del `PUT /end`.
+- Tras el recorte: event-engine **ya no** llama
+  `POST /api/events/{id}/thumbnail/embed` salvo
+  `FRIGATE_EMBED_THUMBNAILS=true`. Ese POST bloqueaba FastAPI (Jina
+  en el mismo hilo) y dejaba la UI en blanco. En el END se reescribe
+  el crop antes del `PUT /end`.
 - `events/maintainer` publica `event_end` también en Events API para que
   el proceso Jina lea el WebP si `event.thumbnail` es NULL.
 - `finished()` en `camera/state.py` hace `pop` seguro: un `event_end` de
@@ -61,6 +92,73 @@ abajo. No reinvestigar eso desde cero.
   Explore se quedó sin Events nuevos ~04:55–05:02 hasta el fix.
 - `FrigateEventStore.merge` no espera 5 s en bucle si el Event nunca
   existió (Events fantasma del create-sin-insert bloqueaban el worker).
+- **Snapshots consistentes (4 sep ~18:00):** DeepStream publica cada terna
+  escena/clean/thumb como bundle inmutable
+  `data/ds-snapshots/{cam}/.bundles/{track}/{gen}/` y reemplaza
+  `current.json` al final. `event-engine` lo prefiere y termina la copia al
+  primer éxito; ya no puede mezclar tres archivos mientras se actualizan ni
+  duerme 8×50 ms tras haber copiado. Se conserva el fallback plano y cuatro
+  generaciones por track. Se corrigió además el nombre del clean de tracks
+  co-detectados: siempre `{track}-clean.webp`, no `{track}.webp`.
+  Desplegado: event-engine recreado con las cuatro variables smoke y
+  video-engine reiniciado; tests 47 + 21 pasaron. El retraso histórico de
+  eventos debido a timeouts del único worker MQTT es un trabajo aparte:
+  desacoplar HTTP Frigate/coalescer por `object_id`; no reiniciar ni purgar
+  MQTT para “arreglarlo”. Ver `docs/mejores-thumbnails.md`.
+- **Caja del snapshot = caja del bundle (5 sep ~00:15):** Explore dibujaba
+  el bbox desplazado (evento `1788565560.389661-q9pp7i`, `tienda-1512`):
+  la escena la elegía video-engine y la caja la elegía detection-adapter
+  (`thumbnail.bbox`) sobre MQTT, ~1.3 s por delante de la rama export.
+  Dos selectores, emparejados por hora de llegada. Ahora `manifest.json`
+  (version 2) lleva `bbox` en píxeles, `frame_width/height`, `score`,
+  `frame_number` y `buffer_pts` del frame que se recortó; event-engine copia
+  el bundle **antes** de escribir geometría y toma `Event.box/region/area`
+  y `score` de ese manifest. El bbox del adapter queda solo como fallback
+  (bundles legado sin `bbox`) y para recortar el thumb si falta. `path_data`
+  sigue arrancando donde el adapter vio el objeto. Segundo arreglo: dos
+  tracks que mejoran en el mismo frame usaban `shutil.copyfile` sobre
+  `{track}.jpg`, que está hard-linkeado en su bundle anterior; escribía en
+  el mismo inode y pisaba la generación "inmutable" (`b89d…` y `88f1…`
+  compartían inode). Ahora `copy_track_file` copia a `.tmp` + `replace`.
+  El exporter recibe `pipeline_size` (mux 1280×720) porque
+  `frame_meta.pipeline_width/height` llegan a 0 tras `nvvideoconvert`.
+  Cuarto hallazgo (`tienda-125` / `lqs0pv`, 5 sep 00:21): ~3.4 % de los
+  eventos (70 de 2061 en 2 h) tenían `-clean.webp` y thumb **verdes
+  uniformes** (1920×1080 = `detect` de Frigate, no 1280×720). Los escribe
+  el propio Frigate al procesar `POST /events/{cam}/{label}/create`: agarra
+  un frame de una cámara que no decodifica (YUV a cero = verde) y los graba
+  0.2–1.2 s **después** de que event-engine copió los suyos; el jpg
+  sobrevive, clean y thumb se pierden. Explore dibuja la caja sobre el
+  clean, de ahí "snapshot verde con caja". Arreglo en event-engine: en END
+  `replace_frigate_snapshot(overwrite=False, repair_box=…)` detecta clean o
+  thumb con mtime > jpg + 0.15 s (copia sana: los tres en pocos ms) y los
+  regenera desde nuestro jpg con la caja del manifest
+  (`_PendingTrack.snapshot_box`). Mientras el evento sigue abierto puede
+  verse verde; la raíz está en Frigate (`frigate/api/event.py` ~1703) y se
+  puede parchear allí más adelante.
+  Tercer arreglo (visto al verificar, `user-137` / `ucplsg`): al reutilizar
+  NvTracker un id, `clear_stale_track_files` borraba los planos pero no
+  `.bundles/{id}/current.json`; el START del nuevo ocupante copiaba escena,
+  caja y score del ocupante anterior. Ahora también borra el puntero.
+  Codex (mismo día) ya había quitado el FIFO Probe/appsink y lee
+  `Buffer.batch_meta` en `consume()`; correcto. Tests: video-engine 25,
+  event-engine 55. Desplegado: video-engine reiniciado, event-engine
+  recreado con las cuatro variables smoke. Los tests de
+  `test_pipeline_config.py` fallan dentro de `deepfrigate-video-engine-1`
+  porque el mount `./services/video-engine:/opt/deepfrigate:ro` tapa
+  `contracts/`; correr con un árbol que incluya `contracts/`.
+- **Latencia MQTT/Frigate (4 sep ~18:18):** resuelto el bloqueo del consumidor:
+  `event-persistence` persiste, publica y confirma MQTT; `frigate-bridge` es
+  otro worker, cola y conexión PostgreSQL. Así un HTTP/media lento no retiene
+  mensajes QoS1. Antes de la cola del bridge se coalescen UPDATE repetidos por
+  objeto (`FRIGATE_BRIDGE_UPDATE_SECONDS=1`), conservando START, primer UPDATE
+  confirmado, thumbnail mejorado, cambio stationary y END. Variables nuevas:
+  `FRIGATE_BRIDGE_QUEUE_SIZE=8192`, `FRIGATE_BRIDGE_UPDATE_SECONDS=1`.
+  Validación viva: inserción normalizada 0.017–0.023 s media (máx. 0.103 s) y
+  eventos recientes de `tienda`/`user` con `created_epoch - start_time` ≈0 s.
+  Tests event-engine: **49 passed**. No cambiar la ventana de 90 s de la
+  consulta de “edad” por latencia: mezcla eventos antiguos; medir siempre
+  `split_part(id,'.',1)::float - start_time`.
 
 **No hacer**
 
@@ -68,12 +166,15 @@ abajo. No reinvestigar eso desde cero.
   swap). El overlay Explore (`search_type=deep`) ya está en la imagen
   smoke. Sí vale rebuild Python-only: `Dockerfile.postgres-smoke` y
   `event-engine`.
-- No recrear `event-engine` solo con `.env.example`. Ese archivo no
-  lleva el puente al smoke. Hay que exportar las cuatro variables
-  juntas (API, `FRIGATE_DB_PATH` vacío, store URL y
-  `FRIGATE_BRIDGE_MEDIA_VOLUME=frigate-pg_pgvector-smoke-media`) o
-  Explore vuelve a servir thumbs de escena (~70 KiB) y el crop se
-  escribe en el volumen del NVR de producto. Comando:
+- No recrear `event-engine` **ni** `platform-api` solo con
+  `.env.example`. Ese archivo no lleva el puente al smoke
+  (`FRIGATE_*` van comentadas). En `event-engine` Explore vuelve a
+  servir thumbs de escena (~70 KiB) y el crop se escribe en el
+  volumen del NVR de producto. En `platform-api` el heatmap responde
+  **503**. Hay que exportar las variables juntas (API,
+  `FRIGATE_DB_PATH` vacío, store URL y
+  `FRIGATE_BRIDGE_MEDIA_VOLUME=frigate-pg_pgvector-smoke-media`).
+  Comando de `event-engine`:
 
   ```bash
   FRIGATE_API_URL=http://frigate-pgvector-smoke:5000/api \
@@ -86,6 +187,19 @@ abajo. No reinvestigar eso desde cero.
   Diagnóstico rápido: `ls -l` en
   `frigate-pgvector-smoke:/media/frigate/clips/thumbs/tienda` —
   crop bueno ≈ 3–8 KiB; escena de Frigate ≈ 68–73 KiB.
+
+  `platform-api` (heatmap) necesita al menos API + store:
+
+  ```bash
+  FRIGATE_API_URL=http://frigate-pgvector-smoke:5000/api \
+  FRIGATE_EVENT_STORE_URL=postgresql://frigate_pgvector:frigate_pgvector_smoke@pgvector-smoke-db:5432/frigate_pgvector_smoke \
+  docker compose --env-file .env.example up -d --no-deps platform-api
+  ```
+- No reactivar `semantic_search` ni
+  `FRIGATE_EMBED_THUMBNAILS=true` en esta VM: Jina + `/embed` +
+  ráfaga de `POST /create` cuelgan el único worker FastAPI
+  (HTML 200, `/api/config` timeout, health unhealthy). Ver
+  «Por qué se cae :3005» (4 sep).
 - No backfill masivo por `POST .../thumbnail/embed`: satura FastAPI
   (`/auth` 504) y tumba la UI. **Deprecado:** no se indexará el
   histórico anterior al enganche Jina.
@@ -93,23 +207,70 @@ abajo. No reinvestigar eso desde cero.
 - No tocar el NVR SQLite (`deepfrigate-frigate-1` / `frigate.db`), el
   PostgreSQL de producto `deepfrigate`, ni vaciar Qdrant (mezcla
   histórico + esta sesión).
+- No cambiar la imagen de `deepfrigate-postgres-1` por TimescaleDB
+  “para el heatmap”: es el PG de producto del Event Engine. `path_data`
+  ya basta.
+- No pushear `/home/agent/frigatenvr-reporter-addon` a `origin`
+  (`kornyhiv`). El commit `ddfd8f6` es solo local.
 
 **Pendiente**
 
 - Noche de corte SQLite → PostgreSQL. Ensayo **hecho** 1 sep 23:10 UTC
   (`matches: true`, 104.989 filas). Runbook:
   `frigate-pg/docs/CUTOVER.md`. Imagen:
-  `deepfrigate-frigate-pg:pgvector-smoke`.
-- Analíticas Grafana: **fila C SQL** y salud Frigate `/api/metrics`.
-  Deuda (no hacer salvo pedido): matriz OD, heatmap de frame,
+  `deepfrigate-frigate-pg:pgvector-smoke`. **No empezar solo.**
+- Analíticas: lo útil del Grafana **está**. Queda el informe PDF del
+  addon y, si se pide, overlay de calor sobre vídeo grabado. Deuda
+  (no hacer salvo pedido): matriz OD, tabla `foot_points`,
   `filter` de zona, i18n Timeline. Ver sección 3 sep abajo.
 
 ## Analíticas y Grafana (3 sep 2026)
 
-Detalle y trampas: `docs/ANALITICAS-FUENTES.md` (§8 plan, §12 OD, §13
-Supervision, §14 heatmap). Dashboard provisionado en
-`/opt/observabilidad/grafana/dashboards/` — **no** editar
-`analitica-deepfrigate` desde la UI.
+Arquitectura (PGIE único, atributos en ai-router, no SGIE):
+`docs/ARQUITECTURA.md`. Detalle y trampas: `docs/ANALITICAS-FUENTES.md`
+(§8 plan, §11 ter addon apagado, §12 OD, §13 Supervision, §14 heatmap).
+Dashboard provisionado en `/opt/observabilidad/grafana/dashboards/` —
+**no** editar `analitica-deepfrigate` desde la UI.
+
+Vídeo y metadatos **siguen separados**: DeepStream no pinta zonas; el
+adapter calcula sobre el pie (centro de la base del bbox); Grafana y
+Frigate solo consumen métricas / Events. Sin Savant, sin Supervision,
+sin `gst-nvdsanalytics`. El addon `:5008` está **apagado** (contenedor
+eliminado); el heatmap vive en `platform-api`.
+
+```mermaid
+flowchart LR
+  RTSP["MediaMTX<br/>RTSP tienda + user"]
+  subgraph DS["video-engine · DeepStream 9 + TensorRT"]
+    YOLO["NVDEC → mux → Triton YOLO26 → NvDCF"]
+  end
+  subgraph AD["detection-adapter"]
+    LC["lifecycle"]
+    AN["zonas · líneas<br/>crowd · dirección"]
+    LC --> AN
+  end
+  EE["event-engine"]
+  API["platform-api<br/>GET /v1/heatmap/*.jpg"]
+  PG[("PG deepfrigate<br/>events")]
+  FR["Frigate smoke :3005<br/>event · timeline · thumbs"]
+  PR["Prometheus :9090"]
+  GR["Grafana :3001<br/>analitica-deepfrigate"]
+  QD["ShiTu → Qdrant"]
+
+  RTSP --> YOLO
+  YOLO -->|"MQTT detections"| LC
+  YOLO -->|"SHM crops"| QD
+  AN -->|"MQTT tracked-objects"| EE
+  AN -->|":9110 sv_* / df_*"| PR
+  PR --> GR
+  EE --> PG
+  EE --> FR
+  FR --> API
+  API -->|"proxy datasource"| GR
+```
+
+El gráfico ASCII del 29 ago (abajo) está **obsoleto**: no tiene adapter
+analítico, ni Prom, ni Frigate PG. `video-engine` **está arriba**.
 
 **Vivo**
 
@@ -118,28 +279,53 @@ Supervision, §14 heatmap). Dashboard provisionado en
 - Grafana `:3001`: `analitica` = archivo Savant; **`analitica-deepfrigate`**
   = en vivo (aforo, permanencia ROI, merodeo 15 s, cruces, overcrowding,
   dirección, percentiles de visita, scrape).
-- Reporter `:5008`: heatmap de **Events** (centroide de `event.box`, rango
-  del date picker; default ~30 d). `heatmap.js` va en `/static/` (el CDN
-  404’eaba y `h337` no existía).
+- Fila C SQL en `analitica-deepfrigate`: Events por 5 min, Events por
+  zona, Events más largos (duración del track, **nunca** Dwell),
+  distribución PAR (`person_attributes`). Datasource Postgres core
+  (`grafana_ro`); **sin** Infinity.
+- Heatmap espacial en Grafana (fila imagen, no panel nativo):
+  `GET /v1/heatmap/{camera}.jpg` en `platform-api`, embebido vía proxy
+  del datasource `deepfrigate-platform-api`. Pesos `count` (rutas) y
+  `dwell` (permanencia, tope 30 s). Fuente: `event.data.path_data`
+  (pie, 18,6 pts/Event), no el centroide de `event.box`.
+- Addon reporter `:5008` **apagado** (contenedor eliminado). Imagen
+  `frigate-report-addon:postgresql` y commit local `ddfd8f6` se
+  conservan. **No** pushear a `kornyhiv`.
 - Merodeo: `loitering_threshold_s: 15` en `config/zones.json`.
 - Label discriminante: **`motor`**, no `fuente`.
 
 **Pendiente (siguiente trabajo útil)**
 
-1. **Fila C (SQL / Infinity, no Prom):** Events/hora, Events por zona,
-   duración del Event (**no** titularla Dwell/Permanencia). Heatmap y LPR
-   en Grafana; el heatmap del reporter ya cubre Events. Más denso: leer
-   `path_data` en vez de solo `box`.
-2. **Salud Frigate** `GET /api/metrics` (CPU/ffmpeg). Otro row o dashboard.
-   No es aforo.
+1. **Informe PDF** del addon (`/api/export/pdf` + WeasyPrint). Grafana
+   no lo reemplaza (CSV sí; PDF pide Enterprise o renderer, aquí
+   `/render` da 500). Portar a `platform-api` solo si se echa de menos.
+2. **Overlay de calor sobre vídeo grabado** (diseñado en §14, no
+   código): `path_data` + segmentos `.mp4` de Frigate →
+   `histogram2d` / ffmpeg. Supervision solo en el proceso de
+   **render**, no en el adapter.
+3. **Tabla `foot_points`** solo si el diezmado `path_min_delta=0.05`
+   se queda corto. PG puro particionado, **no** TimescaleDB (no
+   cambiar la imagen de `deepfrigate-postgres-1`). Prometheus no
+   sirve: pierde los puntos.
+
+**No es siguiente trabajo (bloqueado o sin valor hoy)**
+
+- Salud Frigate `GET /api/metrics`: auth JWT + caduca; con
+  `detect.enabled: false` es CPU de un detector idle.
+- LPR, “hora punta”, transiciones cámara→cámara: vacío / artefacto
+  del bucle de 299 s / `[]` en DeepStream.
+- Stats “cámara más activa” / “objeto más frecuente”: **ya están**
+  en Grafana. Con `user` (coches) el primero ya puede dejar de ser
+  siempre `tienda`; el heatmap JPEG sigue hardcodeado a `tienda`.
 
 **Deuda (documentada; no implementar solos)**
 
 - **Matriz OD** (`sv_flujo`): viajes origen→destino por rol/grupo. No
   rellenar a 0 con `line_in` / `direction_match`. Copiar `Transicion` de
   `/opt/analitica` el día que se pida.
-- **Heatmap tipo Supervision:** pies por fotograma (`HeatMapAnnotator` /
-  `histogram2d`). Distinto del addon. No meter `supervision` en el adapter.
+- **Heatmap tipo Supervision / `HeatMapAnnotator`:** A no corre. B′
+  (`path_data`) ya cubre el retrospectivo denso. No meter
+  `supervision` en el adapter.
 - **`filter: true`** en zonas: se parsea y **no** recorta Events.
 - **i18n Timeline** (`line_crossed_*`, `overcrowding`, `direction_match`):
   salen sin texto. `entered_zone` sí. Requiere rebuild Vite — **no** en
@@ -155,6 +341,12 @@ Supervision, §14 heatmap). Dashboard provisionado en
 - Review Frigate ≠ lista de analíticas (van en Explore → Tracking details).
 - `area_cajas` ≠ `caja_centro`/`caja_derecha` (otro polígono, otro `motor`).
 - Transiciones cámara→cámara del reporter: `[]` en DeepStream.
+- Heatmap `count` = rutas (ciego a quien se para). Heatmap `dwell` =
+  permanencia (Δt entre pies, tope 30 s). No son el mismo mapa.
+- `:5008` ya no existe. El JPEG sale de `platform-api` vía el proxy
+  de Grafana (`uid/deepfrigate-platform-api`).
+
+## Notas del lab (1 sep, siguen vigentes)
 
 **Deprecado (1 sep 2026)**
 
@@ -249,12 +441,21 @@ Para volver a detección nativa de Frigate: restaurar `detectors.onnx` +
 `video-engine` y Triton, reiniciar Frigate. No es el modo operativo.
 
 La vertical GPU DeepStream quedó validada con la cámara `tienda` en un único
-batch:
+batch. El dibujo de entonces **ya no es el camino completo** (faltan
+adapter analítico, `:9110`, event-engine y Frigate smoke). Ver mermaid
+en **Analíticas y Grafana (3 sep)**.
 
 ```text
 RTSP -> DeepStream 9 -> NVDEC -> nvstreammux -> nvinferserver ->
-Triton -> YOLO26 TensorRT -> NvTracker -> tee
-                                      |-> MQTT metadata
+Triton -> YOLO26 TensorRT -> NvDCF -> tee
+                                      |-> MQTT detections -> adapter
+                                      |      (zonas/líneas/crowd/dir)
+                                      |      |-> MQTT tracked-objects
+                                      |      |      -> event-engine
+                                      |      |           |-> PG events
+                                      |      |           `-> Frigate :3005
+                                      |      `-> /metrics :9110
+                                      |           -> Prom -> Grafana
                                       `-> RGB crops -> SHM FrameRefs ->
                                           AI Router -> PP-ShiTu -> Qdrant
 ```
@@ -266,8 +467,8 @@ Triton -> YOLO26 TensorRT -> NvTracker -> tee
   por cámara.
 - GPU: NVIDIA Tesla T4.
 - Triton: `deepfrigate-triton-1`, saludable (sigue up tras el reboot).
-- DeepStream: `deepfrigate-video-engine-1` **caído** tras el crash del 31 ago
-  (`Exited 255`). Relanzar con `--profile video` cuando se retome analítica.
+- DeepStream: `deepfrigate-video-engine-1` **arriba** (el `Exited 255` del
+  31 ago está cerrado; no relanzar “cuando se retome analítica”).
 - Detector: `object-detector` (YOLO26s TensorRT) en `models/object-detector/1/model.plan`.
 
 También hay un sink MQTT nativo de DeepStream conectado al broker local:
@@ -560,7 +761,10 @@ El **Milestone 13 — Visual Workflow Builder** está implementado como MVP:
 - `services/event-engine/app/repository.py`: migración y upsert PostgreSQL.
 - `services/event-engine/app/main.py`: consumidor MQTT, retry y publicación.
 - `services/event-engine/sql/001_events.sql`: tabla e índices.
-- `services/platform-api/app/main.py`: endpoints de consulta de eventos.
+- `services/platform-api/app/main.py`: eventos, modelos, pipelines y
+  `GET /v1/heatmap/{camera}.jpg`.
+- `services/platform-api/app/heatmap.py`: render JPEG (path_data,
+  pesos count/dwell, zonas, caché 60 s).
 - `services/frigate/Dockerfile`: imagen Frigate derivada con frontend aditivo.
 - `scripts/dev-frontend.sh`: overlay Vite con HMR; no reconstruye Frigate.
 - `services/frigate/patch_nginx.py`: proxy autenticado de la Platform API.
@@ -569,6 +773,8 @@ El **Milestone 13 — Visual Workflow Builder** está implementado como MVP:
   integrada en Explore.
 - `contracts/tracked-object-update.schema.json`: contrato independiente de DeepStream.
 - `project.md`: especificación completa y milestones.
+- `docs/ARQUITECTURA.md`: camino DeepFrigate (no el doc Savant).
+- `docs/CAMARA-USER.md`: probe cyberw.io + enganche `user` (3 sep).
 
 ## Restricción importante
 
@@ -614,9 +820,11 @@ cuando lo pida el usuario; no empezar solo. `video-engine` ya está arriba
 (1 sep). `recording-sync` / MinIO y el backfill Jina del histórico están
 **deprecados**.
 
-Inmediato analíticas (si se sigue el plan): **fila C SQL** en Grafana o
-`path_data` en el heatmap del reporter. No OD ni heatmap Supervision
-salvo pedido. Ver sección 3 sep arriba.
+Inmediato analíticas: el dashboard **ya cubre** Prom + SQL + heatmap
+espacial (`path_data` en `platform-api`). Siguiente útil: informe PDF
+del addon **si se echa de menos**, o overlay de calor sobre vídeo
+grabado. No OD, no TimescaleDB, no `foot_points`, no Supervision en el
+adapter, salvo pedido. Ver sección 3 sep arriba.
 
 Los **Milestones 2 a 6**, la robustez de PP-ShiTu, el **Milestone 8 — Event
 Engine**, el **Milestone 9 — UI Review/Timeline + detalle enriquecido**, la
@@ -933,9 +1141,10 @@ Se adaptaron escritura/reindexado y lecturas de embeddings, así como los
 triggers semánticos y limpieza de Events para usar esta capa. Se quitó el
 bloqueo que impedía iniciar `semantic_search` con PostgreSQL.
 
-La instancia pgvector activa usa `tienda`, ONNX/CUDA, grabación y
-`semantic_search.enabled: true`, expuesta en
-`https://100.83.231.97:3005`. La validación directa, sin datos heredados,
+La instancia pgvector activa usa `tienda`, ONNX/CUDA y grabación,
+expuesta en `https://100.83.231.97:3005`. El 1 sep se validó con
+`semantic_search.enabled: true`; **el 4 sep se apagó Jina** (tumbaba
+FastAPI). La validación directa, sin datos heredados,
 confirmó 10 Events nuevos y 6 filas nuevas en `vec_thumbnails`; por tanto la
 generación de embeddings de imágenes ya escribe directamente en pgvector.
 `vec_descriptions` estaba vacío porque esos Events no tenían descripción
@@ -1013,3 +1222,80 @@ Se remontó el volumen smoke, se copiaron 549 crops encima de esos
 thumbs, y los Events nuevos volvieron a 3–8 KiB. El recorte no se
 rompió: el destino sí. Ver «No hacer» arriba y
 `docs/mejores-thumbnails.md`.
+
+### Snapshot 404 con Event abierto (4 sep 2026)
+
+Frigate nativo solo sirve `/api/events/{id}/snapshot.jpg` si
+`end_time != None`. El thumb no tiene ese filtro: Event abierto + jpg
+en disco → thumb 200, snapshot 404. El overlay
+`frigate-pg/frigate/api/media.py` carga el Event por id y sirve el jpg
+si existe. **No** rebuild de `frigate-pgvector-smoke` (Vite, 14 GB).
+Aplicar así:
+
+```bash
+docker cp frigate-pg/frigate/api/media.py \
+  frigate-pgvector-smoke:/opt/frigate/frigate/api/media.py
+docker exec frigate-pgvector-smoke rm -f \
+  /opt/frigate/frigate/api/__pycache__/media*.pyc
+docker restart frigate-pgvector-smoke
+```
+
+### Frigate sin decode + por qué se cae `:3005` (4 sep 2026, tarde)
+
+Frigate smoke es NVR + UI. DeepStream ya decodifica `tienda`/`user`.
+El YAML solo ponía `roles: [record]` y `detect.enabled: false`, pero
+el constructor de `CameraConfig` inyectaba `detect` y ffmpeg sacaba
+rawvideo 5 fps (`scale_cuda` + `hwdownload`) + mpeg1 jsmpeg. Eso
+comía ~80 % CPU en 4 vCPU.
+
+**Ahora (config + parche Python, sin Vite):**
+
+- `go2rtc.streams` = proxy de MTX (`rtsp://100.83.231.97:8554/<id>`).
+- ffmpeg record lee `rtsp://127.0.0.1:8554/<id>` (`-c:v copy`).
+- Si `detect.enabled: false` no se inyecta el rol `detect`.
+- `CameraWatchdog` no arranca capture raw; `output` no arranca mpeg1;
+  tracker se salta. Record maintainer mueve segmentos sin esperar
+  frames de detect (`_latest_processed_frame_time`).
+- `birdseye.enabled: false`. tmpfs `/tmp/cache` **512 MB**
+  (`docker-compose.pgvector-smoke.yml`). 128 MB se llenó de
+  `preview_frames` (~9.8k ficheros) → `No space left on device` →
+  ffmpeg crash loop → API muerta. El disco del host (81 %, 57 G
+  libres) **no** era el ENOSPC.
+- `c4aac4f4eefe` `enabled: false` (MTX remoto 404; relanzaba ffmpeg
+  cada segundo).
+
+Parches en el repo (`frigate-pg/frigate/…`). Tras un
+`compose up --no-build --force-recreate` hay que **volver a
+`docker cp`** (la imagen no los lleva):
+
+```
+config/camera/camera.py
+config/camera/ffmpeg.py
+video/ffmpeg.py
+output/output.py
+camera/maintainer.py
+record/maintainer.py
+api/media.py
+```
+
+Test: `TestConfig.test_record_only_skips_detect_decode` (correr
+dentro del contenedor; el host no tiene pydantic).
+
+**Por qué “se cae” `:3005`:** nginx sigue en 200. FastAPI es un
+solo worker. Jina (`semantic_search`) + `POST /thumbnail/embed` +
+ráfaga de `POST /create` de event-engine (timeout 5 s) dejan
+`/auth` en 504. El SPA pide `/api/config` y `/api/profile` y se
+queda en blanco; el healthcheck marca unhealthy. No es MTX ni el
+disco.
+
+**Mitigación viva:** `semantic_search.enabled: false`. event-engine
+no embebe salvo `FRIGATE_EMBED_THUMBNAILS=true` (default `false`).
+Tras el restart del 4 sep 17:23: UI 200 / API 401 ~20 ms /
+health=healthy / Frigate ~10 % CPU.
+
+Recreate smoke **`--no-build`** (mismas 4 vars de siempre + bind
+Tailscale). Config bind-mount. Si se recrea el contenedor, cp de
+los 7 `.py` + borrar pyc + restart.
+
+Live: MSE/WebRTC de go2rtc. Sin frames de detect **no hay fallback
+jsmpeg**. `tienda`/`user`/C4AA son H.264; MSE debe bastar.

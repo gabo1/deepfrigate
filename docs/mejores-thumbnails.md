@@ -14,6 +14,37 @@ is_better_thumbnail ──► {track}.jpg  ──copia──► {cam}-{event}.jp
 
 Ruta en disco: `data/ds-snapshots/{cámara}/`.
 
+Desde el 4 sep, los tres archivos planos son además el área de trabajo
+compatible. El productor publica al terminar una generación inmutable en:
+
+```text
+data/ds-snapshots/{cámara}/.bundles/{track}/{generación}/
+  scene.jpg
+  clean.webp | clean.png
+  thumb.webp | thumb.png
+  manifest.json
+data/ds-snapshots/{cámara}/.bundles/{track}/current.json
+```
+
+`manifest.json` (version 2) lleva además la geometría **de ese frame**:
+
+```json
+{"version":2,"generation":"…","scene":"scene.jpg","clean":"clean.webp",
+ "thumb":"thumb.webp",
+ "bbox":{"x":1011,"y":314,"width":60,"height":111},
+ "frame_width":1280,"frame_height":720,
+ "score":0.884,"frame_number":20149,"buffer_pts":2018084567079}
+```
+
+`bbox` es el mismo recorte (clamped al frame) con el que se hizo el thumb, en
+píxeles del mux. Es la **única** caja que pertenece a `scene.jpg`.
+
+`current.json` se reemplaza **al final**. `event-engine` prefiere ese bundle;
+por tanto ya no puede leer JPG, clean y thumb mientras DeepStream está
+reemplazando alguno de los tres. Conserva la generación actual y tres previas
+por track para cubrir lectores en vuelo. Los archivos planos siguen como
+fallback para historial y para una actualización gradual.
+
 ---
 
 ## Quién decide (video-engine)
@@ -68,12 +99,64 @@ Varios tracks que mejoran en el **mismo** frame comparten el JPEG/clean (se copi
 
 No vuelve a puntuar frames. En el START del evento y cada vez que MQTT trae `thumbnail_changed`, llama a `replace_frigate_snapshot`:
 
-1. Espera hasta 8 veces (~50 ms) a que exista `{track}.jpg`.
-2. Copia jpg → `clips/{cámara}-{event_id}.jpg`.
-3. Copia clean webp/png → `clips/{cámara}-{event_id}-clean.webp` (o `.png`).
-4. Para Explore, copia `{track}-thumb.webp` → `clips/thumbs/{cámara}/{event_id}.webp`.
+1. Espera hasta 8 veces (~50 ms) solo si aún no existe el source.
+2. Si existe `current.json`, toma `scene`, `clean` y `thumb` de **esa misma
+   generación**; si no, usa los nombres planos históricos.
+3. Copia jpg → `clips/{cámara}-{event_id}.jpg` y clean →
+   `clips/{cámara}-{event_id}-clean.webp` (o `.png`).
+4. Copia el thumb del mismo bundle. Una copia correcta termina de inmediato;
+   no repite ocho copias ni añade 400 ms de espera por evento.
 
-Si el thumb de DS aún no está, recorta el jpg con el bbox del MQTT y la **misma** `calculate_region` (fallback).
+Cuando varios tracks mejoran en el mismo frame comparten la escena y clean,
+pero cada destino se llama siempre `{track}-clean.webp` (antes algunos
+co-detectados quedaban erróneamente como `{track}.webp`).
+
+En el END no se pisa la terna ni `Event.box`: NvTracker reutiliza el id y `{track}.jpg` puede ser ya otro objeto.
+
+### De dónde sale la caja que dibuja Explore
+
+Del `manifest.json` del bundle que se acaba de copiar, **no** del MQTT.
+`replace_frigate_snapshot` devuelve la geometría del manifest y event-engine
+escribe `Event.box`, `region`, `area` y `score` a partir de ella, después de
+instalar la escena. Antes se usaba `thumbnail.bbox` del detection-adapter: ese
+bbox lo elige otro proceso con la misma regla pero sobre el flujo MQTT, que va
+~1 s por delante de la rama export. La caja caía a un lado de la persona.
+
+El bbox del adapter sigue viajando, pero solo como fallback: bundles legado
+sin `bbox` en el manifest, o recorte del thumb si el bundle no lo trae.
+`path_data` sí arranca donde el adapter vio el objeto en ese instante.
+
+### Frigate pisa clean y thumb al crear el evento
+
+`POST /events/{cam}/{label}/create` hace que Frigate escriba su propio
+`{cam}-{id}-clean.webp` y `thumbs/{cam}/{id}.webp` a partir de un frame de
+cámara que aquí no existe (detect apagado): salen verdes uniformes y al tamaño
+`detect` de Frigate. Llegan 0.2–1.2 s después de la copia de event-engine y la
+pisan (~3 % de los eventos). El jpg no lo toca.
+
+Al END, `replace_frigate_snapshot(overwrite=False, repair_box=…)` compara
+mtimes: si clean o thumb son más nuevos que el jpg en más de 0.15 s, no son
+nuestros y se regeneran desde el jpg (clean = misma escena; thumb = recorte con
+la caja del manifest guardada en `snapshot_box`). Una copia sana escribe los
+tres en pocos milisegundos, así que no se toca nada en el caso normal.
+
+### Id de tracker reutilizado
+
+NvTracker recicla ids. Cuando llega un ocupante nuevo, `clear_stale_track_files`
+borra los planos **y** `.bundles/{id}/current.json`. Sin eso, el START del nuevo
+objeto copiaba el bundle (escena + bbox + score) del anterior hasta que llegara
+su primera generación. Las generaciones antiguas se conservan para lectores en
+vuelo; solo desaparece el puntero.
+
+### Dos tracks en el mismo frame
+
+Cuando varios tracks mejoran a la vez, la escena se codifica una vez y se copia
+a `{otro_track}.jpg`. Esa copia se hace a `.tmp` + `replace`
+(`copy_track_file`), nunca con `shutil.copyfile` directo: el archivo plano está
+hard-linkeado en el bundle anterior de ese track y una escritura en el mismo
+inode pisaría la generación que event-engine puede estar leyendo.
+
+`snapshot.jpg` se sirve aunque el Event siga abierto, si ya existe `{cam}-{id}.jpg`. En el contenedor smoke eso exige el parche de `frigate-pg/frigate/api/media.py` (sin filtro `end_time != None`); se aplica con `docker cp` + restart, sin rebuild Vite.
 
 El `track_id` lo saca del `object_id` (`tienda-42` → `42`).
 

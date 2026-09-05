@@ -78,6 +78,7 @@ class FrigateEventStore:
         data_update: dict[str, Any] | None = None,
         drop_draw: bool = False,
         end_time: float | None = None,
+        sub_label: str | None = None,
         wait: float = 5,
     ) -> bool:
         row = (
@@ -124,6 +125,9 @@ class FrigateEventStore:
         if end_time is not None:
             assignments.append("end_time = ?")
             values.append(float(end_time))
+        if sub_label is not None:
+            assignments.append("sub_label = ?")
+            values.append(sub_label[:100])
         values.append(event_id)
         if self.is_postgresql:
             assignments = [

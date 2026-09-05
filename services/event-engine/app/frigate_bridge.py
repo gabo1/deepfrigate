@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -19,11 +20,23 @@ from .geometry import (
     snapshot_area,
 )
 from .repository import EventRepository
-from .snapshots import replace_frigate_snapshot
+from .snapshots import SnapshotGeometry, replace_frigate_snapshot
 
 logger = logging.getLogger("event-engine.frigate")
 
 _COLOR_FIELDS = frozenset({"upper_color", "lower_color"})
+
+
+def _pre_capture_seconds(event: dict[str, Any]) -> int:
+    """Frigate create() uses wall-clock `now` and subtracts this.
+
+    DeepStream START is often tens of seconds earlier (create backoff, late
+    confirm). Without this, start_time is after end_time and PUT /end 400s.
+    """
+    started = float(event.get("started_at") or event.get("timestamp") or 0)
+    if started <= 0:
+        return 0
+    return max(0, int(round(time.time() - started)))
 
 
 def _normalize_attribute_value(name: str, value: str) -> str:
@@ -51,6 +64,18 @@ def person_attributes_from_items(
     return summary
 
 
+def vehicle_sub_label(summary: dict[str, Any]) -> str | None:
+    """Frigate Explore shows this next to `car`. Keep it short."""
+    parts: list[str] = []
+    for name in ("color", "body_type"):
+        entry = summary.get(name)
+        if isinstance(entry, dict) and entry.get("value"):
+            parts.append(str(entry["value"]))
+    if not parts:
+        return None
+    return " ".join(parts)[:100]
+
+
 @dataclass
 class _PendingTrack:
     start_event: dict[str, Any]
@@ -61,6 +86,9 @@ class _PendingTrack:
         default_factory=list
     )
     created: bool = False
+    thumbnail_bbox: dict[str, Any] | None = None
+    # Normalized box of the scene currently installed in Frigate's clips.
+    snapshot_box: list[float] | None = None
 
 
 class FrigateReviewBridge:
@@ -154,7 +182,12 @@ class FrigateReviewBridge:
                 if pending is not None and pending.created:
                     if not self._is_false_positive(update):
                         self._path(update)
-                    self._end(event, last_update=pending.last_update)
+                    self._end(
+                        event,
+                        last_update=pending.last_update,
+                        thumbnail_bbox=pending.thumbnail_bbox,
+                        snapshot_box=pending.snapshot_box,
+                    )
         elif update_type == "classification":
             self._classification_update(update)
         elif update_type in {"line", "overcrowding", "direction"} and event is not None:
@@ -195,6 +228,7 @@ class FrigateReviewBridge:
         data = pending.last_update.get("data") or {}
         thumbnail = data.get("thumbnail") or {}
         event = dict(pending.start_event)
+        event["started_at"] = float(pending.start_event["timestamp"])
         event["timestamp"] = float(pending.last_update.get("timestamp") or event["timestamp"])
         event["data"] = {
             **dict(event.get("data") or {}),
@@ -214,20 +248,34 @@ class FrigateReviewBridge:
             return
         event = self._event_from_pending(pending)
         frigate_event_id = str(link["frigate_event_id"])
-        box = self._box(event["camera_id"], event["data"].get("bbox"))
+        bbox = event["data"].get("bbox")
+        if isinstance(bbox, dict):
+            pending.thumbnail_bbox = bbox
+        # Install the scene first. Its manifest carries the box video-engine
+        # cropped that very frame with; the adapter's `thumbnail.bbox` was
+        # chosen from the MQTT stream at another instant and only serves as a
+        # fallback when no bundle geometry exists.
+        geometry = self._replace_snapshot(
+            event["camera_id"],
+            object_id,
+            frigate_event_id,
+            bbox,
+        )
+        if geometry is not None:
+            pending.snapshot_box = geometry.box
+        box = self._box(event["camera_id"], bbox)
+        score = float(event["data"].get("confidence") or 0)
+        if geometry is not None:
+            box = geometry.box
+            if geometry.score is not None:
+                score = geometry.score
         self._write_geometry(
             frigate_event_id,
             object_id=object_id,
             camera_id=event["camera_id"],
             box=box,
-            score=float(event["data"].get("confidence") or 0),
+            score=score,
             top_score=float(event["data"].get("top_score") or 0),
-        )
-        self._replace_snapshot(
-            event["camera_id"],
-            object_id,
-            frigate_event_id,
-            event["data"].get("bbox"),
         )
 
     @staticmethod
@@ -269,6 +317,7 @@ class FrigateReviewBridge:
                 "duration": None,
                 "include_recording": True,
                 "score": score,
+                "pre_capture": _pre_capture_seconds(event),
             }
             if box is not None:
                 payload["draw"] = {
@@ -318,13 +367,19 @@ class FrigateReviewBridge:
         self.repository.activate_frigate_link(
             start_event_id, frigate_event_id
         )
-        self._seed_geometry(frigate_event_id, event)
-        self._replace_snapshot(
+        bbox = event["data"].get("bbox")
+        pending = self._pending.get(event["object_id"])
+        if pending is not None and isinstance(bbox, dict):
+            pending.thumbnail_bbox = bbox
+        geometry = self._replace_snapshot(
             event["camera_id"],
             event["object_id"],
             frigate_event_id,
-            event["data"].get("bbox"),
+            bbox,
         )
+        if pending is not None and geometry is not None:
+            pending.snapshot_box = geometry.box
+        self._seed_geometry(frigate_event_id, event, geometry)
         self._write_timeline(
             frigate_event_id,
             event["camera_id"],
@@ -340,7 +395,11 @@ class FrigateReviewBridge:
         )
 
     def _end(
-        self, event: dict[str, Any], last_update: dict[str, Any] | None = None
+        self,
+        event: dict[str, Any],
+        last_update: dict[str, Any] | None = None,
+        thumbnail_bbox: dict[str, Any] | None = None,
+        snapshot_box: list[float] | None = None,
     ) -> None:
         link = self.repository.get_active_frigate_link(event["object_id"])
         if link is None:
@@ -375,11 +434,17 @@ class FrigateReviewBridge:
             event["object_id"],
             end_time=float(event["timestamp"]),
         )
+        # Frigate does not rewrite the snapshot at END. A later NvTracker
+        # occupant would replace the best frame if we copied `{track}.jpg`.
+        # Only repair clean/thumb that Frigate's create overwrote after us.
         self._replace_snapshot(
             event["camera_id"],
             event["object_id"],
             str(frigate_event_id),
-            ((last_update or {}).get("data") or event.get("data") or {}).get("bbox"),
+            thumbnail_bbox,
+            overwrite=False,
+            repair_box=snapshot_box
+            or self._box(event["camera_id"], thumbnail_bbox),
         )
         self._write_timeline(
             str(frigate_event_id),
@@ -538,18 +603,30 @@ class FrigateReviewBridge:
             object_id=object_id,
         )
 
-    def _seed_geometry(self, frigate_event_id: str, event: dict[str, Any]) -> None:
+    def _seed_geometry(
+        self,
+        frigate_event_id: str,
+        event: dict[str, Any],
+        geometry: SnapshotGeometry | None = None,
+    ) -> None:
         box = self._box(event["camera_id"], event["data"].get("bbox"))
         object_id = event["object_id"]
         path = self._paths.setdefault(object_id, [])
+        # The path starts where the adapter saw the object now; the Event box
+        # belongs to the installed snapshot frame.
         if box is not None and not path:
             path.append([path_point(box), float(event["timestamp"])])
+        score = float(event["data"].get("confidence") or 0)
+        if geometry is not None:
+            box = geometry.box
+            if geometry.score is not None:
+                score = geometry.score
         self._write_geometry(
             frigate_event_id,
             object_id=object_id,
             camera_id=event["camera_id"],
             box=box,
-            score=float(event["data"].get("confidence") or 0),
+            score=score,
             top_score=float(event["data"].get("top_score") or 0),
         )
 
@@ -693,9 +770,25 @@ class FrigateReviewBridge:
         )
         if len(summary) <= 1:
             return
+        label = str((update.get("data") or {}).get("label") or "")
+        data_update: dict[str, Any] = (
+            {"vehicle_attributes": summary}
+            if label == "car"
+            else {"person_attributes": summary}
+        )
+        # Compiled Explore overlay only reads person_attributes. Mirror
+        # the vehicle fields there so the detail pane shows them without
+        # a Vite rebuild of the smoke image.
+        if label == "car":
+            data_update["person_attributes"] = {
+                key: summary[key]
+                for key in ("color", "body_type", "updated_at")
+                if key in summary
+            }
         self.store.merge(
             str(link["frigate_event_id"]),
-            data_update={"person_attributes": summary},
+            data_update=data_update,
+            sub_label=vehicle_sub_label(summary) if label == "car" else None,
         )
 
     def _write_timeline(
@@ -766,26 +859,40 @@ class FrigateReviewBridge:
         object_id: str,
         frigate_event_id: str,
         bbox: Any = None,
-    ) -> None:
+        overwrite: bool = True,
+        repair_box: list[float] | None = None,
+    ) -> SnapshotGeometry | None:
+        """Install the DeepStream snapshot; return the box of that scene."""
         if not self.snapshot_dir or not self.clips_dir:
-            return
-        if replace_frigate_snapshot(
+            return None
+        copied = replace_frigate_snapshot(
             snapshot_dir=self.snapshot_dir,
             clips_dir=self.clips_dir,
             camera_id=camera_id,
             object_id=object_id,
             frigate_event_id=frigate_event_id,
             bbox=bbox if isinstance(bbox, dict) else None,
-        ):
+            overwrite=overwrite,
+            repair_box=repair_box,
+        )
+        if copied:
             self._embed_frigate_thumbnail(frigate_event_id)
-            return
+            geometry = getattr(copied, "geometry", None)
+            return geometry if isinstance(geometry, SnapshotGeometry) else None
         logger.warning(
             "No DeepStream snapshot for object=%s event=%s",
             object_id,
             frigate_event_id,
         )
+        return None
 
     def _embed_frigate_thumbnail(self, frigate_event_id: str) -> None:
+        if os.getenv("FRIGATE_EMBED_THUMBNAILS", "false").lower() not in {
+            "1",
+            "true",
+            "yes",
+        }:
+            return
         if frigate_event_id in self._embed_requested:
             return
         try:

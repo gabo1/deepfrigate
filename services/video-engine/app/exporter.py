@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 import logging
 import mmap
 import os
-import shutil
 from queue import Empty, Full, Queue
 from threading import Event, Thread
 import time
@@ -20,7 +19,11 @@ import cupy as cp
 from pyservicemaker import BatchMetadataOperator, BufferRetriever
 
 from .snapshots import (
+    bbox_from_box,
+    clear_stale_track_files,
+    copy_track_file,
     is_better_thumbnail,
+    publish_track_snapshot_bundle,
     write_track_clean,
     write_track_jpeg,
     write_track_thumb,
@@ -49,6 +52,8 @@ class FrameSpec:
     pipeline_width: int
     pipeline_height: int
     objects: tuple[ObjectSpec, ...]
+    buffer_pts: int = 0
+    source_id: int = 0
 
 
 class ExportMetadataCollector(BatchMetadataOperator):
@@ -63,9 +68,14 @@ class ExportMetadataCollector(BatchMetadataOperator):
         super().__init__()
         self.camera_ids = camera_ids
         self.allowed_labels = allowed_labels
-        self.batches: Queue[tuple[FrameSpec, ...]] = Queue(maxsize=queue_size)
 
     def handle_metadata(self, batch_meta: Any) -> None:
+        # Metadata is read from Buffer.batch_meta by FrameExporter. This probe
+        # hook remains for API compatibility but must not enqueue a second,
+        # independently timed copy of the metadata.
+        return None
+
+    def _frames_from_batch_meta(self, batch_meta: Any) -> tuple[FrameSpec, ...]:
         frames: list[FrameSpec] = []
         for frame_meta in batch_meta.frame_items:
             objects: list[ObjectSpec] = []
@@ -101,22 +111,15 @@ class ExportMetadataCollector(BatchMetadataOperator):
                     pipeline_width=int(frame_meta.pipeline_width),
                     pipeline_height=int(frame_meta.pipeline_height),
                     objects=tuple(objects),
+                    buffer_pts=int(getattr(frame_meta, "buffer_pts", 0) or 0),
+                    source_id=int(getattr(frame_meta, "source_id", 0) or 0),
                 )
             )
-        self._replace_if_full(tuple(frames))
+        return tuple(frames)
 
-    def _replace_if_full(self, batch: tuple[FrameSpec, ...]) -> None:
-        try:
-            self.batches.put_nowait(batch)
-        except Full:
-            try:
-                self.batches.get_nowait()
-            except Empty:
-                pass
-            try:
-                self.batches.put_nowait(batch)
-            except Full:
-                pass
+    def frames_from_buffer(self, buffer: Any) -> tuple[FrameSpec, ...]:
+        """Read metadata from the exact Buffer consumed by the exporter."""
+        return self._frames_from_batch_meta(buffer.batch_meta)
 
 
 class FrameExporter(BufferRetriever):
@@ -135,9 +138,13 @@ class FrameExporter(BufferRetriever):
         work_queue_size: int = 8,
         snapshot_dir: str | None = None,
         snapshot_interval: float = 0.4,
+        pipeline_size: tuple[int, int] | None = None,
     ) -> None:
         super().__init__()
         self.metadata = metadata
+        # nvstreammux output size. Object boxes are in these coordinates, but
+        # `frame_meta.pipeline_width/height` read 0 after `nvvideoconvert`.
+        self.pipeline_size = pipeline_size
         self.frame_store_url = frame_store_url.rstrip("/")
         self.owner = owner
         self.ttl_seconds = ttl_seconds
@@ -157,18 +164,51 @@ class FrameExporter(BufferRetriever):
         self.worker = Thread(target=self._run, name="frame-exporter", daemon=True)
         self.worker.start()
         self._logged_shape = False
+        self._buffer_count = 0
 
     def consume(self, buffer: Any) -> int:
         try:
-            frames = self.metadata.batches.get_nowait()
-        except Empty:
+            # Buffer.batch_meta and Buffer.extract(batch_id) belong to the
+            # same GstBuffer. This is the only authoritative frame/object
+            # association; the old FIFO probe is no longer used here.
+            frames = self.metadata.frames_from_buffer(buffer)
+        except (AttributeError, TypeError, ValueError):
             logger.debug("No metadata available for export buffer")
             return 1
+
+        self._buffer_count += 1
+        if self._buffer_count % 100 == 0:
+            logger.debug(
+                "Export buffer identity count=%d timestamp=%s batch_size=%s frames=%s",
+                self._buffer_count,
+                getattr(buffer, "timestamp", None),
+                getattr(buffer, "batch_size", None),
+                [(f.camera_id, f.source_id, f.batch_id, f.frame_number,
+                  f.buffer_pts, f.pipeline_width, f.pipeline_height)
+                 for f in frames],
+            )
 
         for frame in frames:
             if not frame.objects:
                 continue
             try:
+                batch_size = int(getattr(buffer, "batch_size", 0) or 0)
+                if frame.batch_id < 0 or (batch_size and frame.batch_id >= batch_size):
+                    logger.error(
+                        "Rejecting invalid frame identity camera=%s source_id=%d "
+                        "batch_id=%d batch_size=%d frame_number=%d",
+                        frame.camera_id, frame.source_id, frame.batch_id,
+                        batch_size, frame.frame_number,
+                    )
+                    continue
+                chunk_id = buffer.get_chunk_id(frame.batch_id)
+                logger.debug(
+                    "Export frame identity camera=%s source_id=%d chunk_id=%s "
+                    "batch_id=%d frame_number=%d buffer_ts=%s frame_pts=%d",
+                    frame.camera_id, frame.source_id, chunk_id, frame.batch_id,
+                    frame.frame_number, getattr(buffer, "timestamp", None),
+                    frame.buffer_pts,
+                )
                 tensor = buffer.extract(frame.batch_id).clone()
                 self.work.put_nowait((tensor, frame))
             except Full:
@@ -206,6 +246,17 @@ class FrameExporter(BufferRetriever):
             self._logged_shape = True
         if pixels.ndim != 3 or pixels.shape[2] != 3:
             raise ValueError(f"expected HWC RGB tensor, got {pixels.shape}")
+
+        # `nvvideoconvert` clears `pipeline_width/height` in the frame meta
+        # while object boxes stay in nvstreammux coordinates. Prefer the mux
+        # size the pipeline was built with; the tensor shape is the last
+        # resort and only right while export-caps keep the mux resolution.
+        if frame.pipeline_width <= 0 or frame.pipeline_height <= 0:
+            width, height = self.pipeline_size or (
+                int(pixels.shape[1]),
+                int(pixels.shape[0]),
+            )
+            frame = replace(frame, pipeline_width=width, pipeline_height=height)
 
         scale_x = pixels.shape[1] / frame.pipeline_width
         scale_y = pixels.shape[0] / frame.pipeline_height
@@ -256,7 +307,7 @@ class FrameExporter(BufferRetriever):
         due = [
             obj
             for obj in frame.objects
-            if self._should_keep_snapshot(frame, obj)
+            if self._should_keep_snapshot(frame, obj, now)
         ]
         if not due:
             return
@@ -274,15 +325,34 @@ class FrameExporter(BufferRetriever):
                     )
                 else:
                     dest = encoded.with_name(f"{int(obj.track_id)}.jpg")
-                    shutil.copyfile(encoded, dest)
-                    if clean is not None:
-                        shutil.copyfile(
+                    # Tensor metadata can contain the same tracked object more
+                    # than once in one batch. The first occurrence already is
+                    # the shared scene; copying a file onto itself raises and
+                    # would prevent its completed bundle from being published.
+                    if dest != encoded:
+                        copy_track_file(encoded, dest)
+                    if clean is not None and dest != encoded:
+                        copy_track_file(
                             clean,
-                            clean.with_name(f"{int(obj.track_id)}{clean.suffix}"),
+                            clean.with_name(
+                                f"{int(obj.track_id)}-clean{clean.suffix}"
+                            ),
                         )
-                box = self.best_snapshot[(frame.camera_id, obj.track_id)]["box"]
+                best = self.best_snapshot[(frame.camera_id, obj.track_id)]
+                box = best["box"]
                 write_track_thumb(
                     self.snapshot_dir, frame.camera_id, obj.track_id, rgb, box
+                )
+                publish_track_snapshot_bundle(
+                    self.snapshot_dir,
+                    frame.camera_id,
+                    obj.track_id,
+                    bbox=bbox_from_box(box),
+                    frame_width=frame.pipeline_width,
+                    frame_height=frame.pipeline_height,
+                    score=best["score"],
+                    frame_number=frame.frame_number,
+                    buffer_pts=frame.buffer_pts,
                 )
                 self.last_snapshot[(frame.camera_id, obj.track_id)] = now
             except Exception:
@@ -292,7 +362,9 @@ class FrameExporter(BufferRetriever):
                     obj.track_id,
                 )
 
-    def _should_keep_snapshot(self, frame: FrameSpec, obj: ObjectSpec) -> bool:
+    def _should_keep_snapshot(
+        self, frame: FrameSpec, obj: ObjectSpec, now: float
+    ) -> bool:
         if obj.confidence < 0.5:
             return False
         box = [
@@ -309,8 +381,24 @@ class FrameExporter(BufferRetriever):
         }
         key = (frame.camera_id, obj.track_id)
         current = self.best_snapshot.get(key)
+        last_snapshot = self.last_snapshot.get(key)
+        # NvTracker may reuse a numeric ID long after its previous occupant
+        # left. The exporter has no END signal, so a stale best-thumbnail cache
+        # must never be inherited by the next person/car with that ID.
+        if (
+            last_snapshot is not None
+            and now - last_snapshot >= self.refresh_seconds
+        ):
+            current = None
+            self.best_snapshot.pop(key, None)
         shape = (frame.pipeline_height, frame.pipeline_width)
         if current is None or is_better_thumbnail(current, candidate, shape):
+            if current is None and self.snapshot_dir:
+                # NvTracker reuses numeric ids. Leftover `{id}-thumb.webp`
+                # from the previous occupant must not outlive this write.
+                clear_stale_track_files(
+                    self.snapshot_dir, frame.camera_id, obj.track_id
+                )
             self.best_snapshot[key] = candidate
             return True
         return False

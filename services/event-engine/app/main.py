@@ -8,6 +8,7 @@ import os
 from queue import Empty, Full, Queue
 import signal
 from threading import Event, Thread
+import time
 from typing import Any
 
 from jsonschema import Draft202012Validator, FormatChecker
@@ -38,10 +39,18 @@ class EventEngine:
                 "EVENTS_MIGRATION", "/app/sql/001_events.sql"
             ),
         )
+        # The bridge performs synchronous HTTP and media I/O. It must not
+        # share the ingestion connection or block MQTT acknowledgements.
+        self.bridge_repository = EventRepository(
+            os.environ["DATABASE_URL"],
+            os.getenv(
+                "EVENTS_MIGRATION", "/app/sql/001_events.sql"
+            ),
+        )
         self.frigate_bridge = (
             FrigateReviewBridge(
                 os.getenv("FRIGATE_API_URL", "http://frigate:5000/api"),
-                self.repository,
+                self.bridge_repository,
                 timeout=float(os.getenv("FRIGATE_API_TIMEOUT_SECONDS", "5")),
                 labels={
                     label.strip()
@@ -72,6 +81,13 @@ class EventEngine:
         self.queue: Queue[
             tuple[dict[str, Any], dict[str, Any] | None, int, int]
         ] = Queue(maxsize=int(os.getenv("EVENT_QUEUE_SIZE", "1024")))
+        self.bridge_queue: Queue[tuple[dict[str, Any], dict[str, Any] | None]] = (
+            Queue(maxsize=int(os.getenv("FRIGATE_BRIDGE_QUEUE_SIZE", "8192")))
+        )
+        self.bridge_update_seconds = float(
+            os.getenv("FRIGATE_BRIDGE_UPDATE_SECONDS", "1")
+        )
+        self._bridge_tracks: dict[str, tuple[float, bool]] = {}
         self.input_validator = self._validator(
             os.getenv(
                 "TRACKED_OBJECT_SCHEMA",
@@ -84,6 +100,11 @@ class EventEngine:
         self.worker = Thread(
             target=self._run_worker,
             name="event-persistence",
+            daemon=True,
+        )
+        self.bridge_worker = Thread(
+            target=self._run_bridge_worker,
+            name="frigate-bridge",
             daemon=True,
         )
         self.client = mqtt.Client(
@@ -107,7 +128,11 @@ class EventEngine:
 
     def run(self) -> None:
         self._connect_database()
+        if self.frigate_bridge is not None:
+            self._connect_bridge_database()
         self.worker.start()
+        if self.frigate_bridge is not None:
+            self.bridge_worker.start()
         self.client.connect(
             os.getenv("MQTT_HOST", "mqtt"),
             int(os.getenv("MQTT_PORT", "1883")),
@@ -118,7 +143,10 @@ class EventEngine:
         self.client.disconnect()
         self.client.loop_stop()
         self.worker.join(timeout=5)
+        if self.frigate_bridge is not None:
+            self.bridge_worker.join(timeout=5)
         self.repository.close()
+        self.bridge_repository.close()
 
     def _connect_database(self) -> None:
         delay = 0.5
@@ -136,6 +164,23 @@ class EventEngine:
                 shutdown_requested.wait(delay)
                 delay = min(delay * 2, 10)
         raise RuntimeError("shutdown requested before database became ready")
+
+    def _connect_bridge_database(self) -> None:
+        delay = 0.5
+        while not shutdown_requested.is_set():
+            try:
+                self.bridge_repository.connect()
+                logger.info("PostgreSQL Frigate bridge store ready")
+                return
+            except Exception as error:
+                logger.warning(
+                    "Frigate bridge PostgreSQL unavailable, retrying in %.1fs: %s",
+                    delay,
+                    error,
+                )
+                shutdown_requested.wait(delay)
+                delay = min(delay * 2, 10)
+        raise RuntimeError("shutdown requested before bridge database became ready")
 
     def _on_connect(
         self,
@@ -202,8 +247,7 @@ class EventEngine:
                 try:
                     if event is not None:
                         self.repository.persist(event)
-                    if self.frigate_bridge is not None:
-                        self.frigate_bridge.observe(update, event)
+                    self._enqueue_bridge(update, event)
                     if event is not None:
                         topic = self.output_template.format(
                             camera_id=event["camera_id"]
@@ -258,6 +302,87 @@ class EventEngine:
                         delay,
                     )
                     self.repository.close()
+                    shutdown_requested.wait(delay)
+                    delay = min(delay * 2, 10)
+
+    def _enqueue_bridge(
+        self, update: dict[str, Any], event: dict[str, Any] | None
+    ) -> None:
+        if self.frigate_bridge is None:
+            return
+        if not self._should_enqueue_bridge(update):
+            return
+        try:
+            self.bridge_queue.put_nowait((update, event))
+        except Full:
+            # Keep MQTT moving even if Frigate itself is unavailable. The
+            # normalized event was already persisted; this only affects its
+            # Explore projection and is explicitly visible in logs.
+            logger.error(
+                "Frigate bridge queue full; skipping projection object=%s",
+                update.get("object_id"),
+            )
+
+    def _should_enqueue_bridge(self, update: dict[str, Any]) -> bool:
+        """Keep the Explore projection useful without replaying every frame.
+
+        Raw lifecycle updates remain fully persisted and published by the MQTT
+        worker. Frigate only needs START, END, each better thumbnail/state
+        transition, and a periodic confirmation/path point for an active
+        object. This prevents its slower HTTP/media projection from becoming
+        a second unbounded copy of the video frame rate.
+        """
+        if update.get("update_type") != "detection":
+            return True
+        object_id = str(update.get("object_id") or "")
+        lifecycle = str((update.get("data") or {}).get("lifecycle_event") or "")
+        if not object_id:
+            return True
+        if lifecycle == "START":
+            # The first confirmed UPDATE must always reach the bridge, even
+            # when it follows START in the same MQTT batch.
+            self._bridge_tracks[object_id] = (0.0, False)
+            return True
+        if lifecycle == "END":
+            self._bridge_tracks.pop(object_id, None)
+            return True
+        if lifecycle != "UPDATE":
+            return True
+
+        data = update.get("data") or {}
+        now = time.monotonic()
+        last_at, previous_stationary = self._bridge_tracks.get(
+            object_id, (0.0, False)
+        )
+        stationary = bool(data.get("stationary"))
+        confirmed = not bool(data.get("false_positive", False))
+        periodic = confirmed and now - last_at >= self.bridge_update_seconds
+        meaningful = bool(data.get("thumbnail_changed")) or (
+            stationary != previous_stationary
+        )
+        if periodic or meaningful:
+            self._bridge_tracks[object_id] = (now, stationary)
+            return True
+        return False
+
+    def _run_bridge_worker(self) -> None:
+        while not shutdown_requested.is_set():
+            try:
+                update, event = self.bridge_queue.get(timeout=0.2)
+            except Empty:
+                continue
+            delay = 0.25
+            while not shutdown_requested.is_set():
+                try:
+                    assert self.frigate_bridge is not None
+                    self.frigate_bridge.observe(update, event)
+                    break
+                except Exception:
+                    logger.exception(
+                        "Frigate bridge processing failed; retrying in %.2fs",
+                        delay,
+                    )
+                    self.bridge_repository.close()
                     shutdown_requested.wait(delay)
                     delay = min(delay * 2, 10)
 

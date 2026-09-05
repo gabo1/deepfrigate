@@ -11,7 +11,7 @@ def _db(tmp_path) -> str:
         """
         CREATE TABLE event (
             id TEXT PRIMARY KEY, data TEXT, zones TEXT, end_time REAL,
-            box TEXT, region TEXT, area INTEGER
+            box TEXT, region TEXT, area INTEGER, sub_label TEXT
         )
         """
     )
@@ -52,6 +52,7 @@ def test_merge_writes_native_box_path_and_drops_draw(tmp_path) -> None:
         zones=["area_cajas"],
         data_update={"type": "object", "score": 0.78},
         drop_draw=True,
+        sub_label="white sedan",
     )
     row = store.get_event("evt-1")
     assert row is not None
@@ -66,8 +67,12 @@ def test_merge_writes_native_box_path_and_drops_draw(tmp_path) -> None:
     end_time = connection.execute(
         "SELECT end_time FROM event WHERE id = ?", ("evt-1",)
     ).fetchone()[0]
+    sub_label = connection.execute(
+        "SELECT sub_label FROM event WHERE id = ?", ("evt-1",)
+    ).fetchone()[0]
     connection.close()
     assert end_time is None
+    assert sub_label == "white sedan"
 
 
 def test_merge_sets_end_time_only_when_asked(tmp_path) -> None:

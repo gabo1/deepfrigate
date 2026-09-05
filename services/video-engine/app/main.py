@@ -81,6 +81,7 @@ def build_pipeline() -> tuple[Pipeline, FrameExporter]:
             ]
         pipeline.add("nvurisrcbin", f"source{source_id}", properties)
 
+    mux_width, mux_height = 1280, 720
     pipeline.add(
         "nvstreammux",
         "streammux",
@@ -89,8 +90,8 @@ def build_pipeline() -> tuple[Pipeline, FrameExporter]:
             "live-source": True,
             "batch-size": len(cameras),
             "batched-push-timeout": 40000,
-            "width": 1280,
-            "height": 720,
+            "width": mux_width,
+            "height": mux_height,
             "enable-padding": True,
             "nvbuf-memory-type": 0,
         },
@@ -188,7 +189,13 @@ def build_pipeline() -> tuple[Pipeline, FrameExporter]:
             "sync": False,
             "async": False,
             "max-buffers": 2,
-            "drop": True,
+            # Metadata is queued at export-queue and consumed together with
+            # the RGB buffer at this sink. Dropping here discards only the
+            # buffer, leaving the next receiver callback paired with the
+            # previous frame's metadata (and therefore its bbox). Backpressure
+            # is intentionally handled by FrameExporter's bounded work queue,
+            # where a dropped item contains both pieces as one unit.
+            "drop": False,
         },
     )
 
@@ -241,10 +248,7 @@ def build_pipeline() -> tuple[Pipeline, FrameExporter]:
         crop_padding=_nonnegative_float("FRAME_CROP_PADDING", "0.1"),
         snapshot_dir=os.getenv("DS_SNAPSHOT_DIR") or None,
         snapshot_interval=_positive_float("DS_SNAPSHOT_INTERVAL", "0.4"),
-    )
-    pipeline.attach(
-        "export-queue",
-        Probe("frame-export-metadata", metadata),
+        pipeline_size=(mux_width, mux_height),
     )
     pipeline.attach(
         "export-sink",

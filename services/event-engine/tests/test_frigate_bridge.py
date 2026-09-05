@@ -1,7 +1,7 @@
 from typing import Any
 from urllib.error import HTTPError
 
-from app.frigate_bridge import FrigateReviewBridge
+from app.frigate_bridge import FrigateReviewBridge, vehicle_sub_label
 
 
 class FakeStore:
@@ -51,7 +51,23 @@ class FakeStore:
             row["zones"] = list(fields["zones"])
         if fields.get("end_time") is not None:
             row["end_time"] = fields["end_time"]
+        if fields.get("sub_label") is not None:
+            row["sub_label"] = fields["sub_label"]
         return True
+
+
+def test_vehicle_sub_label_joins_color_and_body() -> None:
+    assert (
+        vehicle_sub_label(
+            {
+                "color": {"value": "red", "score": 0.9},
+                "body_type": {"value": "suv", "score": 0.8},
+            }
+        )
+        == "red suv"
+    )
+    assert vehicle_sub_label({"color": {"value": "white", "score": 0.9}}) == "white"
+    assert vehicle_sub_label({}) is None
 
 
 class FakeRepository:
@@ -97,6 +113,9 @@ class FakeRepository:
 
 
 def _detection(lifecycle: str, timestamp: float, **data: Any) -> dict[str, Any]:
+    object_id = str(data.pop("object_id", "tienda-42"))
+    camera_id = str(data.pop("camera_id", "tienda"))
+    track_id = int(data.pop("track_id", 42))
     payload = {
         "label": "person",
         "confidence": 0.91,
@@ -104,9 +123,9 @@ def _detection(lifecycle: str, timestamp: float, **data: Any) -> dict[str, Any]:
         **data,
     }
     return {
-        "object_id": "tienda-42",
-        "camera_id": "tienda",
-        "track_id": 42,
+        "object_id": object_id,
+        "camera_id": camera_id,
+        "track_id": track_id,
         "timestamp": timestamp,
         "update_type": "detection",
         "data": {"lifecycle_event": lifecycle, **payload},
@@ -176,6 +195,7 @@ def test_start_creates_one_idempotent_manual_event(monkeypatch):
     assert creates[0][1] == "/events/tienda/person/create"
     assert creates[0][2]["duration"] is None
     assert creates[0][2]["include_recording"] is True
+    assert creates[0][2]["pre_capture"] >= 0
     assert repository.links[event["id"]]["state"] == "active"
 
 
@@ -669,6 +689,65 @@ def test_end_writes_gone_timeline(monkeypatch):
     assert store.rows["frigate-event-1"]["end_time"] == 112.5
 
 
+def test_end_does_not_overwrite_snapshot_with_last_bbox(monkeypatch):
+    repository = FakeRepository()
+    store = FakeStore()
+    bridge = FrigateReviewBridge(
+        "http://frigate:5000/api",
+        repository,
+        store=store,
+        camera_sizes={"tienda": (1280, 720)},
+        snapshot_dir="/ds",
+        clips_dir="/clips",
+    )
+    monkeypatch.setattr(
+        bridge,
+        "_request",
+        lambda method, path, payload=None: (
+            [] if method == "GET" else {"event_id": "frigate-event-1"}
+        ),
+    )
+    calls: list[dict[str, Any]] = []
+
+    def fake_replace(**kwargs):
+        calls.append(kwargs)
+        return True
+
+    monkeypatch.setattr(
+        "app.frigate_bridge.replace_frigate_snapshot", fake_replace
+    )
+    start = detected_event()
+    _publish(bridge, start)
+    better = {"x": 700, "y": 220, "width": 160, "height": 260}
+    last = {"x": 20, "y": 20, "width": 80, "height": 80}
+    bridge.observe(
+        _detection(
+            "UPDATE",
+            104.0,
+            **_quality(confidence=0.93, bbox=better, thumbnail_changed=True),
+        )
+    )
+    bridge.observe(
+        _detection(
+            "UPDATE",
+            110.0,
+            **_quality(confidence=0.8, bbox=last, thumbnail_changed=False),
+        )
+    )
+    bridge.observe(
+        _detection("END", 112.5, **_quality(bbox=last, thumbnail_changed=False)),
+        {
+            "id": "end-1",
+            "event_type": "object_ended",
+            "object_id": "tienda-42",
+            "camera_id": "tienda",
+            "timestamp": 112.5,
+            "data": {},
+        },
+    )
+    assert calls[-1]["overwrite"] is False
+
+
 def test_stationary_then_active_timeline(monkeypatch):
     repository = FakeRepository()
     store = FakeStore()
@@ -808,18 +887,24 @@ def test_entered_zone_skipped_while_stationary(monkeypatch):
 def _classification(
     timestamp: float,
     scores: dict[str, float] | None = None,
+    object_id: str = "tienda-42",
+    camera_id: str = "tienda",
+    track_id: int = 42,
+    model: str = "person-attribute",
+    model_version: str = "PULC/person_attribute",
+    label: str = "person",
     **values: str,
 ) -> dict[str, Any]:
     return {
-        "object_id": "tienda-42",
-        "camera_id": "tienda",
-        "track_id": 42,
+        "object_id": object_id,
+        "camera_id": camera_id,
+        "track_id": track_id,
         "timestamp": timestamp,
         "update_type": "classification",
         "data": {
-            "model": "person-attribute",
-            "model_version": "PULC/person_attribute",
-            "label": "person",
+            "model": model,
+            "model_version": model_version,
+            "label": label,
             "attributes": [
                 {
                     "name": name,
@@ -1003,3 +1088,181 @@ def test_classification_color_only_keeps_pulc_fields(monkeypatch):
     assert attributes["upper_color"] == {"value": "white", "score": 0.8}
     assert attributes["lower_color"] == {"value": "gray", "score": 0.8}
     assert attributes["updated_at"] == 104.0
+
+
+def test_classification_persists_vehicle_attributes(monkeypatch):
+    repository = FakeRepository()
+    store = FakeStore()
+    bridge = FrigateReviewBridge(
+        "http://frigate:5000/api",
+        repository,
+        store=store,
+        camera_sizes={"user": (1280, 720)},
+    )
+    monkeypatch.setattr(
+        bridge,
+        "_request",
+        lambda method, path, payload=None: (
+            [] if method == "GET" else {"event_id": "frigate-car-1"}
+        ),
+    )
+    start = {
+        "id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        "event_type": "object_detected",
+        "object_id": "user-100",
+        "camera_id": "user",
+        "timestamp": 100.0,
+        "data": {
+            "label": "car",
+            "confidence": 0.91,
+            "bbox": {"x": 300, "y": 180, "width": 420, "height": 260},
+        },
+    }
+    bridge.observe(
+        _detection(
+            "START",
+            100.0,
+            false_positive=True,
+            position_changes=0,
+            object_id="user-100",
+            camera_id="user",
+            track_id=100,
+            label="car",
+        ),
+        start,
+    )
+    bridge.observe(
+        _detection(
+            "UPDATE",
+            101.6,
+            object_id="user-100",
+            camera_id="user",
+            track_id=100,
+            label="car",
+            **_quality(),
+        )
+    )
+    bridge.observe(
+        _classification(
+            103.0,
+            object_id="user-100",
+            camera_id="user",
+            track_id=100,
+            model="vehicle-attribute",
+            model_version="PULC/vehicle_attribute",
+            label="car",
+            color="white",
+            body_type="sedan",
+        )
+    )
+    attributes = store.rows["frigate-car-1"]["data"]["vehicle_attributes"]
+    assert attributes["color"] == {"value": "white", "score": 0.8}
+    assert attributes["body_type"] == {"value": "sedan", "score": 0.8}
+    assert store.rows["frigate-car-1"]["data"]["person_attributes"][
+        "color"
+    ] == {"value": "white", "score": 0.8}
+    assert store.rows["frigate-car-1"]["sub_label"] == "white sedan"
+
+
+def _bundle_geometry_bridge(monkeypatch, geometry):
+    from app.snapshots import SnapshotCopy
+
+    repository = FakeRepository()
+    store = FakeStore()
+    bridge = FrigateReviewBridge(
+        "http://frigate:5000/api",
+        repository,
+        store=store,
+        camera_sizes={"tienda": (1280, 720)},
+        snapshot_dir="/ds",
+        clips_dir="/clips",
+    )
+    monkeypatch.setattr(
+        bridge,
+        "_request",
+        lambda method, path, payload=None: (
+            [] if method == "GET" else {"event_id": "frigate-event-1"}
+        ),
+    )
+    calls: list[dict[str, Any]] = []
+
+    def fake_replace(**kwargs):
+        calls.append(kwargs)
+        return SnapshotCopy(geometry=geometry)
+
+    monkeypatch.setattr(
+        "app.frigate_bridge.replace_frigate_snapshot", fake_replace
+    )
+    return bridge, store, calls
+
+
+def test_event_box_comes_from_installed_scene_not_from_mqtt(monkeypatch):
+    """The snapshot bundle bbox wins over the adapter's thumbnail bbox."""
+    from app.snapshots import SnapshotGeometry
+
+    scene_box = [0.5, 0.25, 0.1, 0.2]
+    bridge, store, calls = _bundle_geometry_bridge(
+        monkeypatch, SnapshotGeometry(box=scene_box, score=0.77)
+    )
+    _publish(bridge, detected_event())
+
+    written = store.rows["frigate-event-1"]["data"]
+    assert written["box"] == scene_box
+    assert written["score"] == 0.77
+    assert written["snapshot_area"] == int(0.1 * 1280 * 0.2 * 720)
+    # Path still starts where the adapter saw the object.
+    assert written["path_data"][0][0] == [
+        round(900 / 1280 + 120 / 1280 / 2, 4),
+        round(300 / 720 + 180 / 720, 4),
+    ]
+
+    later_mqtt_box = {"x": 700, "y": 220, "width": 160, "height": 260}
+    bridge.observe(
+        _detection(
+            "UPDATE",
+            104.0,
+            **_quality(confidence=0.93, bbox=later_mqtt_box, thumbnail_changed=True),
+        )
+    )
+    written = store.rows["frigate-event-1"]["data"]
+    assert written["box"] == scene_box
+    assert written["score"] == 0.77
+    # The adapter box is still handed over, but only as the recrop fallback.
+    assert calls[-1]["bbox"] == later_mqtt_box
+
+    bridge.observe(
+        _detection("END", 112.5, **_quality(bbox=later_mqtt_box, thumbnail_changed=False)),
+        {
+            "id": "end-1",
+            "event_type": "object_ended",
+            "object_id": "tienda-42",
+            "camera_id": "tienda",
+            "timestamp": 112.5,
+            "data": {},
+        },
+    )
+    # END repairs clean/thumb with the box of the installed scene.
+    assert calls[-1]["overwrite"] is False
+    assert calls[-1]["repair_box"] == scene_box
+
+
+def test_event_box_falls_back_to_mqtt_when_bundle_has_no_geometry(monkeypatch):
+    bridge, store, _ = _bundle_geometry_bridge(monkeypatch, None)
+    _publish(bridge, detected_event())
+    better = {"x": 700, "y": 220, "width": 160, "height": 260}
+    bridge.observe(
+        _detection(
+            "UPDATE",
+            104.0,
+            **_quality(confidence=0.93, bbox=better, thumbnail_changed=True),
+        )
+    )
+
+    written = store.rows["frigate-event-1"]["data"]
+    assert written["score"] == 0.93
+    assert written["box"] == [
+        round(700 / 1280, 6),
+        round(220 / 720, 6),
+        round(160 / 1280, 6),
+        round(260 / 720, 6),
+    ]
