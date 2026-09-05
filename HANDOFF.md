@@ -28,9 +28,10 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
   proxy `#video=copy` de MediaMTX; ffmpeg solo `-c:v copy` a
   segmentos. DeepStream (`video-engine` + adapter + event-engine)
   es el único decoder analítico (`tienda` + `user`).
-- `semantic_search` / Jina: **encendido** de nuevo (5 sep 01:40) tras
-  corregir la causa real del cuelgue; ver «Jina y por qué colgaba
-  FastAPI (5 sep)». Frigate embebe solo los eventos DeepStream al END
+- `semantic_search` / Jina: **encendido** (5 sep 01:40) tras corregir la
+  causa real del cuelgue; desde 02:18 con **`jinav2` + `model_size: large`**
+  en GPU. Ver «Jina y por qué colgaba FastAPI (5 sep)» y «Jina v2 en GPU
+  (5 sep 02:18)». Frigate embebe solo los eventos DeepStream al END
   (`_process_finalized`, `data.type == "object"`, lee
   `clips/thumbs/{cam}/{id}.webp`). `FRIGATE_EMBED_THUMBNAILS` queda en
   `false` y no hace falta.
@@ -110,6 +111,23 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
   eventos debido a timeouts del único worker MQTT es un trabajo aparte:
   desacoplar HTTP Frigate/coalescer por `object_id`; no reiniciar ni purgar
   MQTT para “arreglarlo”. Ver `docs/mejores-thumbnails.md`.
+- **Jina v2 en GPU (5 sep 02:18):** `jinav1 small` embebía en CPU
+  (`vision_model_quantized.onnx`, ~1.4 s/thumb con carga; Frigate 140 %,
+  host idle 12 %). Medido en el contenedor (onnxruntime con
+  `CUDAExecutionProvider`, no hace falta Triton): v1 fp16 en T4 14.8 ms/img;
+  **v2 fp16 en T4 ~200 ms/img** (`pixel_values` 512×512, salida 1024 →
+  Frigate trunca a 768, tabla `vector(768)` compatible). Config smoke:
+  `model: jinav2`, `model_size: large`, `reindex: false`. Modelos
+  pre-descargados en `/config/model_cache/jinaai/jina-clip-v2/`
+  (`model_fp16.onnx` 1.73 GB, `preprocessor_config.json`, `tokenizer/`);
+  viven en el FS del contenedor, se pierden con recreate. GPU +2.2 GB
+  (4.7 GB usados de 15). Espacio v1 ≠ v2, así que se lanzó reindex
+  completo con `PUT /api/reindex` a las 02:19: 30 861 eventos a ~4.4/s ≈
+  2 h; durante el reindex Frigate ~120 % CPU (preprocesado de imagen) y
+  GPU 84 %. Progreso: `select count(*) from vec_thumbnails;`. Régimen
+  normal tras reindex: ~0.3 eventos/s × 0.2 s ≈ 6 % GPU. Si v2 resulta
+  caro, `model: jinav1` + `model_size: large` (fp16 ya en caché) es 13×
+  más rápido pero solo inglés y exige otro reindex.
 - **Jina y por qué colgaba FastAPI (5 sep 01:40):** `semantic_search`
   vuelve a `enabled: true` en `frigate-pg/config.postgres-pgvector-smoke.yml`.
   Causa real del cuelgue del 4 sep, vista con `py-spy dump`: el hilo
