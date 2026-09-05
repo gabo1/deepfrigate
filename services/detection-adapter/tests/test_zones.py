@@ -119,7 +119,7 @@ def test_zone_updates_validate_against_tracked_object_contract() -> None:
     validator.validate(update)
 
 
-def test_checked_in_tienda_zone_matches_area_cajas() -> None:
+def test_checked_in_tienda_has_no_checkout_zones() -> None:
     config_path = next(
         parent / "config/zones.json"
         for parent in Path(__file__).resolve().parents
@@ -135,12 +135,8 @@ def test_checked_in_tienda_zone_matches_area_cajas() -> None:
         {"x": 800, "y": 100, "width": 100, "height": 100},
     )
 
-    zones.observe(tienda)
-    zones.observe(tienda)
-    tienda_enter = zones.observe(tienda)[0]
-
-    assert tienda_enter["object_id"] == "tienda-17"
-    assert tienda_enter["data"]["zone"] == "area_cajas"
+    assert zones.observe(tienda) == []
+    assert zones.observe(tienda) == []
 
 
 def test_distinct_cameras_isolate_the_same_track_id() -> None:

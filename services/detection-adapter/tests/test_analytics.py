@@ -120,7 +120,8 @@ def test_direction_match_once_when_heading_east() -> None:
     assert directions.observe(person(3, 0.4, 90)) == []
 
 
-def test_checked_in_tienda_config_loads_line_and_direction() -> None:
+def test_checked_in_config_has_no_analytics_yet() -> None:
+    """`config/zones.json` ships every camera empty; engines must load it and stay quiet."""
     config_path = next(
         parent / "config/zones.json"
         for parent in Path(__file__).resolve().parents
@@ -130,7 +131,8 @@ def test_checked_in_tienda_config_loads_line_and_direction() -> None:
     lines = LineEngine(config)
     directions = DirectionEngine(config)
     zones = ZoneEngine(config)
-    assert zones.overcrowding_thresholds("tienda")["area_cajas"] == 4
+    for camera in ("tienda", "user"):
+        assert zones.overcrowding_thresholds(camera) == {}
     left = Detection(
         "tienda", 9, 1, "person", 0.9,
         {"x": 600, "y": 300, "width": 40, "height": 80},
@@ -140,9 +142,9 @@ def test_checked_in_tienda_config_loads_line_and_direction() -> None:
         {"x": 900, "y": 300, "width": 40, "height": 80},
     )
     assert lines.observe(left) == []
-    assert lines.observe(right)[0]["data"]["event"] == "line_in"
+    assert lines.observe(right) == []
     assert directions.observe(left) == []
-    assert directions.observe(right)[0]["data"]["direction"] == "hacia_cajas"
+    assert directions.observe(right) == []
 
 
 # --- Anti-flap: with the threshold at 4 and occupancy hovering at 3-4, naive

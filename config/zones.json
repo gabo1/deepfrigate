@@ -3,38 +3,9 @@
     "tienda": {
       "width": 1280,
       "height": 720,
-      "zones": {
-        "area_cajas": {
-          "coordinates": [
-            [0.58, 0.0],
-            [1.0, 0.0],
-            [1.0, 0.72],
-            [0.58, 0.72]
-          ],
-          "objects": ["person"],
-          "inertia": 3,
-          "filter": false,
-          "overcrowding_threshold": 4,
-          "overcrowding_clear_threshold": 2,
-          "overcrowding_hold_s": 10,
-          "loitering_threshold_s": 15
-        }
-      },
-      "lines": {
-        "pasillo_cajas": {
-          "from": [0.62, 0.0],
-          "to": [0.62, 1.0],
-          "objects": ["person"]
-        }
-      },
-      "directions": {
-        "hacia_cajas": {
-          "from": [0.35, 0.5],
-          "to": [0.75, 0.5],
-          "tolerance_deg": 45,
-          "objects": ["person"]
-        }
-      }
+      "zones": {},
+      "lines": {},
+      "directions": {}
     },
     "user": {
       "width": 1280,

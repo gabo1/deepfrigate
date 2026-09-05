@@ -4,7 +4,7 @@ Documento para **no reinvestigar**. Cubre las cuatro fuentes (Savant/`/opt/anali
 puente DeepFrigate, Frigate NVR, reporter addon), el dashboard Grafana que ya
 existe, y cómo **no** mezclar “permanencia” con “dwell” del reporter.
 
-Fecha de este mapa: **3 sep 2026**. Lab vivo en esta VM.
+Fecha de este mapa: **4 sep 2026**. Lab vivo en esta VM.
 
 **3 sep:** el exporter del adapter y el dashboard `analitica-deepfrigate` ya
 existen. El plan de Grafana (§8) lleva marcado lo hecho. No versionar
@@ -19,7 +19,7 @@ contraseñas (Grafana/Frigate admin).
 | DeepStream YOLO26 + NvDCF | `deepfrigate-video-engine-1` | arriba; batch 2 (`tienda` + `user`) |
 | Adapter (zonas/líneas/crowd/dirección) | `deepfrigate-detection-adapter-1` | arriba; `/metrics` en `:9110` |
 | Event Engine + puente Frigate | `deepfrigate-event-engine-1` | arriba; apunta al smoke |
-| Frigate PG + pgvector | `https://100.83.231.97:3005` (`frigate-pgvector-smoke`) | healthy; `detect.enabled: false` |
+| Frigate PG + pgvector | `https://100.83.231.97:3005` (`frigate-pgvector-smoke`) | healthy; NVR copy-only (sin decode); Jina v2 large en GPU (5 sep) |
 | PG Frigate | `frigate-pgvector-smoke-db` / base `frigate_pgvector_smoke` | healthy |
 | PG DeepFrigate (tabla `events`) | `deepfrigate-postgres-1` / base `deepfrigate` | healthy |
 | Reporter | — | **APAGADO el 3 sep** (§11 ter). Su heatmap vive en `platform-api` |
@@ -35,6 +35,12 @@ están en Python en el adapter.
 **3 sep tarde:** segunda cámara `user` (RTSP cyberw.io, coches). Relato y
 trampas: `docs/CAMARA-USER.md`. Zonas/líneas de `user` están vacías; el
 heatmap Grafana sigue embebido a `tienda.jpg`.
+
+**4 sep:** Frigate smoke ya no decodifica (go2rtc + `-c:v copy`).
+DeepStream sigue siendo el único decoder (`tienda` + `user`). Jina
+estuvo apagado el 4 sep; el 5 sep se reactivó (`jinav2`, GPU) tras
+arreglar el bloqueo del maintainer de embeddings, ver HANDOFF. `c4aac4f4eefe` disabled (404 remoto). tmpfs cache 512 MB.
+Ver HANDOFF «Frigate sin decode + por qué se cae `:3005`».
 
 UI Frigate **Review** (`/review`) = `reviewsegment` (tarjeta “hubo persona”).
 **No lista** `line_crossed_*`, `overcrowding` ni `entered_zone`. Esos viven en
@@ -140,13 +146,15 @@ no vale: hay que compartir red. Está declarada como `external` en
 `/opt/observabilidad/docker-compose.yml` para que sobreviva a un recreate.
 Deshacer: `docker network disconnect deepfrigate_default grafana`.
 
-### La fuente de vídeo es un bucle de 299 s (leer antes de sacar conclusiones)
+### La fuente viva de `tienda` es el Hik 210235C8NP3246000069
 
-`fakecam` (mediamtx) sirve `rtsp://100.83.231.97:8554/tienda` con
-`ffmpeg -re -stream_loop -1 -i /media/tienda_10.mp4`, y el clip dura
-**299,1 s**. `RTSP_TIENDA` del `video-engine` apunta ahí. Es decir: **las
-mismas 21 personas pasan cada 5 minutos**, y los ~14.900 Events son ese clip
-repetido unas 800 veces en 66 h.
+`fakecam` (mediamtx) sirve `rtsp://100.83.231.97:8554/tienda` como
+ese serial transcodificado a 1920×1080 @ 10 fps (libx264, desde el
+restream nativo `cam_210235c8np`). Hasta el 4 sep 2026 era el clip
+`tienda_10.mp4` en bucle (299,1 s). `RTSP_TIENDA` del `video-engine`
+apunta al path `tienda`. Los Events **anteriores** a ese corte sí
+son el bucle: **las mismas 21 personas cada 5 minutos**, ~14.900
+Events en 66 h.
 
 Consecuencias, las dos importantes:
 
@@ -931,7 +939,7 @@ cambia, se cambia aquí y en el sitio que dice la columna "dónde".
 |---|---|---|
 | Fuente | `tienda_10.mp4` en bucle (`-stream_loop -1`) | **cámara externa real**, `rtsp://cyberw.io:15190/?inst=1` |
 | Etiquetas | `person` | **`car` y `person`** (698 / 114 el 3 sep) |
-| Atributos PULC | sí | solo en las personas; los coches no tienen |
+| Atributos PULC | sí | persona: `person_attributes`; coche: `vehicle_attributes` (color + tipo) |
 | Lectura por hora del día | **sin sentido** (bucle de 299 s) | **sí vale**: es tráfico real |
 | Geometría en `zones.json` | zona + línea + dirección | **ninguna** |
 
@@ -961,7 +969,7 @@ El eje correcto es **por cámara**, con variables de plantilla:
 |---|---|---|
 | `analitica-deepfrigate` | `$camera`, `$label` | Todo. `$label` **solo afecta al heatmap**; el resto ya desglosa por etiqueta |
 | `camara-eventos` | `$camera`, `$label` | Solo lo que funciona **en cualquier cámara**: métricas de escena + SQL + heatmap, sin depender de `zones.json` |
-| `pulc-atributos` | `$camera` | Solo lista cámaras con `person_attributes`: los coches no tienen PULC |
+| `pulc-atributos` | `$camera` | Solo lista cámaras con `person_attributes`. Los coches van en `vehicle_attributes` (aún sin dashboard) |
 
 **Qué métrica de Prometheus vale sin geometría.** No es evidente y conviene
 tenerlo escrito:
