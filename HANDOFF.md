@@ -28,7 +28,10 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
   proxy `#video=copy` de MediaMTX; ffmpeg solo `-c:v copy` a
   segmentos. DeepStream (`video-engine` + adapter + event-engine)
   es el único decoder analítico (`tienda` + `user`).
-- `semantic_search` / Jina: **apagado** en smoke (4 sep tarde).
+- `semantic_search` / Jina: **encendido** de nuevo (5 sep 01:40) tras
+  corregir la causa real del cuelgue; ver «Jina y por qué colgaba
+  FastAPI (5 sep)». `FRIGATE_EMBED_THUMBNAILS` sigue en `false`: los
+  eventos nuevos de DeepStream aún no se embeben.
   Cargaba CLIP en el hilo FastAPI y, con `/thumbnail/embed` de
   event-engine, colgaba `:3005` (HTML 200, API timeout, health
   unhealthy). «Buscar similares» de producto sigue siendo Qdrant.
@@ -105,6 +108,26 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
   eventos debido a timeouts del único worker MQTT es un trabajo aparte:
   desacoplar HTTP Frigate/coalescer por `object_id`; no reiniciar ni purgar
   MQTT para “arreglarlo”. Ver `docs/mejores-thumbnails.md`.
+- **Jina y por qué colgaba FastAPI (5 sep 01:40):** `semantic_search`
+  vuelve a `enabled: true` en `frigate-pg/config.postgres-pgvector-smoke.yml`.
+  Causa real del cuelgue del 4 sep, vista con `py-spy dump`: el hilo
+  `embeddings_maintainer` se quedaba en `_process_frame_updates` →
+  `DetectionSubscriber.check_for_update()` con `timeout=None` → `zmq.select`
+  eterno, porque con `detect.enabled: false` en todas las cámaras nunca hay
+  frames de detección. El bucle jamás volvía a `_process_requests`, así que
+  cada búsqueda o `/thumbnail/embed` esperaba en `recv_json` sin timeout y
+  consumía un worker AnyIO de FastAPI hasta agotar el pool (`/auth` 504).
+  No era CPU de Jina. Parches (repo `frigate-pg`, aplicados con `docker cp`
+  + borrar pyc + restart): `embeddings/maintainer.py` poll con
+  `timeout=0.1`; `comms/embeddings_updater.py` `EmbeddingsRequestor` con
+  `RCVTIMEO` 15 s, `REQ_RELAXED`, `REQ_CORRELATE`, `LINGER 0`. Verificado:
+  `events/search?query=persona` 200 en 3.3 s (carga del modelo de texto) y
+  0.4 s después; Frigate ~17 % CPU, 1.8 GiB, healthy; `/auth` 22 ms. La
+  barra de búsqueda de Explore reaparece con esto. Pendiente si se quiere
+  buscar eventos nuevos: `FRIGATE_EMBED_THUMBNAILS=true` en event-engine
+  (ahora el maintainer sí atiende `embed_thumbnail`); probar con carga
+  antes de dejarlo fijo. Los cambios de `frigate-pg` siguen sin commit en
+  su repo (`gabo1/pgfrigate`), junto con los 7 parches previos.
 - **CPU video-engine (5 sep ~00:45):** host al 56 % user, `video-engine`
   123 %. `perf` sobre el proceso: 62 % del tiempo en `libwebp` (clean
   1280×720 por cada bundle; 82 + 192 bundles/min, casi todos <1 s entre sí
@@ -1284,6 +1307,8 @@ output/output.py
 camera/maintainer.py
 record/maintainer.py
 api/media.py
+embeddings/maintainer.py
+comms/embeddings_updater.py
 ```
 
 Test: `TestConfig.test_record_only_skips_detect_decode` (correr
