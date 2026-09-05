@@ -1302,8 +1302,9 @@ def test_timeline_rows_carry_the_live_box_not_the_thumbnail_box(monkeypatch):
             **_quality(confidence=0.8, bbox=last, thumbnail_changed=False),
         )
     )
+    final = {"x": 600, "y": 400, "width": 80, "height": 80}
     bridge.observe(
-        _detection("END", 112.5, **_quality(confidence=0.8, bbox=last, thumbnail_changed=False)),
+        _detection("END", 112.5, **_quality(confidence=0.75, bbox=final, thumbnail_changed=False)),
         {
             "id": "end-1",
             "event_type": "object_ended",
@@ -1315,13 +1316,17 @@ def test_timeline_rows_carry_the_live_box_not_the_thumbnail_box(monkeypatch):
     )
 
     gone = [item for item in store.timeline if item["class_type"] == "gone"][-1]
+    # The gone row uses the END message itself, not the coalesced last UPDATE.
     assert gone["data"]["box"] == [
-        round(20 / 1280, 6),
-        round(20 / 720, 6),
+        round(600 / 1280, 6),
+        round(400 / 720, 6),
         round(80 / 1280, 6),
         round(80 / 720, 6),
     ]
-    assert gone["data"]["score"] == 0.8
+    assert gone["data"]["score"] == 0.75
+    # ...and the path ends at that same foot point.
+    path = store.rows["frigate-event-1"]["data"]["path_data"]
+    assert path[-1][0] == [round(600 / 1280 + 80 / 1280 / 2, 4), round(400 / 720 + 80 / 720, 4)]
     # The Event box itself still belongs to the installed snapshot.
     assert store.rows["frigate-event-1"]["data"]["box"] == [
         round(700 / 1280, 6),

@@ -182,9 +182,13 @@ class FrigateReviewBridge:
                 if pending is not None and pending.created:
                     if not self._is_false_positive(update):
                         self._path(update)
+                    # The END message carries the last seen bbox. The
+                    # coalesced pending.last_update can be up to
+                    # FRIGATE_BRIDGE_UPDATE_SECONDS older, and the "gone"
+                    # timeline row must land where the path ends.
                     self._end(
                         event,
-                        last_update=pending.last_update,
+                        last_update=update if update.get("data") else pending.last_update,
                         thumbnail_bbox=pending.thumbnail_bbox,
                         snapshot_box=pending.snapshot_box,
                     )

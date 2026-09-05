@@ -119,7 +119,10 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
   polilínea terminaba saltando a un punto anterior (`sfpjs9`: END en
   (0.080, 0.539), `gone` en (0.260, 0.874)). Ahora la fila usa
   `data.bbox`/`confidence` del instante y el thumbnail solo como fallback.
-  `Event.box` sigue siendo la del snapshot. Tests event-engine 58.
+  Además la fila `gone` toma el bbox del **mensaje END**, no de
+  `pending.last_update` (coalescido hasta 1 s antes; en coches rápidos
+  desviaba 0.1–0.2 del final del path). `Event.box` sigue siendo la del
+  snapshot. Tests event-engine 58.
   Filas `timeline` históricas quedan como estaban.
 - **Jina v2 en GPU (5 sep 02:18):** `jinav1 small` embebía en CPU
   (`vision_model_quantized.onnx`, ~1.4 s/thumb con carga; Frigate 140 %,
