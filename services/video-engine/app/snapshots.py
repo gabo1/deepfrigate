@@ -154,7 +154,11 @@ def write_track_clean(
     dest = dest_dir / f"{int(track_id)}-clean.webp"
     tmp = dest.with_suffix(".webp.tmp")
     try:
-        image.save(tmp, format="WEBP", quality=quality)
+        # A 1280x720 clean is written on every thumbnail improvement, several
+        # times per second across cameras. libwebp's default method (4) costs
+        # ~146 ms per frame and was ~60% of the process CPU; method=0 encodes
+        # the same frame in ~36 ms for ~25% more bytes.
+        image.save(tmp, format="WEBP", quality=quality, method=0)
         tmp.replace(dest)
         return dest
     except Exception:

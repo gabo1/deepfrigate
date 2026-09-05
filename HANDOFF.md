@@ -105,6 +105,14 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
   eventos debido a timeouts del único worker MQTT es un trabajo aparte:
   desacoplar HTTP Frigate/coalescer por `object_id`; no reiniciar ni purgar
   MQTT para “arreglarlo”. Ver `docs/mejores-thumbnails.md`.
+- **CPU video-engine (5 sep ~00:45):** host al 56 % user, `video-engine`
+  123 %. `perf` sobre el proceso: 62 % del tiempo en `libwebp` (clean
+  1280×720 por cada bundle; 82 + 192 bundles/min, casi todos <1 s entre sí
+  al arrancar un track). Encoder por defecto (method 4) 146 ms/frame;
+  `method=0` 36 ms, +25 % bytes (49 vs 39 KiB). Cambiado en
+  `write_track_clean` y `write_clean_from_scene`. Resultado: video-engine
+  ~90 %, host ~27 % user. Siguiente palanca si hace falta: limitar a un
+  bundle por track por segundo (`DS_SNAPSHOT_INTERVAL` hoy no se usa).
 - **Caja del snapshot = caja del bundle (5 sep ~00:15):** Explore dibujaba
   el bbox desplazado (evento `1788565560.389661-q9pp7i`, `tienda-1512`):
   la escena la elegía video-engine y la caja la elegía detection-adapter

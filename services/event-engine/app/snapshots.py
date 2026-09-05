@@ -215,7 +215,7 @@ def write_clean_from_scene(
         image = Image.open(scene).convert("RGB")
         dest_webp.parent.mkdir(parents=True, exist_ok=True)
         tmp = dest_webp.with_suffix(dest_webp.suffix + ".tmp")
-        image.save(tmp, format="WEBP", quality=quality)
+        image.save(tmp, format="WEBP", quality=quality, method=0)
         tmp.replace(dest_webp)
         dest_png.unlink(missing_ok=True)
         return True
