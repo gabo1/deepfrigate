@@ -12,6 +12,8 @@ export const CLOTHING_HEX: Record<string, string> = {
   blue: "#4c8dd8",
   purple: "#a371f7",
   pink: "#db61a2",
+  golden: "#d4a017",
+  brown: "#8b5a2b",
   negro: "#1b1f24",
   blanco: "#f0f6fc",
   gris: "#8b949e",

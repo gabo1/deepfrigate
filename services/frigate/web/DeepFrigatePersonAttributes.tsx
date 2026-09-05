@@ -20,9 +20,13 @@ const LABELS: Record<string, string> = {
   bag: "Bolso",
   upper_color: "Arriba",
   lower_color: "Abajo",
+  color: "Color",
+  body_type: "Tipo",
 };
 
 const ORDER = [
+  "color",
+  "body_type",
   "gender",
   "age",
   "orientation",
@@ -37,7 +41,7 @@ const ORDER = [
 ] as const;
 
 const BOOLEAN_FIELDS = new Set(["glasses", "hat", "holding_object"]);
-const COLOR_FIELDS = new Set(["upper_color", "lower_color"]);
+const COLOR_FIELDS = new Set(["upper_color", "lower_color", "color"]);
 
 function isEntry(value: unknown): value is AttributeEntry {
   return (
@@ -51,14 +55,17 @@ function isEntry(value: unknown): value is AttributeEntry {
 function readAttributes(
   search: SearchResult,
 ): Record<string, AttributeEntry> {
-  const raw = (search.data as Record<string, unknown>).person_attributes;
-  if (!raw || typeof raw !== "object") {
-    return {};
-  }
+  const data = search.data as Record<string, unknown>;
   const entries: Record<string, AttributeEntry> = {};
-  for (const [name, value] of Object.entries(raw)) {
-    if (name !== "updated_at" && isEntry(value)) {
-      entries[name] = value;
+  for (const key of ["vehicle_attributes", "person_attributes"] as const) {
+    const raw = data[key];
+    if (!raw || typeof raw !== "object") {
+      continue;
+    }
+    for (const [name, value] of Object.entries(raw)) {
+      if (name !== "updated_at" && isEntry(value) && !(name in entries)) {
+        entries[name] = value;
+      }
     }
   }
   return entries;
