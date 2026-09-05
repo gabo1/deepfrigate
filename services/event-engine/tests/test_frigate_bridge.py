@@ -1266,3 +1266,66 @@ def test_event_box_falls_back_to_mqtt_when_bundle_has_no_geometry(monkeypatch):
         round(160 / 1280, 6),
         round(260 / 720, 6),
     ]
+
+
+def test_timeline_rows_carry_the_live_box_not_the_thumbnail_box(monkeypatch):
+    """Tracking details draws timeline boxes as path points sorted by time."""
+    repository = FakeRepository()
+    store = FakeStore()
+    bridge = FrigateReviewBridge(
+        "http://frigate:5000/api",
+        repository,
+        store=store,
+        camera_sizes={"tienda": (1280, 720)},
+    )
+    monkeypatch.setattr(
+        bridge,
+        "_request",
+        lambda method, path, payload=None: (
+            [] if method == "GET" else {"event_id": "frigate-event-1"}
+        ),
+    )
+    _publish(bridge, detected_event())
+    better = {"x": 700, "y": 220, "width": 160, "height": 260}
+    last = {"x": 20, "y": 20, "width": 80, "height": 80}
+    bridge.observe(
+        _detection(
+            "UPDATE",
+            104.0,
+            **_quality(confidence=0.93, bbox=better, thumbnail_changed=True),
+        )
+    )
+    bridge.observe(
+        _detection(
+            "UPDATE",
+            110.0,
+            **_quality(confidence=0.8, bbox=last, thumbnail_changed=False),
+        )
+    )
+    bridge.observe(
+        _detection("END", 112.5, **_quality(confidence=0.8, bbox=last, thumbnail_changed=False)),
+        {
+            "id": "end-1",
+            "event_type": "object_ended",
+            "object_id": "tienda-42",
+            "camera_id": "tienda",
+            "timestamp": 112.5,
+            "data": {},
+        },
+    )
+
+    gone = [item for item in store.timeline if item["class_type"] == "gone"][-1]
+    assert gone["data"]["box"] == [
+        round(20 / 1280, 6),
+        round(20 / 720, 6),
+        round(80 / 1280, 6),
+        round(80 / 720, 6),
+    ]
+    assert gone["data"]["score"] == 0.8
+    # The Event box itself still belongs to the installed snapshot.
+    assert store.rows["frigate-event-1"]["data"]["box"] == [
+        round(700 / 1280, 6),
+        round(220 / 720, 6),
+        round(160 / 1280, 6),
+        round(260 / 720, 6),
+    ]

@@ -804,11 +804,17 @@ class FrigateReviewBridge:
     ) -> None:
         if self.store is None:
             return
+        # Timeline rows describe where the object was at that lifecycle
+        # moment. Explore's tracking details draws each row's box foot as a
+        # path point sorted by timestamp, so the "gone" row must carry the
+        # last position, not the best-thumbnail box (which sent the path back
+        # to an earlier point). The thumbnail box only fills in when the
+        # update lacks a live bbox.
         thumbnail = data.get("thumbnail") or {}
         box = self._box(
-            camera_id, thumbnail.get("bbox") or data.get("bbox")
+            camera_id, data.get("bbox") or thumbnail.get("bbox")
         )
-        score = thumbnail.get("score", data.get("confidence"))
+        score = data.get("confidence", thumbnail.get("score"))
         payload = {
             "timestamp": float(timestamp),
             "camera": camera_id,
