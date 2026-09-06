@@ -113,6 +113,24 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
   eventos debido a timeouts del único worker MQTT es un trabajo aparte:
   desacoplar HTTP Frigate/coalescer por `object_id`; no reiniciar ni purgar
   MQTT para “arreglarlo”. Ver `docs/mejores-thumbnails.md`.
+- **Detección de clean/thumb de Frigate por tamaño y dimensiones (6 sep 16:30):**
+  con 4 cámaras Frigate llegó a escribir sus archivos verdes en el mismo
+  segundo que nuestra copia (`70und1`: todo a 16:07:44) y el criterio de
+  mtime (>0.15 s) no los veía; el END y la reparación a los 2 s no
+  corregían nada. Ahora `repair_foreign_snapshot_files` considera foráneo un
+  clean si es más nuevo que el jpg en >0.05 s, **o** pesa <2500 B, **o** sus
+  dimensiones no coinciden con el jpg; un thumb si es más nuevo o pesa
+  <200 B. Datos reales de 6 h: verdes = 636 B (640×480) / 1728 B
+  (1280×720) y 44–46 B; sanos p5 = 64 KB y 2.5 KB. Tests event-engine 65.
+  **Transiciones: primer resultado.** El matcher funciona (búsquedas con
+  hits) pero PP-ShiTu no separa identidades entre cámaras: el mismo peatón
+  (camisa naranja con perros, `c4aac4f4eefe-1556` ↔ `c4aac4f4ef0a-1554`,
+  gap 0 s) da coseno 0.472 y los impostores (tienda/user) llegan a 0.457.
+  Con `TRANSITION_MIN_SCORE=0.8` no habrá filas. Además las dos cámaras
+  **ven al mismo peatón a la vez** (gaps 0–2 s): cobertura adyacente/
+  solapada, no cámaras lejanas. Opciones: co-ocurrencia temporal +
+  dirección (sin apariencia), modelo ReID dedicado (TAO ReID / OSNet en
+  Triton) o bajar el umbral aceptando ruido. Sin decidir.
 - **Transiciones entre cámaras (6 sep 16:10):** el addon
   (`frigatenvr-reporter-addon/app.py:321-334`) agrupaba eventos por
   `id.split('-')[0]` (= `start_time` con microsegundos): nunca coincide, por

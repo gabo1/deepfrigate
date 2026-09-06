@@ -380,15 +380,29 @@ def test_end_repairs_clean_and_thumb_that_frigate_wrote_after_us(tmp_path: Path)
     assert min(center) > 150
 
 
+def _textured(size: tuple[int, int]) -> Image.Image:
+    """A real scene, not a flat colour: flat WebPs are what Frigate's green files look like."""
+    import random
+
+    random.seed(size[0])
+    image = Image.new("RGB", size)
+    image.putdata([(random.randrange(256), random.randrange(256), random.randrange(256)) for _ in range(size[0] * size[1])])
+    return image
+
+
 def test_end_leaves_healthy_clean_and_thumb_alone(tmp_path: Path) -> None:
     clips = tmp_path / "clips"
     thumbs = clips / "thumbs" / "user"
     thumbs.mkdir(parents=True)
-    Image.new("RGB", (1280, 720), (10, 20, 30)).save(clips / "user-evt-1.jpg", format="JPEG")
-    Image.new("RGB", (1280, 720), (10, 20, 30)).save(
-        clips / "user-evt-1-clean.webp", format="WEBP"
-    )
-    Image.new("RGB", (175, 175), (10, 20, 30)).save(thumbs / "evt-1.webp", format="WEBP")
+    _textured((1280, 720)).save(clips / "user-evt-1.jpg", format="JPEG")
+    _textured((1280, 720)).save(clips / "user-evt-1-clean.webp", format="WEBP")
+    _textured((175, 175)).save(thumbs / "evt-1.webp", format="WEBP")
+    # Our copy writes the trio within milliseconds; encoding noise here is slower.
+    import os
+
+    stamp = (clips / "user-evt-1.jpg").stat().st_mtime
+    for path in (clips / "user-evt-1-clean.webp", thumbs / "evt-1.webp"):
+        os.utime(path, (stamp, stamp))
     clean_bytes = (clips / "user-evt-1-clean.webp").read_bytes()
     thumb_bytes = (thumbs / "evt-1.webp").read_bytes()
     (tmp_path / "ds" / "user").mkdir(parents=True)
@@ -406,3 +420,40 @@ def test_end_leaves_healthy_clean_and_thumb_alone(tmp_path: Path) -> None:
     )
     assert (clips / "user-evt-1-clean.webp").read_bytes() == clean_bytes
     assert (thumbs / "evt-1.webp").read_bytes() == thumb_bytes
+
+
+def test_end_repairs_frigate_files_written_in_the_same_instant(tmp_path: Path) -> None:
+    """Frigate can land its green files within milliseconds of ours: mtime alone is not enough."""
+    import os
+
+    clips = tmp_path / "clips"
+    thumbs = clips / "thumbs" / "user"
+    thumbs.mkdir(parents=True)
+    scene = Image.new("RGB", (960, 720), (10, 20, 30))
+    scene.paste(Image.new("RGB", (120, 200), (240, 240, 240)), (500, 200))
+    scene.save(clips / "user-evt-1.jpg", format="JPEG")
+    # Camera-sized uniform green clean and a 46-byte uniform thumb, same mtime as the jpg.
+    Image.new("RGB", (640, 480), (0, 154, 2)).save(clips / "user-evt-1-clean.webp", format="WEBP")
+    Image.new("RGB", (233, 175), (0, 154, 2)).save(thumbs / "evt-1.webp", format="WEBP")
+    stamp = (clips / "user-evt-1.jpg").stat().st_mtime
+    for path in (clips / "user-evt-1-clean.webp", thumbs / "evt-1.webp"):
+        os.utime(path, (stamp, stamp))
+    (tmp_path / "ds" / "user").mkdir(parents=True)
+
+    assert replace_frigate_snapshot(
+        snapshot_dir=tmp_path / "ds",
+        clips_dir=clips,
+        camera_id="user",
+        object_id="user-42",
+        frigate_event_id="evt-1",
+        overwrite=False,
+        repair_box=[500 / 960, 200 / 720, 120 / 960, 200 / 720],
+        attempts=1,
+        delay=0,
+    )
+    clean = Image.open(clips / "user-evt-1-clean.webp").convert("RGB")
+    assert clean.size == (960, 720)
+    assert clean.getpixel((10, 10))[1] < 60
+    thumb = Image.open(thumbs / "evt-1.webp").convert("RGB")
+    assert thumb.size[1] == 175
+    assert min(thumb.getpixel((thumb.size[0] // 2, thumb.size[1] // 2))) > 150

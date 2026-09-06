@@ -230,7 +230,11 @@ def write_clean_from_scene(
 # lands first and loses. A healthy copy writes jpg, clean and thumb within a
 # few ms of each other, so a clean or thumb noticeably newer than the jpg was
 # written by someone else.
-FOREIGN_WRITE_GAP_SECONDS = 0.15
+FOREIGN_WRITE_GAP_SECONDS = 0.05
+# A uniform (green) 1280x720 WebP is ~1.7 KB and a uniform thumb ~44 bytes;
+# our clean of a real scene is tens of KB and a thumb several KB.
+FOREIGN_CLEAN_MAX_BYTES = 2500
+FOREIGN_THUMB_MAX_BYTES = 200
 
 
 def _newer_than_scene(path: Path, scene_mtime: float) -> bool:
@@ -238,6 +242,34 @@ def _newer_than_scene(path: Path, scene_mtime: float) -> bool:
         return path.stat().st_mtime > scene_mtime + FOREIGN_WRITE_GAP_SECONDS
     except OSError:
         return False
+
+
+def _image_size(path: Path) -> tuple[int, int] | None:
+    try:
+        from PIL import Image
+
+        with Image.open(path) as image:
+            return image.size
+    except Exception:
+        return None
+
+
+def _looks_foreign(path: Path, scene_mtime: float, scene_size: tuple[int, int] | None, max_bytes: int, check_dims: bool) -> bool:
+    """Frigate's copy: written after ours, tiny (uniform colour), or camera-sized."""
+    if not path.exists():
+        return False
+    if _newer_than_scene(path, scene_mtime):
+        return True
+    try:
+        if path.stat().st_size < max_bytes:
+            return True
+    except OSError:
+        return False
+    if check_dims and scene_size is not None:
+        size = _image_size(path)
+        if size is not None and size != scene_size:
+            return True
+    return False
 
 
 def _pixel_bbox_from_relative(
@@ -266,17 +298,23 @@ def repair_foreign_snapshot_files(
     if not dest_jpg.exists() or dest_jpg.stat().st_size <= 0:
         return False
     scene_mtime = dest_jpg.stat().st_mtime
+    scene_size = _image_size(dest_jpg)
     repaired = False
     clean_missing = not any(
         path.exists() and path.stat().st_size > 0 for path in (dest_webp, dest_png)
     )
-    if clean_missing or _newer_than_scene(dest_webp, scene_mtime) or _newer_than_scene(
-        dest_png, scene_mtime
+    if (
+        clean_missing
+        or _looks_foreign(dest_webp, scene_mtime, scene_size, FOREIGN_CLEAN_MAX_BYTES, True)
+        or _looks_foreign(dest_png, scene_mtime, scene_size, FOREIGN_CLEAN_MAX_BYTES, True)
     ):
         if write_clean_from_scene(dest_jpg, dest_webp, dest_png):
             repaired = True
     thumb_missing = not (dest_thumb.exists() and dest_thumb.stat().st_size > 0)
-    if repair_box and (thumb_missing or _newer_than_scene(dest_thumb, scene_mtime)):
+    if repair_box and (
+        thumb_missing
+        or _looks_foreign(dest_thumb, scene_mtime, None, FOREIGN_THUMB_MAX_BYTES, False)
+    ):
         try:
             from PIL import Image
 
