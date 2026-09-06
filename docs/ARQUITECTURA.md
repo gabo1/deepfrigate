@@ -165,11 +165,12 @@ Ver `docs/OPERACION.md` §6.
 
 ## 5b-bis. Transiciones entre cámaras
 
-Sin solape ni calibración → sin MV3DT. event-engine casa el embedding final
-(PP-ShiTu, END) de un track con el mejor embedding anterior de la cámara
-pareja dentro de una ventana (`TRANSITION_*`) y escribe
-`camera_transitions` en el PG de producto; `platform-api
-/v1/camera-transitions` lo agrega por par. Detalle y límites:
+Sin calibración → sin MV3DT. Las cámaras de calle se solapan en parte y
+PP-ShiTu no separa identidades entre ellas, así que event-engine casa
+tracks por **co-ocurrencia temporal** (A empezó antes, B empezó dentro de
+la ventana tras la última vista de A; dirección opcional; embedding solo
+como desempate) y escribe `camera_transitions` en el PG de producto;
+`platform-api /v1/camera-transitions` lo agrega por par. Detalle y límites:
 `docs/OPERACION.md` §6b.
 
 ## 5c. Operación: dónde se rompe y qué lo sujeta

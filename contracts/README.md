@@ -81,6 +81,8 @@ mux. El adapter acepta también tópicos por cámara.
 Una fila por track que llega a una cámara y tiene un origen plausible en la
 cámara pareja: `from_camera`, `to_camera`, `from_object_id`, `to_object_id`
 (UNIQUE), `from_frigate_event_id`, `to_frigate_event_id`, `label`,
-`from_seen_at`, `to_seen_at`, `gap_seconds`, `score` (coseno PP-ShiTu),
-`from_vector_id`, `to_vector_id`. La escribe `app/transitions.py`; la lee
-`platform-api /v1/camera-transitions`.
+`from_seen_at`, `to_seen_at`, `gap_seconds` (negativo = solape),
+`score` (coseno PP-ShiTu; nulo sin desempate), `method`
+(`cooccurrence` | `embedding`), `candidates`, `from_vector_id`,
+`to_vector_id`. La escribe `app/transitions.py`; la lee `platform-api
+/v1/camera-transitions`.

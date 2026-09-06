@@ -248,31 +248,40 @@ Cambiar de modelo Jina exige reindex (espacios distintos). El reindex del
 
 ## 6b. Transiciones entre cámaras (`camera_transitions`)
 
-No hay solape de campos de visión ni calibración, así que no se usa MV3DT
-(3D) de NVIDIA. La asociación es **re-identificación por embedding + ventana
-temporal**, en event-engine (`app/transitions.py`):
+Las dos cámaras de calle (`c4aac4f4eefe` DEMO05, `c4aac4f4ef0a` DEMO03)
+cubren tramos adyacentes y en parte solapados: el mismo peatón aparece en
+ambas con 0–2 s de diferencia. No hay calibración, así que no se usa MV3DT.
+La apariencia (PP-ShiTu) **no separa identidades** entre esas vistas: pares
+verdaderos ≈ 0.47 de coseno, impostores hasta 0.46. Por eso el modo por
+defecto es **co-ocurrencia temporal** (`TRANSITION_MODE=cooccurrence`,
+`services/event-engine/app/transitions.py`):
 
-1. ai-router publica el embedding final de cada track al END
-   (`frame_ref_id` termina en `-explore-thumb`; vector en Qdrant con
-   `camera_id`, `label`, `frame_timestamp`).
-2. event-engine, al recibir ese `update_type: embedding`, si la cámara está
-   en `TRANSITION_PAIRS`, busca en Qdrant vectores del mismo `label`, de la
-   cámara pareja, con `frame_timestamp` en `[t − TRANSITION_WINDOW_SECONDS,
-   t]` y coseno ≥ `TRANSITION_MIN_SCORE`. El mejor gana.
-3. Escribe una fila en `camera_transitions` (PG producto) con ambos
-   `object_id`, ambos `frigate_event_id`, `gap_seconds`, `score`. Una fila
-   por track que llega (`to_object_id` UNIQUE); solo mira hacia atrás, así
-   cada par se cuenta una vez.
+1. event-engine guarda START/END (con `last_seen_at` y la x del bbox) de
+   cada track de las cámaras emparejadas.
+2. Cuando un track B termina (y llega su embedding final, o pasan
+   `TRANSITION_EMBED_WAIT_SECONDS=6` sin él), busca orígenes A en la cámara
+   pareja: mismo `label`, A empezó antes que B, y B empezó como mucho
+   `TRANSITION_WINDOW_SECONDS=60` después de la última vez que se vio A
+   (puede solaparse: B empieza mientras A sigue visible).
+3. `TRANSITION_DIRECTION=same|opposite|ignore` puede vetar candidatos cuya
+   dirección de movimiento en x no encaje (ignore por defecto; fijar tras
+   mirar pares reales).
+4. Un candidato → transición. Varios → desempate por embedding (coseno
+   entre B y cada candidato, mínimo `TRANSITION_MIN_SCORE=0.3`), o el más
+   cercano en tiempo si Qdrant no ayuda. Cada A se consume una vez.
+5. Fila en `camera_transitions` con `method=cooccurrence`, `candidates`,
+   `gap_seconds` (negativo = solape), `score` (nulo si no hubo desempate).
 
-Consumo: `GET :8082/v1/camera-transitions` (conteo por par, forma del addon
-"Camera Transition Analysis"), `?detail=true` para auditar pares con
-`score` y `gap_seconds`, `?after=&before=&label=&min_score=`.
+`TRANSITION_MODE=embedding` mantiene la búsqueda pura por re-id (para
+cámaras lejanas con un modelo ReID de verdad).
 
-Límites: PP-ShiTu es un modelo de retrieval de producto/vehículo. Coches
-bien, personas regular, coches idénticos mal. Calibrar `TRANSITION_MIN_SCORE`
-(0.8 inicial) y `TRANSITION_WINDOW_SECONDS` (180) revisando pares con
-`detail=true` antes de creer los conteos. Eventos abiertos (coches
-aparcados) no generan embedding hasta el END.
+Consumo: `GET :8082/v1/camera-transitions` (conteo por par),
+`?detail=true` (pares con `gap_seconds`, `score`, `method`, ids de Frigate),
+`?after=&before=&label=&min_score=`.
+
+Límites: con varias personas a la vez la co-ocurrencia se confunde y el
+desempate por PP-ShiTu es débil. Eventos abiertos (coches aparcados) solo
+cuentan al END. Auditar con `detail=true` y ajustar ventana y dirección.
 
 ## 7. Variables que importan
 
@@ -285,4 +294,4 @@ aparcados) no generan embedding hasta el END.
 | `FRIGATE_BRIDGE_UPDATE_SECONDS` | event-engine | 1 | coalescing de UPDATE hacia Frigate |
 | `FRIGATE_EMBED_THUMBNAILS` | event-engine | false | ya no hace falta: Frigate embebe al END |
 | `semantic_search.*` | Frigate YAML | `jinav2`, `large`, `reindex: false` | buscador y embeddings |
-| `TRANSITION_PAIRS` / `_WINDOW_SECONDS` / `_MIN_SCORE` / `_LABELS` | event-engine | `c4aac4f4eefe:c4aac4f4ef0a` / 180 / 0.8 / `car,person` | transiciones entre cámaras; pares vacíos desactiva |
+| `TRANSITION_PAIRS` / `_MODE` / `_WINDOW_SECONDS` / `_DIRECTION` / `_MIN_SCORE` / `_EMBED_WAIT_SECONDS` / `_LABELS` | event-engine | `c4aac4f4eefe:c4aac4f4ef0a` / `cooccurrence` / 60 / `ignore` / 0.3 / 6 / `car,person` | transiciones entre cámaras; pares vacíos desactiva |

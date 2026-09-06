@@ -101,13 +101,19 @@ class EventEngine:
         # Cross-camera transitions (PP-ShiTu + time window); None without
         # TRANSITION_PAIRS. Runs on the bridge worker: embedding updates are
         # rare (one per ended track) and Qdrant answers in milliseconds.
-        self.transitions = matcher_from_env(self.bridge_repository)
+        self.transitions = matcher_from_env(
+            self.bridge_repository,
+            _camera_sizes(os.getenv("ZONES_CONFIG", "/app/config/zones.json")),
+        )
         if self.transitions is not None:
             logger.info(
-                "Camera transitions on: pairs=%s window=%ss min_score=%s labels=%s",
+                "Camera transitions on: mode=%s pairs=%s window=%ss min_score=%s "
+                "direction=%s labels=%s",
+                self.transitions.mode,
                 sorted(sorted(pair) for pair in self.transitions.pairs),
                 self.transitions.window_seconds,
                 self.transitions.min_score,
+                self.transitions.direction,
                 sorted(self.transitions.labels),
             )
         self.worker = Thread(

@@ -113,6 +113,18 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
   eventos debido a timeouts del único worker MQTT es un trabajo aparte:
   desacoplar HTTP Frigate/coalescer por `object_id`; no reiniciar ni purgar
   MQTT para “arreglarlo”. Ver `docs/mejores-thumbnails.md`.
+- **Transiciones por co-ocurrencia (6 sep 17:00):** decidido con el usuario
+  tras ver que PP-ShiTu no separa. `TRANSITION_MODE=cooccurrence` (default):
+  A en la cámara pareja empezó antes y B empezó ≤ `TRANSITION_WINDOW_SECONDS=60`
+  tras la última vista de A (solape permitido, `gap_seconds` negativo);
+  `TRANSITION_DIRECTION=ignore|same|opposite` veta por sentido en x;
+  varios candidatos → desempate por coseno (`TRANSITION_MIN_SCORE=0.3`) o el
+  más cercano; cada origen se consume una vez; decide al llegar el embedding
+  de B o tras `TRANSITION_EMBED_WAIT_SECONDS=6`. Columnas nuevas `method`,
+  `candidates`, `score` nullable (ALTER idempotente en `001_events.sql`).
+  `TRANSITION_MODE=embedding` conserva la búsqueda pura. Tests event-engine
+  67, platform-api 5. Desplegados event-engine y platform-api. Sin filas
+  todavía al desplegar; auditar con `detail=true` y fijar `DIRECTION`.
 - **Detección de clean/thumb de Frigate por tamaño y dimensiones (6 sep 16:30):**
   con 4 cámaras Frigate llegó a escribir sus archivos verdes en el mismo
   segundo que nuestra copia (`70und1`: todo a 16:07:44) y el criterio de

@@ -178,10 +178,10 @@ class EventRepository:
                     id, from_camera, to_camera, from_object_id, to_object_id,
                     from_frigate_event_id, to_frigate_event_id, label,
                     from_seen_at, to_seen_at, gap_seconds, score,
-                    from_vector_id, to_vector_id
+                    from_vector_id, to_vector_id, method, candidates
                 ) VALUES (
                     %s, %s, %s, %s, %s, %s, %s, %s,
-                    to_timestamp(%s), to_timestamp(%s), %s, %s, %s, %s
+                    to_timestamp(%s), to_timestamp(%s), %s, %s, %s, %s, %s, %s
                 )
                 ON CONFLICT (to_object_id) DO NOTHING
                 """,
@@ -197,9 +197,11 @@ class EventRepository:
                     float(row["from_seen_at"]),
                     float(row["to_seen_at"]),
                     float(row["gap_seconds"]),
-                    float(row["score"]),
+                    None if row.get("score") is None else float(row["score"]),
                     row.get("from_vector_id"),
                     row.get("to_vector_id"),
+                    str(row.get("method") or "embedding"),
+                    int(row.get("candidates") or 1),
                 ),
             )
             inserted = cursor.rowcount == 1

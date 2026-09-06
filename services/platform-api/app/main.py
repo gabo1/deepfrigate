@@ -378,7 +378,8 @@ def list_camera_transitions(
                 f"""
                 SELECT id, from_camera, to_camera, from_object_id, to_object_id,
                        from_frigate_event_id, to_frigate_event_id, label,
-                       from_seen_at, to_seen_at, gap_seconds, score, created_at
+                       from_seen_at, to_seen_at, gap_seconds, score, method,
+                       candidates, created_at
                 FROM camera_transitions
                 {where}
                 ORDER BY to_seen_at DESC
@@ -414,7 +415,7 @@ def list_camera_transitions(
                 "to": row["to_camera"],
                 "count": int(row["count"]),
                 "avg_gap_seconds": float(row["avg_gap_seconds"]),
-                "avg_score": float(row["avg_score"]),
+                "avg_score": None if row["avg_score"] is None else float(row["avg_score"]),
             }
             for row in rows
         ]

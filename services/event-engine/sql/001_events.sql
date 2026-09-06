@@ -62,3 +62,7 @@ CREATE INDEX IF NOT EXISTS camera_transitions_pair_time_idx
     ON camera_transitions (from_camera, to_camera, to_seen_at DESC);
 CREATE INDEX IF NOT EXISTS camera_transitions_to_seen_idx
     ON camera_transitions (to_seen_at DESC);
+
+ALTER TABLE camera_transitions ADD COLUMN IF NOT EXISTS method text NOT NULL DEFAULT 'embedding';
+ALTER TABLE camera_transitions ADD COLUMN IF NOT EXISTS candidates integer NOT NULL DEFAULT 1;
+ALTER TABLE camera_transitions ALTER COLUMN score DROP NOT NULL;
