@@ -376,6 +376,9 @@ services:
       # for this long. 0 disables. A camera outage on every source also
       # trips it; the restart is cheap and the log says why.
       FRAME_STALL_RESTART_SECONDS: ${FRAME_STALL_RESTART_SECONDS:-120}
+      # Delete DeepStream snapshot files (flat + bundles) older than this.
+      # Frigate keeps its own copies; nothing reads these after END. 0 disables.
+      DS_SNAPSHOT_RETENTION_HOURS: ${DS_SNAPSHOT_RETENTION_HOURS:-24}
     volumes:
       - ./services/video-engine:/opt/deepfrigate:ro
       - ./data/ds-snapshots:/opt/snapshots

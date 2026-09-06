@@ -128,8 +128,19 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
   contenedor vivo con `docker update --restart unless-stopped`, antes era
   `no`); `broker-queue` con `leaky: 2` para que un `nvmsgbroker` atascado
   descarte mensajes en vez de bloquear el `tee`. Tests video-engine 30.
-  Pendiente: retención de `data/ds-snapshots` (32 GB, 143 k planos + 16 k
-  bundles en `tienda`, nadie los borra). Nota: el servicio compose tiene
+  **Retención `data/ds-snapshots` hecha (6 sep 15:10):** `app/retention.py`
+  (`SnapshotRetention`, hilo en video-engine) borra cada 10 min planos,
+  generaciones y directorios de track con mtime más viejo que
+  `DS_SNAPSHOT_RETENTION_HOURS=24` (0 desactiva). Conserva la generación
+  apuntada por `current.json` mientras el track siga reciente (coche
+  aparcado un día). No afecta a Explore: Frigate tiene sus copias en
+  `clips/`; este directorio solo lo leen event-engine (START/thumbnail) y
+  ai-router (END). Antes: 33 GB, 143 k planos en `tienda`, el más viejo 7.9
+  días. Retención de Frigate (vídeo/clips) sigue en defaults
+  `record.alerts/detections.retain.days: 10`, `snapshots.retain.default: 10`
+  → `recordings/` 85 GB; ajustar en
+  `frigate-pg/config.postgres-pgvector-smoke.yml` cuando se decida (propuesto
+  3 días vídeo, fotos aparte). Nota: el servicio compose tiene
   `profiles: ["video"]` y `depends_on frigate` (NVR producto, no existe);
   para recrear usar `--profile video --no-deps`; el contenedor actual tiene
   `RTSP_TIENDA`/`RTSP_USER` iguales a `.env.example`. Disco: Frigate smoke graba

@@ -14,6 +14,7 @@ os.close(_stdin_pipe_read)
 from pyservicemaker import Pipeline, Probe, Receiver
 
 from .exporter import ExportMetadataCollector, FrameExporter
+from .retention import SnapshotRetention
 from .watchdog import StallWatchdog
 from .pipeline_config import load_pipeline
 
@@ -289,15 +290,23 @@ def main() -> None:
         lambda: exporter.last_buffer_at,
         _nonnegative_float("FRAME_STALL_RESTART_SECONDS", "120"),
     )
+    retention = SnapshotRetention(
+        os.getenv("DS_SNAPSHOT_DIR") or "",
+        _nonnegative_float("DS_SNAPSHOT_RETENTION_HOURS", "24") * 3600,
+    )
     logger.info(
-        "Starting declarative pipeline with FrameRef export (stall watchdog %s)",
+        "Starting declarative pipeline with FrameRef export (stall watchdog %s, "
+        "snapshot retention %s)",
         f"{watchdog.stall_seconds:.0f}s" if watchdog.enabled else "off",
+        f"{retention.max_age_seconds / 3600:.0f}h" if retention.enabled else "off",
     )
     try:
         watchdog.start()
+        retention.start()
         pipeline.start().wait()
     finally:
         watchdog.stop()
+        retention.stop()
         exporter.close()
         logger.info("Video engine stopped")
 
