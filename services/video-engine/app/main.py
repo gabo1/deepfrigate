@@ -14,6 +14,7 @@ os.close(_stdin_pipe_read)
 from pyservicemaker import Pipeline, Probe, Receiver
 
 from .exporter import ExportMetadataCollector, FrameExporter
+from .watchdog import StallWatchdog
 from .pipeline_config import load_pipeline
 
 logging.basicConfig(
@@ -128,7 +129,15 @@ def build_pipeline() -> tuple[Pipeline, FrameExporter]:
     pipeline.add(
         "queue",
         "broker-queue",
-        {"max-size-buffers": 8, "max-size-bytes": 0, "max-size-time": 0},
+        {
+            "max-size-buffers": 8,
+            "max-size-bytes": 0,
+            "max-size-time": 0,
+            # Drop old messages instead of blocking. A stuck nvmsgbroker
+            # otherwise blocks the tee and with it decode and inference for
+            # every camera (silent freeze, 2026-09-05).
+            "leaky": 2,
+        },
     )
     pipeline.add(
         "nvmsgconv",
@@ -276,10 +285,19 @@ def build_pipeline() -> tuple[Pipeline, FrameExporter]:
 
 def main() -> None:
     pipeline, exporter = build_pipeline()
-    logger.info("Starting declarative pipeline with FrameRef export")
+    watchdog = StallWatchdog(
+        lambda: exporter.last_buffer_at,
+        _nonnegative_float("FRAME_STALL_RESTART_SECONDS", "120"),
+    )
+    logger.info(
+        "Starting declarative pipeline with FrameRef export (stall watchdog %s)",
+        f"{watchdog.stall_seconds:.0f}s" if watchdog.enabled else "off",
+    )
     try:
+        watchdog.start()
         pipeline.start().wait()
     finally:
+        watchdog.stop()
         exporter.close()
         logger.info("Video engine stopped")
 

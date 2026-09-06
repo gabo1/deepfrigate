@@ -120,10 +120,19 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
   nativo falló). Sospechosos: `broker-queue` sin `leaky` (un `nvmsgbroker`
   atascado bloquea el `tee` completo) o gRPC de `nvinferserver` colgado.
   `docker restart deepfrigate-video-engine-1` lo devolvió: FPS 10, 16
-  eventos/min. Pendiente: watchdog en video-engine (salir si 60 s sin
-  buffers → `restart: unless-stopped` relanza), `leaky: 2` en
-  `broker-queue`, retención de `data/ds-snapshots` (32 GB, 143 k planos +
-  16 k bundles en `tienda`, nadie los borra). Disco: Frigate smoke graba
+  eventos/min. **Hecho (6 sep 14:45):** `app/watchdog.py` (`StallWatchdog`)
+  sale con código 3 si `exporter.last_buffer_at` lleva
+  `FRAME_STALL_RESTART_SECONDS=120` s sin buffers (0 desactiva; una caída
+  de todas las cámaras también lo dispara, reinicio barato y con log
+  `CRITICAL`); compose `restart: unless-stopped` en video-engine (aplicado al
+  contenedor vivo con `docker update --restart unless-stopped`, antes era
+  `no`); `broker-queue` con `leaky: 2` para que un `nvmsgbroker` atascado
+  descarte mensajes en vez de bloquear el `tee`. Tests video-engine 30.
+  Pendiente: retención de `data/ds-snapshots` (32 GB, 143 k planos + 16 k
+  bundles en `tienda`, nadie los borra). Nota: el servicio compose tiene
+  `profiles: ["video"]` y `depends_on frigate` (NVR producto, no existe);
+  para recrear usar `--profile video --no-deps`; el contenedor actual tiene
+  `RTSP_TIENDA`/`RTSP_USER` iguales a `.env.example`. Disco: Frigate smoke graba
   continuo 1 día (96 GB) y su storage maintenance limpia 2.2 GB cada vez que
   baja de 1 h de margen, así que el host vive al borde. Limpieza hecha 6 sep:
   volumen huérfano `deepfrigate_frigate-media` del NVR viejo (36 GB: 31 GB

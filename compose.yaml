@@ -346,6 +346,9 @@ services:
     profiles: ["video"]
     gpus: all
     ipc: host
+    # The stall watchdog exits the process when no buffers arrive for
+    # FRAME_STALL_RESTART_SECONDS; this policy brings the pipeline back.
+    restart: unless-stopped
     depends_on:
       triton:
         condition: service_healthy
@@ -369,6 +372,10 @@ services:
       FRAME_CROP_PADDING: ${FRAME_CROP_PADDING:-0.1}
       DS_SNAPSHOT_DIR: /opt/snapshots
       DS_SNAPSHOT_INTERVAL: ${DS_SNAPSHOT_INTERVAL:-0.4}
+      # Exit (and restart) when the GStreamer graph stops delivering buffers
+      # for this long. 0 disables. A camera outage on every source also
+      # trips it; the restart is cheap and the log says why.
+      FRAME_STALL_RESTART_SECONDS: ${FRAME_STALL_RESTART_SECONDS:-120}
     volumes:
       - ./services/video-engine:/opt/deepfrigate:ro
       - ./data/ds-snapshots:/opt/snapshots

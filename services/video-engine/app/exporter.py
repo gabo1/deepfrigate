@@ -165,6 +165,9 @@ class FrameExporter(BufferRetriever):
         self.worker.start()
         self._logged_shape = False
         self._buffer_count = 0
+        # Monotonic time of the last buffer seen by consume(); the stall
+        # watchdog reads it. 0.0 until the first buffer.
+        self.last_buffer_at = 0.0
 
     def consume(self, buffer: Any) -> int:
         try:
@@ -177,6 +180,7 @@ class FrameExporter(BufferRetriever):
             return 1
 
         self._buffer_count += 1
+        self.last_buffer_at = time.monotonic()
         if self._buffer_count % 100 == 0:
             logger.debug(
                 "Export buffer identity count=%d timestamp=%s batch_size=%s frames=%s",
