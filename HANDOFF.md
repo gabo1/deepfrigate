@@ -113,6 +113,23 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
   eventos debido a timeouts del único worker MQTT es un trabajo aparte:
   desacoplar HTTP Frigate/coalescer por `object_id`; no reiniciar ni purgar
   MQTT para “arreglarlo”. Ver `docs/mejores-thumbnails.md`.
+- **Transiciones entre cámaras (6 sep 16:10):** el addon
+  (`frigatenvr-reporter-addon/app.py:321-334`) agrupaba eventos por
+  `id.split('-')[0]` (= `start_time` con microsegundos): nunca coincide, por
+  eso "No camera transition data". MV3DT de NVIDIA (DS 9.1) exige solape de
+  FOV y matriz 3×4 por cámara; las cámaras de calle no se solapan → descartado.
+  Implementado en event-engine `app/transitions.py`: al llegar el embedding
+  final de un track (`-explore-thumb`) busca en Qdrant el mejor vector
+  anterior de la cámara pareja (mismo `label`, ventana
+  `TRANSITION_WINDOW_SECONDS=180`, coseno ≥ `TRANSITION_MIN_SCORE=0.8`) y
+  escribe `camera_transitions` (PG producto; `to_object_id` UNIQUE, solo
+  mira hacia atrás). `TRANSITION_PAIRS=c4aac4f4eefe:c4aac4f4ef0a`,
+  `TRANSITION_LABELS=car,person`. platform-api `GET /v1/camera-transitions`
+  (conteo por par; `detail=true` para auditar). El addon sigue leyendo su
+  heurística; conectarlo a este endpoint es trabajo aparte. Umbrales sin
+  calibrar todavía: revisar pares reales con `detail=true`. Tests
+  event-engine 64, platform-api 5. Desplegado: event-engine (4 vars) y
+  platform-api (2 vars) reconstruidos.
 - **Cuatro cámaras y mux sin padding (6 sep 15:36):** `pipeline.yaml` añade
   `c4aac4f4eefe` (DEMO05) y `c4aac4f4ef0a` (DEMO03), calle, 640×480@15,
   `RTSP_C4AAC4F4EEFE`/`RTSP_C4AAC4F4EF0A` en compose y `.env.example`;

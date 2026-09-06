@@ -36,3 +36,29 @@ CREATE TABLE IF NOT EXISTS frigate_event_links (
 CREATE INDEX IF NOT EXISTS frigate_event_links_active_object_idx
     ON frigate_event_links (object_id, started_at DESC)
     WHERE state <> 'ended';
+
+-- Cross-camera transitions inferred from PP-ShiTu embeddings within a time
+-- window (services/event-engine/app/transitions.py). One row per arriving
+-- track (to_object_id): the best earlier match on a paired camera.
+CREATE TABLE IF NOT EXISTS camera_transitions (
+    id uuid PRIMARY KEY,
+    from_camera text NOT NULL,
+    to_camera text NOT NULL,
+    from_object_id text NOT NULL,
+    to_object_id text NOT NULL UNIQUE,
+    from_frigate_event_id text,
+    to_frigate_event_id text,
+    label text NOT NULL,
+    from_seen_at timestamptz NOT NULL,
+    to_seen_at timestamptz NOT NULL,
+    gap_seconds double precision NOT NULL,
+    score double precision NOT NULL,
+    from_vector_id text,
+    to_vector_id text,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS camera_transitions_pair_time_idx
+    ON camera_transitions (from_camera, to_camera, to_seen_at DESC);
+CREATE INDEX IF NOT EXISTS camera_transitions_to_seen_idx
+    ON camera_transitions (to_seen_at DESC);

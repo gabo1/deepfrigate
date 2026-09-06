@@ -15,6 +15,7 @@ from jsonschema import Draft202012Validator, FormatChecker
 import paho.mqtt.client as mqtt
 
 from .frigate_bridge import FrigateReviewBridge
+from .transitions import matcher_from_env
 from .frigate_store import FrigateEventStore
 from .normalizer import EventNormalizer
 from .repository import EventRepository
@@ -97,6 +98,18 @@ class EventEngine:
         self.event_validator = self._validator(
             os.getenv("EVENT_SCHEMA", "/app/contracts/event.schema.json")
         )
+        # Cross-camera transitions (PP-ShiTu + time window); None without
+        # TRANSITION_PAIRS. Runs on the bridge worker: embedding updates are
+        # rare (one per ended track) and Qdrant answers in milliseconds.
+        self.transitions = matcher_from_env(self.bridge_repository)
+        if self.transitions is not None:
+            logger.info(
+                "Camera transitions on: pairs=%s window=%ss min_score=%s labels=%s",
+                sorted(sorted(pair) for pair in self.transitions.pairs),
+                self.transitions.window_seconds,
+                self.transitions.min_score,
+                sorted(self.transitions.labels),
+            )
         self.worker = Thread(
             target=self._run_worker,
             name="event-persistence",
@@ -376,6 +389,13 @@ class EventEngine:
                 try:
                     assert self.frigate_bridge is not None
                     self.frigate_bridge.observe(update, event)
+                    if self.transitions is not None:
+                        try:
+                            self.transitions.observe(update)
+                        except Exception:
+                            # Never retry the Frigate projection because of a
+                            # Qdrant hiccup; the transition is best-effort.
+                            logger.exception("Camera transition matching failed")
                     break
                 except Exception:
                     logger.exception(

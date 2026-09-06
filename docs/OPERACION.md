@@ -246,6 +246,34 @@ Cambiar de modelo Jina exige reindex (espacios distintos). El reindex del
 
 ---
 
+## 6b. Transiciones entre cámaras (`camera_transitions`)
+
+No hay solape de campos de visión ni calibración, así que no se usa MV3DT
+(3D) de NVIDIA. La asociación es **re-identificación por embedding + ventana
+temporal**, en event-engine (`app/transitions.py`):
+
+1. ai-router publica el embedding final de cada track al END
+   (`frame_ref_id` termina en `-explore-thumb`; vector en Qdrant con
+   `camera_id`, `label`, `frame_timestamp`).
+2. event-engine, al recibir ese `update_type: embedding`, si la cámara está
+   en `TRANSITION_PAIRS`, busca en Qdrant vectores del mismo `label`, de la
+   cámara pareja, con `frame_timestamp` en `[t − TRANSITION_WINDOW_SECONDS,
+   t]` y coseno ≥ `TRANSITION_MIN_SCORE`. El mejor gana.
+3. Escribe una fila en `camera_transitions` (PG producto) con ambos
+   `object_id`, ambos `frigate_event_id`, `gap_seconds`, `score`. Una fila
+   por track que llega (`to_object_id` UNIQUE); solo mira hacia atrás, así
+   cada par se cuenta una vez.
+
+Consumo: `GET :8082/v1/camera-transitions` (conteo por par, forma del addon
+"Camera Transition Analysis"), `?detail=true` para auditar pares con
+`score` y `gap_seconds`, `?after=&before=&label=&min_score=`.
+
+Límites: PP-ShiTu es un modelo de retrieval de producto/vehículo. Coches
+bien, personas regular, coches idénticos mal. Calibrar `TRANSITION_MIN_SCORE`
+(0.8 inicial) y `TRANSITION_WINDOW_SECONDS` (180) revisando pares con
+`detail=true` antes de creer los conteos. Eventos abiertos (coches
+aparcados) no generan embedding hasta el END.
+
 ## 7. Variables que importan
 
 | Variable | Servicio | Default | Qué hace |
@@ -257,3 +285,4 @@ Cambiar de modelo Jina exige reindex (espacios distintos). El reindex del
 | `FRIGATE_BRIDGE_UPDATE_SECONDS` | event-engine | 1 | coalescing de UPDATE hacia Frigate |
 | `FRIGATE_EMBED_THUMBNAILS` | event-engine | false | ya no hace falta: Frigate embebe al END |
 | `semantic_search.*` | Frigate YAML | `jinav2`, `large`, `reindex: false` | buscador y embeddings |
+| `TRANSITION_PAIRS` / `_WINDOW_SECONDS` / `_MIN_SCORE` / `_LABELS` | event-engine | `c4aac4f4eefe:c4aac4f4ef0a` / 180 / 0.8 / `car,person` | transiciones entre cámaras; pares vacíos desactiva |

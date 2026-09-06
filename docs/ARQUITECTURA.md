@@ -163,6 +163,15 @@ similitud visual (`platform-api /v1/frigate-events/{id}/similar`). Frigate
 no habla Triton: usa su propio onnxruntime con `CUDAExecutionProvider`.
 Ver `docs/OPERACION.md` §6.
 
+## 5b-bis. Transiciones entre cámaras
+
+Sin solape ni calibración → sin MV3DT. event-engine casa el embedding final
+(PP-ShiTu, END) de un track con el mejor embedding anterior de la cámara
+pareja dentro de una ventana (`TRANSITION_*`) y escribe
+`camera_transitions` en el PG de producto; `platform-api
+/v1/camera-transitions` lo agrega por par. Detalle y límites:
+`docs/OPERACION.md` §6b.
+
 ## 5c. Operación: dónde se rompe y qué lo sujeta
 
 - `video-engine` tiene watchdog: `FRAME_STALL_RESTART_SECONDS=120` sin

@@ -150,6 +150,62 @@ class EventRepository:
                 (object_id,),
             ).fetchone()
 
+    def get_latest_frigate_link(
+        self, object_id: str
+    ) -> dict[str, Any] | None:
+        """Newest link for an object id, ended or not (transitions look back)."""
+        connection = self._connection()
+        with connection.cursor() as cursor:
+            return cursor.execute(
+                """
+                SELECT start_event_id, object_id, camera_id, marker,
+                       frigate_event_id, state
+                FROM frigate_event_links
+                WHERE object_id = %s AND frigate_event_id IS NOT NULL
+                ORDER BY started_at DESC
+                LIMIT 1
+                """,
+                (object_id,),
+            ).fetchone()
+
+    def insert_camera_transition(self, row: dict[str, Any]) -> bool:
+        """Insert one transition; False when this arrival already has one."""
+        connection = self._connection()
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO camera_transitions (
+                    id, from_camera, to_camera, from_object_id, to_object_id,
+                    from_frigate_event_id, to_frigate_event_id, label,
+                    from_seen_at, to_seen_at, gap_seconds, score,
+                    from_vector_id, to_vector_id
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s,
+                    to_timestamp(%s), to_timestamp(%s), %s, %s, %s, %s
+                )
+                ON CONFLICT (to_object_id) DO NOTHING
+                """,
+                (
+                    row["id"],
+                    row["from_camera"],
+                    row["to_camera"],
+                    row["from_object_id"],
+                    row["to_object_id"],
+                    row.get("from_frigate_event_id"),
+                    row.get("to_frigate_event_id"),
+                    row["label"],
+                    float(row["from_seen_at"]),
+                    float(row["to_seen_at"]),
+                    float(row["gap_seconds"]),
+                    float(row["score"]),
+                    row.get("from_vector_id"),
+                    row.get("to_vector_id"),
+                ),
+            )
+            inserted = cursor.rowcount == 1
+        connection.commit()
+        return inserted
+
     def _connection(self) -> psycopg.Connection[Any]:
         if self.connection is None or self.connection.closed:
             self.connect()

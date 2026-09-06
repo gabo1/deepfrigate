@@ -342,6 +342,85 @@ def list_events(
     return {"items": [serialize_event(row) for row in rows]}
 
 
+@app.get("/v1/camera-transitions", tags=["events"])
+def list_camera_transitions(
+    after: datetime | None = Query(default=None),
+    before: datetime | None = Query(default=None),
+    label: str | None = Query(default=None),
+    min_score: float = Query(default=0, ge=-1, le=1),
+    detail: bool = Query(default=False),
+    limit: int = Query(default=200, ge=1, le=2000),
+) -> dict[str, Any]:
+    """Cross-camera transitions inferred by event-engine (PP-ShiTu + time window).
+
+    Default: counts per (from_camera, to_camera), the shape the reporter
+    addon's "Camera Transition Analysis" table expects. `detail=true` returns
+    the matched pairs with scores and Frigate event ids for auditing.
+    """
+    clauses: list[str] = []
+    parameters: list[Any] = []
+    if after is not None:
+        clauses.append("to_seen_at >= %s")
+        parameters.append(after)
+    if before is not None:
+        clauses.append("to_seen_at < %s")
+        parameters.append(before)
+    if label is not None:
+        clauses.append("label = %s")
+        parameters.append(label)
+    if min_score > 0:
+        clauses.append("score >= %s")
+        parameters.append(min_score)
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    with psycopg.connect(database_url, row_factory=dict_row) as connection:
+        if detail:
+            rows = connection.execute(
+                f"""
+                SELECT id, from_camera, to_camera, from_object_id, to_object_id,
+                       from_frigate_event_id, to_frigate_event_id, label,
+                       from_seen_at, to_seen_at, gap_seconds, score, created_at
+                FROM camera_transitions
+                {where}
+                ORDER BY to_seen_at DESC
+                LIMIT %s
+                """,
+                [*parameters, limit],
+            ).fetchall()
+            items = []
+            for row in rows:
+                item = dict(row)
+                item["id"] = str(item["id"])
+                for key in ("from_seen_at", "to_seen_at", "created_at"):
+                    item[key] = item[key].isoformat()
+                items.append(item)
+            return {"items": items}
+        rows = connection.execute(
+            f"""
+            SELECT from_camera, to_camera, count(*) AS count,
+                   round(avg(gap_seconds)::numeric, 1) AS avg_gap_seconds,
+                   round(avg(score)::numeric, 3) AS avg_score
+            FROM camera_transitions
+            {where}
+            GROUP BY from_camera, to_camera
+            ORDER BY count DESC
+            LIMIT %s
+            """,
+            [*parameters, limit],
+        ).fetchall()
+    return {
+        "items": [
+            {
+                "from": row["from_camera"],
+                "to": row["to_camera"],
+                "count": int(row["count"]),
+                "avg_gap_seconds": float(row["avg_gap_seconds"]),
+                "avg_score": float(row["avg_score"]),
+            }
+            for row in rows
+        ]
+    }
+
+
 @app.get("/v1/events/{event_id}", tags=["events"])
 def get_event(event_id: UUID) -> dict[str, Any]:
     with psycopg.connect(
