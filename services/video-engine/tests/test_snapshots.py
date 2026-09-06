@@ -225,3 +225,21 @@ def test_clear_stale_track_files_drops_previous_bundle_pointer(tmp_path: Path) -
     assert not (tmp_path / "user" / "7.jpg").exists()
     # Completed generations stay for readers still holding them.
     assert (bundle / "scene.jpg").exists()
+
+
+def test_aspect_scale_undoes_mux_stretch_for_4_3_sources() -> None:
+    from app.snapshots import aspect_x_scale, restore_aspect, scale_box_x
+
+    assert aspect_x_scale(1920, 1080, 1280, 720) == 1.0
+    assert aspect_x_scale(0, 0, 1280, 720) == 1.0
+    factor = aspect_x_scale(640, 480, 1280, 720)
+    assert round(factor, 4) == 0.75
+
+    rgb = np.zeros((720, 1280, 3), dtype=np.uint8)
+    restored = restore_aspect(rgb, factor)
+    assert restored.shape == (720, 960, 3)
+    # Normalized coordinates are preserved: x/1280 == 0.75x/960.
+    box = scale_box_x([320, 100, 640, 400], factor)
+    assert box == [240, 100, 480, 400]
+    assert box[0] / 960 == 320 / 1280
+    assert restore_aspect(rgb, 1.0) is rgb

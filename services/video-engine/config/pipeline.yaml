@@ -10,6 +10,12 @@ pipeline:
     - id: user
       source_env: RTSP_USER
       gpu: 0
+    - id: c4aac4f4eefe
+      source_env: RTSP_C4AAC4F4EEFE
+      gpu: 0
+    - id: c4aac4f4ef0a
+      source_env: RTSP_C4AAC4F4EF0A
+      gpu: 0
 
   detection:
     model: object-detector

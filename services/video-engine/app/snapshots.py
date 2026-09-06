@@ -184,6 +184,40 @@ def copy_track_file(source: Path, dest: Path) -> Path:
     return dest
 
 
+def aspect_x_scale(
+    source_width: int, source_height: int, frame_width: int, frame_height: int
+) -> float:
+    """Horizontal factor that undoes nvstreammux stretching.
+
+    With `enable-padding` off the muxer scales every source to the mux size,
+    so a 4:3 camera lands in the 16:9 frame stretched by 4/3. Normalized box
+    coordinates are unaffected (x/1280 == 0.75x/960), but any pixels written
+    out (scene, clean, thumb, crops) must be shrunk back or they look wide.
+    Returns 1.0 when aspects match or dimensions are unknown.
+    """
+    if min(source_width, source_height, frame_width, frame_height) <= 0:
+        return 1.0
+    factor = (source_width / source_height) / (frame_width / frame_height)
+    return 1.0 if abs(factor - 1.0) < 0.01 else factor
+
+
+def restore_aspect(rgb: np.ndarray, x_scale: float) -> np.ndarray:
+    """Resize an HWC array horizontally by `x_scale` (height unchanged)."""
+    if abs(x_scale - 1.0) < 0.01:
+        return rgb
+    height, width = rgb.shape[0], rgb.shape[1]
+    new_width = max(1, int(round(width * x_scale)))
+    image = Image.fromarray(np.ascontiguousarray(rgb))
+    return np.asarray(image.resize((new_width, height), Image.Resampling.BILINEAR))
+
+
+def scale_box_x(box: list[int], x_scale: float) -> list[int]:
+    """Scale the x coordinates of an `[x1, y1, x2, y2]` box."""
+    if abs(x_scale - 1.0) < 0.01:
+        return list(box)
+    return [int(round(box[0] * x_scale)), int(box[1]), int(round(box[2] * x_scale)), int(box[3])]
+
+
 def bbox_from_box(box: list[int]) -> dict[str, int]:
     """Convert the clamped `[x1, y1, x2, y2]` thumb box to Frigate-style xywh."""
     return {

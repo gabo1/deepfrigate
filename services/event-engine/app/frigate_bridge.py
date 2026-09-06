@@ -101,6 +101,10 @@ class _PendingTrack:
     thumbnail_bbox: dict[str, Any] | None = None
     # Normalized box of the scene currently installed in Frigate's clips.
     snapshot_box: list[float] | None = None
+    # Frame time when the Frigate event was created, and whether the one-off
+    # repair of Frigate's own (green) clean/thumb already ran.
+    created_at_ts: float | None = None
+    post_create_repaired: bool = False
 
 
 class FrigateReviewBridge:
@@ -173,6 +177,8 @@ class FrigateReviewBridge:
                     self._path(update)
                     if (update.get("data") or {}).get("thumbnail_changed"):
                         self._refresh_thumbnail(object_id)
+                    else:
+                        self._repair_after_create(object_id, update)
                     current_stationary = bool(
                         (update.get("data") or {}).get("stationary")
                     )
@@ -234,6 +240,8 @@ class FrigateReviewBridge:
         self._start(event)
         link = self.repository.get_frigate_link(event["id"])
         pending.created = bool(link and link.get("frigate_event_id"))
+        if pending.created:
+            pending.created_at_ts = float(event["timestamp"])
         if pending.created and pending.last_zone is not None:
             self._zones_update(pending.last_zone)
         if pending.created:
@@ -260,6 +268,36 @@ class FrigateReviewBridge:
             "top_score": data.get("top_score", data.get("computed_score")),
         }
         return event
+
+    # Frigate's create handler writes a green clean/thumb 0.2-1.2 s after
+    # our copy. END repairs them, but a parked car can stay open for hours.
+    POST_CREATE_REPAIR_SECONDS = 2.0
+
+    def _repair_after_create(self, object_id: str, update: dict[str, Any]) -> None:
+        pending = self._pending.get(object_id)
+        if (
+            pending is None
+            or not pending.created
+            or pending.post_create_repaired
+            or pending.created_at_ts is None
+        ):
+            return
+        if float(update.get("timestamp") or 0) - pending.created_at_ts < self.POST_CREATE_REPAIR_SECONDS:
+            return
+        link = self.repository.get_frigate_link(pending.start_event["id"])
+        if not link or not link.get("frigate_event_id"):
+            return
+        pending.post_create_repaired = True
+        camera_id = str(update.get("camera_id") or pending.start_event["camera_id"])
+        self._replace_snapshot(
+            camera_id,
+            object_id,
+            str(link["frigate_event_id"]),
+            pending.thumbnail_bbox,
+            overwrite=False,
+            repair_box=pending.snapshot_box
+            or self._box(camera_id, pending.thumbnail_bbox),
+        )
 
     def _refresh_thumbnail(self, object_id: str) -> None:
         pending = self._pending.get(object_id)

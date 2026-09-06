@@ -94,7 +94,11 @@ def build_pipeline() -> tuple[Pipeline, FrameExporter]:
             "batched-push-timeout": 40000,
             "width": mux_width,
             "height": mux_height,
-            "enable-padding": True,
+            # Off: a 4:3 camera is stretched to the mux size instead of
+            # letterboxed, so normalized boxes match the camera's own frame
+            # (and Frigate's recording). The exporter undoes the stretch
+            # when it writes pixels.
+            "enable-padding": False,
             "nvbuf-memory-type": 0,
         },
     )

@@ -11,6 +11,8 @@ SCHEMA = Path("/opt/deepfrigate/contracts/pipeline.schema.json")
 ENVIRONMENT = {
     "RTSP_TIENDA": "rtsp://example/tienda",
     "RTSP_USER": "rtsp://example/user",
+    "RTSP_C4AAC4F4EEFE": "rtsp://example/c4aac4f4eefe",
+    "RTSP_C4AAC4F4EF0A": "rtsp://example/c4aac4f4ef0a",
 }
 
 
@@ -24,7 +26,12 @@ def test_checked_in_pipeline_compiles_deterministically() -> None:
 
     assert first == second
     assert first["name"] == "deepfrigate-multicamera"
-    assert [camera["id"] for camera in first["cameras"]] == ["tienda", "user"]
+    assert [camera["id"] for camera in first["cameras"]] == [
+        "tienda",
+        "user",
+        "c4aac4f4eefe",
+        "c4aac4f4ef0a",
+    ]
     assert first["detection"]["model"] == "object-detector"
     assert first["tracker"]["type"] == "nvtracker"
     assert first["export_labels"] == ["car", "person"]

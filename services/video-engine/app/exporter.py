@@ -19,11 +19,14 @@ import cupy as cp
 from pyservicemaker import BatchMetadataOperator, BufferRetriever
 
 from .snapshots import (
+    aspect_x_scale,
     bbox_from_box,
     clear_stale_track_files,
     copy_track_file,
     is_better_thumbnail,
     publish_track_snapshot_bundle,
+    restore_aspect,
+    scale_box_x,
     write_track_clean,
     write_track_jpeg,
     write_track_thumb,
@@ -54,6 +57,10 @@ class FrameSpec:
     objects: tuple[ObjectSpec, ...]
     buffer_pts: int = 0
     source_id: int = 0
+    # Size of the frame at the muxer input (camera native). Needed to undo
+    # the stretch when the camera aspect differs from the mux aspect.
+    source_width: int = 0
+    source_height: int = 0
 
 
 class ExportMetadataCollector(BatchMetadataOperator):
@@ -113,6 +120,8 @@ class ExportMetadataCollector(BatchMetadataOperator):
                     objects=tuple(objects),
                     buffer_pts=int(getattr(frame_meta, "buffer_pts", 0) or 0),
                     source_id=int(getattr(frame_meta, "source_id", 0) or 0),
+                    source_width=int(getattr(frame_meta, "source_width", 0) or 0),
+                    source_height=int(getattr(frame_meta, "source_height", 0) or 0),
                 )
             )
         return tuple(frames)
@@ -286,6 +295,7 @@ class FrameExporter(BufferRetriever):
                 continue
 
             crop = cp.asnumpy(cp.ascontiguousarray(pixels[top:bottom, left:right]))
+            crop = restore_aspect(crop, self._x_scale(frame))
             ref_id = self._register_crop(frame, obj, crop, now)
             if not ref_id:
                 continue
@@ -316,6 +326,11 @@ class FrameExporter(BufferRetriever):
         if not due:
             return
         rgb = cp.asnumpy(cp.ascontiguousarray(pixels))
+        # 4:3 cameras arrive stretched to the 16:9 mux; write them back at
+        # their own aspect. Normalized coordinates do not change.
+        x_scale = self._x_scale(frame)
+        rgb = restore_aspect(rgb, x_scale)
+        frame_width, frame_height = int(rgb.shape[1]), int(rgb.shape[0])
         encoded = None
         clean = None
         for obj in due:
@@ -343,7 +358,7 @@ class FrameExporter(BufferRetriever):
                             ),
                         )
                 best = self.best_snapshot[(frame.camera_id, obj.track_id)]
-                box = best["box"]
+                box = scale_box_x(best["box"], x_scale)
                 write_track_thumb(
                     self.snapshot_dir, frame.camera_id, obj.track_id, rgb, box
                 )
@@ -352,8 +367,8 @@ class FrameExporter(BufferRetriever):
                     frame.camera_id,
                     obj.track_id,
                     bbox=bbox_from_box(box),
-                    frame_width=frame.pipeline_width,
-                    frame_height=frame.pipeline_height,
+                    frame_width=frame_width,
+                    frame_height=frame_height,
                     score=best["score"],
                     frame_number=frame.frame_number,
                     buffer_pts=frame.buffer_pts,
@@ -365,6 +380,15 @@ class FrameExporter(BufferRetriever):
                     frame.camera_id,
                     obj.track_id,
                 )
+
+    @staticmethod
+    def _x_scale(frame: FrameSpec) -> float:
+        return aspect_x_scale(
+            frame.source_width,
+            frame.source_height,
+            frame.pipeline_width,
+            frame.pipeline_height,
+        )
 
     def _should_keep_snapshot(
         self, frame: FrameSpec, obj: ObjectSpec, now: float

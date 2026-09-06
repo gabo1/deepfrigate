@@ -113,6 +113,24 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
   eventos debido a timeouts del único worker MQTT es un trabajo aparte:
   desacoplar HTTP Frigate/coalescer por `object_id`; no reiniciar ni purgar
   MQTT para “arreglarlo”. Ver `docs/mejores-thumbnails.md`.
+- **Cuatro cámaras y mux sin padding (6 sep 15:36):** `pipeline.yaml` añade
+  `c4aac4f4eefe` (DEMO05) y `c4aac4f4ef0a` (DEMO03), calle, 640×480@15,
+  `RTSP_C4AAC4F4EEFE`/`RTSP_C4AAC4F4EF0A` en compose y `.env.example`;
+  `msgconv_multicamera.txt` mapea `sensor2`/`sensor3` (el orden de
+  `pipeline.yaml` es el `source_id`); `config/zones.json` las declara a
+  1280×720 (coordenadas del mux). `nvstreammux` ahora `enable-padding:
+  False`: una fuente 4:3 se estira al mux 16:9 y las coordenadas
+  normalizadas coinciden 1:1 con la grabación de Frigate (con padding las
+  bandas laterales desplazaban overlays). El exporter deshace el estirado al
+  escribir píxeles (`aspect_x_scale`/`restore_aspect` con
+  `frame_meta.source_width/height`): escena, clean, thumb y crops FrameRef
+  salen a 960×720 y el manifest lleva `frame_width: 960`. Frigate smoke:
+  `c4aac4f4eefe` re-habilitada (ya no da 404), `objects.track` person/car en
+  ambas. Carga con 4 cámaras: GPU 27 %, video-engine ~90 % CPU, Frigate 42 %,
+  host idle ~44 %. `user` sigue a 5–10 FPS por su RTSP inestable.
+  `c4aac4f4ef24` sigue en 404, fuera. `nvinferserver` avisa
+  `Configuration file batch-size reset to: 4`: normal, el YAML fija el batch
+  al número de cámaras. Tests video-engine 35, adapter 52.
 - **Pipeline congelado 19 h y disco al 98 % (6 sep 14:25):** `video-engine`
   seguía `Up` pero `**FPS: 0.00` en ambas fuentes desde el 5 sep 19:04:13
   UTC, sin error, EOS ni reconexión en el log; `py-spy`: todos los hilos

@@ -1344,3 +1344,26 @@ def test_timeline_rows_carry_the_live_box_not_the_thumbnail_box(monkeypatch):
         round(160 / 1280, 6),
         round(260 / 720, 6),
     ]
+
+
+def test_frigate_green_files_are_repaired_shortly_after_create(monkeypatch):
+    """Parked objects stay open for hours; do not wait for END to fix Frigate's clean/thumb."""
+    from app.snapshots import SnapshotGeometry
+
+    scene_box = [0.5, 0.25, 0.1, 0.2]
+    bridge, store, calls = _bundle_geometry_bridge(
+        monkeypatch, SnapshotGeometry(box=scene_box, score=0.77)
+    )
+    _publish(bridge, detected_event())
+    created_calls = len(calls)
+    # 1 s later: too early, Frigate may not have written its files yet.
+    bridge.observe(_detection("UPDATE", 102.5, **_quality(thumbnail_changed=False)))
+    assert len(calls) == created_calls
+    # 2 s after creation: one repair pass with the installed scene box.
+    bridge.observe(_detection("UPDATE", 104.0, **_quality(thumbnail_changed=False)))
+    assert len(calls) == created_calls + 1
+    assert calls[-1]["overwrite"] is False
+    assert calls[-1]["repair_box"] == scene_box
+    # Never again for this track.
+    bridge.observe(_detection("UPDATE", 106.0, **_quality(thumbnail_changed=False)))
+    assert len(calls) == created_calls + 1

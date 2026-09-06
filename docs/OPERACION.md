@@ -23,6 +23,17 @@ se repite. Arquitectura en `docs/ARQUITECTURA.md`.
 Frigate **no decodifica**: `detect.enabled: false` en todas las cámaras.
 Todo frame sale de DeepStream.
 
+Cámaras en el pipeline (orden = `source_id` = `sensorN` en
+`msgconv_multicamera.txt`): `tienda` (1080p@10, 16:9), `user`
+(1080p@10, RTSP inestable), `c4aac4f4eefe` y `c4aac4f4ef0a` (calle,
+640×480@15, 4:3). El mux es 1280×720 **sin padding**: las 4:3 se estiran;
+el exporter las devuelve a 960×720 al escribir. Para añadir una cámara:
+`pipeline.yaml` + variable `RTSP_*` en compose/.env.example + bloque
+`sensorN`/`placeN`/`analyticsN` en msgconv + entrada 1280×720 en
+`config/zones.json` + cámara record-only en el YAML de Frigate; luego
+recrear video-engine (`--profile video --no-deps`) y reiniciar adapter,
+event-engine y Frigate.
+
 ---
 
 ## 2. Síntomas ya vistos y su diagnóstico
