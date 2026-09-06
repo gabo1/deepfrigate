@@ -141,13 +141,45 @@ El pie (centro de la base del bbox) es el ancla. Geometría propia
 | NvDCF | `config_tracker_NvDCF_perf.yml` | IDs |
 | Python adapter | zonas / líneas / crowd / dir | “cuándo” |
 | ai-router | gRPC Triton + HSV | atributos y embeddings |
-| Frigate 0.16-fork PG | smoke `:3005` | NVR copy-only (go2rtc, sin decode); Explore / timeline / thumbs. Jina off (4 sep) |
+| Frigate 0.16-fork PG | smoke `:3005` | NVR copy-only (go2rtc, sin decode); Explore / timeline / thumbs. Jina v2 `large` en GPU (5 sep) |
 | Prometheus / Grafana | `:9090` / `:3001` | `analitica-deepfrigate` |
 
 **No están en el runtime:** Savant, Supervision, `gst-nvdsanalytics`,
 ByteTrack, Roboflow Workflows, segundo `nvinfer`.
 
 ---
+
+## 5b. Embeddings (dos sistemas, misma miniatura)
+
+```text
+video-engine: mejor frame → {track}-thumb.webp (175 px) + manifest.json (bbox)
+   ├─ event-engine copia → clips/thumbs/{cam}/{event_id}.webp
+   │      └─ Frigate al END: Jina v2 (onnxruntime CUDA en el contenedor) → vec_thumbnails
+   └─ ai-router al END: lee ds-snapshots → Triton PP-ShiTu → Qdrant vehicle_embeddings
+```
+
+Jina alimenta el buscador de texto de Explore; PP-ShiTu el aside de
+similitud visual (`platform-api /v1/frigate-events/{id}/similar`). Frigate
+no habla Triton: usa su propio onnxruntime con `CUDAExecutionProvider`.
+Ver `docs/OPERACION.md` §6.
+
+## 5c. Operación: dónde se rompe y qué lo sujeta
+
+- `video-engine` tiene watchdog: `FRAME_STALL_RESTART_SECONDS=120` sin
+  buffers → salida y `restart: unless-stopped`. `broker-queue` y
+  `export-queue` son `leaky: 2`: un sink atascado descarta en vez de
+  bloquear el `tee` (congelación silenciosa del 5 sep).
+- `data/ds-snapshots` es área de trabajo con retención
+  `DS_SNAPSHOT_RETENTION_HOURS=24`. Las fotos que ve Explore son copias en
+  el volumen de Frigate, con su propia retención.
+- La caja de cada evento sale del `manifest.json` del bundle copiado, no
+  del MQTT (dos selectores de "mejor frame" desincronizados ~1.3 s).
+- LOST/END llegan 5 s tarde por diseño; Frigate cierra con
+  `data.last_seen_at`.
+- La cámara `tienda` tiene el reloj ~4 min 40 s atrasado y fecha falsa; el
+  OSD no sirve para medir latencia.
+
+Runbook completo: `docs/OPERACION.md`.
 
 ## 6. Deuda respecto al diseño Savant
 
@@ -162,6 +194,8 @@ ByteTrack, Roboflow Workflows, segundo `nvinfer`.
 ## 7. Punteros
 
 - Lab: `HANDOFF.md`
+- Operación / runbook: `docs/OPERACION.md`
+- Contratos MQTT y bundle: `contracts/README.md`
 - Cámara `user` (probe + enganche 3 sep): `docs/CAMARA-USER.md`
 - Analíticas: `docs/ANALITICAS-FUENTES.md`
 - Pipeline: `services/video-engine/config/pipeline.yaml`

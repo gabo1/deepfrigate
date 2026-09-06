@@ -7,6 +7,8 @@ SQLite original. DeepStream está **arriba** y escribe Events en esta
 instancia. El bloque «video-engine caído» del 31 ago está **obsoleto**.
 Runbook de corte (aún no ejecutado): `frigate-pg/docs/CUTOVER.md`.
 Arquitectura DeepFrigate (grafo, PGIE vs atributos): `docs/ARQUITECTURA.md`.
+Runbook (síntomas conocidos, recreate, tests, retención): `docs/OPERACION.md`.
+Contratos MQTT y bundle de snapshot: `contracts/README.md`.
 `/home/agent/arquitectura.md` es **Savant** — no tocarlo.
 Mapa de analíticas: `docs/ANALITICAS-FUENTES.md`. Checklist Grafana:
 sección **Analíticas y Grafana (3 sep)** abajo.

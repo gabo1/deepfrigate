@@ -218,13 +218,29 @@ edit, validate and persist the contract; viewers have read-only access.
 Saving uses the active SHA-256 as an optimistic concurrency token and never
 restarts GPU services automatically.
 
+Runtime knobs of `video-engine` (Compose passes them through; defaults in
+parentheses): `FRAME_STALL_RESTART_SECONDS` (120) exits the process when no
+buffer reaches the export sink for that long, so `restart: unless-stopped`
+brings a fresh pipeline up (0 disables); `DS_SNAPSHOT_RETENTION_HOURS` (24)
+deletes DeepStream snapshot files and bundles older than that, Explore keeps
+its own copies (0 disables); `FRAME_REFRESH_SECONDS` (5) forgets a track's
+best thumbnail when its NvTracker id stops writing, so a recycled id cannot
+inherit it. `broker-queue` and `export-queue` are leaky: a stuck sink drops
+instead of freezing the whole graph.
+
 Run the declarative pipeline tests with:
 
 ```bash
 docker build --target test -t deepfrigate-video-engine-test \
   -f services/video-engine/Dockerfile .
-docker run --rm deepfrigate-video-engine-test
+docker run --rm --gpus all deepfrigate-video-engine-test
 ```
+
+The tests import `pyservicemaker`, which needs `libcuda`; pass `--gpus all`.
+Do not run pytest inside the running `deepfrigate-video-engine-1`: the
+Compose bind mount hides the `contracts/` directory the image copies in, and
+`test_pipeline_config.py` fails on a missing schema. `docs/OPERACION.md` §4
+has staged-tree commands for every service.
 
 Run the Platform API workflow tests with:
 
@@ -251,5 +267,6 @@ to reproduce them.
 - `frigate/`: unmodified Frigate upstream reference checkout.
 - `services/`: new platform services.
 - `models/`: Triton model repository.
-- `contracts/`: NVIDIA-independent metadata contracts.
+- `contracts/`: NVIDIA-independent metadata contracts (`contracts/README.md`).
+- `docs/OPERACION.md`: runbook (síntomas conocidos, recreate, tests, retención).
 - `config/`: Docker service configuration.

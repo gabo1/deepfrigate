@@ -32,3 +32,8 @@ config/frigate/go2rtc_homekit.yml
 # Observabilidad: secretos fuera del repo
 observabilidad/.env
 observabilidad/grafana/gf_pw
+# Tool artifacts and ad-hoc screenshots
+.agents/
+.codex-inspect/
+skills-lock.json
+/*.png

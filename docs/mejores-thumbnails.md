@@ -192,3 +192,24 @@ Bbox 10 % más grande, mismo score → sí.
 Persona pegada al borde izquierdo, score 0.99 → no, si el actual no estaba al borde.
 
 MQTT manda `thumbnail_changed: true` → event-engine vuelve a copiar esos tres archivos al `event_id` de Frigate. Explore muestra el thumb nuevo sin elegir nada.
+
+---
+
+## Timeline (Detalle de seguimiento)
+
+Cada fila de `timeline` que event-engine escribe (`visible`, `gone`,
+`stationary`, `active`, zonas) lleva `data.box` = **posición del objeto en
+ese instante**, no la del thumbnail. Explore dibuja el pie de cada caja como
+punto de la trayectoria ordenado por timestamp. La fila `gone` usa el bbox y
+el `last_seen_at` del mensaje END: el trazo termina donde el objeto salió.
+`Event.box` (la caja del snapshot) es otra cosa y sí es la del bundle.
+
+## Retención
+
+`data/ds-snapshots` no lo lee nadie después del END (Frigate tiene sus
+copias en `clips/`). video-engine borra cada 10 min planos, generaciones y
+directorios de track con más de `DS_SNAPSHOT_RETENTION_HOURS=24` horas,
+conservando la generación apuntada por `current.json` mientras el track
+siga reciente. Primer barrido (6 sep): 156 200 archivos, 33 GB → 9.9 GB.
+Las fotos de Explore expiran aparte, con `snapshots.retain.default` de
+Frigate.
