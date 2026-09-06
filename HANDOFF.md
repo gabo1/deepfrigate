@@ -111,6 +111,26 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
   eventos debido a timeouts del único worker MQTT es un trabajo aparte:
   desacoplar HTTP Frigate/coalescer por `object_id`; no reiniciar ni purgar
   MQTT para “arreglarlo”. Ver `docs/mejores-thumbnails.md`.
+- **Pipeline congelado 19 h y disco al 98 % (6 sep 14:25):** `video-engine`
+  seguía `Up` pero `**FPS: 0.00` en ambas fuentes desde el 5 sep 19:04:13
+  UTC, sin error, EOS ni reconexión en el log; `py-spy`: todos los hilos
+  ociosos, `MainThread` en `pipeline.wait()`; Triton `ready` pero sin una
+  inferencia nueva; MQTT `deepfrigate/detections` en silencio; cámaras vivas
+  en MediaMTX. Bloqueo silencioso del grafo; causa no demostrada (volcado
+  nativo falló). Sospechosos: `broker-queue` sin `leaky` (un `nvmsgbroker`
+  atascado bloquea el `tee` completo) o gRPC de `nvinferserver` colgado.
+  `docker restart deepfrigate-video-engine-1` lo devolvió: FPS 10, 16
+  eventos/min. Pendiente: watchdog en video-engine (salir si 60 s sin
+  buffers → `restart: unless-stopped` relanza), `leaky: 2` en
+  `broker-queue`, retención de `data/ds-snapshots` (32 GB, 143 k planos +
+  16 k bundles en `tienda`, nadie los borra). Disco: Frigate smoke graba
+  continuo 1 día (96 GB) y su storage maintenance limpia 2.2 GB cada vez que
+  baja de 1 h de margen, así que el host vive al borde. Limpieza hecha 6 sep:
+  volumen huérfano `deepfrigate_frigate-media` del NVR viejo (36 GB: 31 GB
+  `recordings`, 4.6 GB `clips`, sin `frigate.db`; ningún contenedor lo
+  montaba) **borrado** a petición del usuario; `docker builder prune -af` y
+  `docker image prune -f`. Un `compose up` del servicio `frigate` o de
+  `event-engine` sin `FRIGATE_BRIDGE_MEDIA_VOLUME` lo recrearía vacío.
 - **END con hora real de salida (5 sep 04:00):** el adapter emite LOST y
   END juntos `END_AFTER_SECONDS=5` (`LOST_AFTER_SECONDS=5`) tras la última
   detección (medido en MQTT: 5.00–5.18 s). Antes Frigate cerraba el evento
