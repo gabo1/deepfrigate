@@ -1663,13 +1663,34 @@ FROM r;
 -- lab 12:42–14:10: sdk 82, agente 85, total 115 tracks
 ```
 
-### 15.4 Dashboards que faltan
+### 15.4 Dashboards nuevos
 
 Mismo criterio que §11 quater: **por cámara**, no por especie. Dos
 dashboards nuevos, no paneles sueltos en `analitica-deepfrigate` (sus filas
-ya son largas y estos datos tienen otro datasource).
+ya son largas).
 
-**`vehiculos`** (`$camera`, datasource `frigate-smoke-pg`):
+**`vehiculos`** — ✅ **implementado el 7 sep.** uid `vehiculos`, 15 paneles,
+variables `$camera` (query) y `$plate` (textbox). Generador:
+`observabilidad/build_vehiculos.py`. Filas: Resumen, Flota, Placas.
+Validado ejecutando sus 12 consultas por el API de Grafana con `user` y
+`tienda`.
+
+Medido al desplegarlo (24 h): `user` 5.975 coches, 97,9 % con atributos,
+2.642 placas, **cobertura del lector 44,2 %**. `tienda` 3.362 coches, 65,6 %
+con atributos, **1 placa**.
+
+Detalles del implementado que no estaban en el plan:
+
+- **Los colores NO se fusionan.** `gray`/`silver-gray` y `golden`/`gold-beige`
+  vienen de vocabularios distintos igual que `body_type`, pero no son
+  sinónimos exactos, así que se dejan separados. Cada barra va pintada del
+  color que nombra.
+- **La búsqueda por placa no filtra por cámara**, a propósito: si una placa
+  aparece en dos cámaras, eso es justo lo que se quiere ver.
+- El panel «Con atributos de vehículo» baja de madrugada sin que falle nada:
+  con IR el color sale 0 y ai-router descarta score < 0.3.
+
+Plan original:
 
 | Panel | Query | Tipo |
 |---|---|---|
@@ -1685,7 +1706,11 @@ salen vacíos **por construcción** (12–15 px de placa en `tienda` y calle).
 Mejor ocultarlos con una fila colapsada "Placas (solo user)" que mostrar
 ceros.
 
-**`transiciones`** (`$label`, datasource `frigate-smoke-pg`):
+**`transiciones`** (`$label`, datasource `frigate-smoke-pg`, schema
+`deepfrigate`) — ⬜ **pendiente por falta de datos, no de trabajo.** La base se
+recreó el 7 sep 23:08 sin conservar histórico, así que `camera_transitions`
+tenía **3 filas** al montar `vehiculos`: la matriz saldría con una celda.
+Esperar a que acumule horas.
 
 | Panel | Query | Tipo |
 |---|---|---|
