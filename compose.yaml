@@ -61,6 +61,9 @@ services:
     restart: unless-stopped
     gpus: all
     ipc: host
+    # CUDA IPC handles (nvinferserver enable_cuda_buffer_sharing) only resolve
+    # inside one PID namespace; share the host's with video-engine.
+    pid: host
     command:
       - tritonserver
       - --model-repository=/models
@@ -363,6 +366,7 @@ services:
     profiles: ["video"]
     gpus: all
     ipc: host
+    pid: host  # see triton: CUDA buffer sharing needs one PID namespace
     # The stall watchdog exits the process when no buffers arrive for
     # FRAME_STALL_RESTART_SECONDS; this policy brings the pipeline back.
     restart: unless-stopped

@@ -8,7 +8,7 @@ infer_config {
       version: 1
       grpc {
         url: "triton:8001"
-        enable_cuda_buffer_sharing: false
+        enable_cuda_buffer_sharing: true
       }
     }
     inputs: [{ name: "images" }]

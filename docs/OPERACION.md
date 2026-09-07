@@ -53,6 +53,14 @@ event-engine y Frigate.
 - Mitigación estructural: `broker-queue` y `export-queue` son `leaky: 2`.
   Un sink atascado descarta, no bloquea el `tee`.
 
+### nvinferserver no arranca: `Failed to register CUDA shared memory`
+
+- `config_infer_yolo26.pbtxt` usa `enable_cuda_buffer_sharing: true` (sin él
+  cada tensor de 4.9 MB viaja GPU→CPU→gRPC→GPU, ~250 MB/s con 4 cámaras).
+  Exige que `triton` y `video-engine` compartan `ipc: host` **y** `pid: host`
+  en compose. Si Triton loguea `failed to open CUDA IPC handle: invalid
+  device context`, uno de los dos se recreó sin `pid: host`.
+
 ### Snapshot verde con caja
 
 - Frigate escribe su propio `-clean.webp` y thumb al procesar

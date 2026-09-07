@@ -113,6 +113,18 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
   eventos debido a timeouts del único worker MQTT es un trabajo aparte:
   desacoplar HTTP Frigate/coalescer por `object_id`; no reiniciar ni purgar
   MQTT para “arreglarlo”. Ver `docs/mejores-thumbnails.md`.
+- **CUDA buffer sharing DeepStream↔Triton (7 sep 02:15):** con 4 cámaras el
+  host iba al ~57 %: `NetPreproc1` de `nvinferserver` 47 % de video-engine y
+  Triton 24 %, porque `enable_cuda_buffer_sharing: false` copiaba cada tensor
+  `images` 3×640×640 FP32 (4.9 MB) GPU→CPU y lo mandaba por gRPC (~50/s ≈
+  250 MB/s). Primer intento con `true` falló: Triton
+  `shared_memory_manager.cc:260 "failed to open CUDA IPC handle: invalid
+  device context"` y `nvinferserver` no arrancó (revertido en 45 s). Causa:
+  los handles CUDA IPC no cruzan namespaces de PID. Arreglo: `pid: host` en
+  los servicios `triton` y `video-engine` de compose (ambos recreados) +
+  `enable_cuda_buffer_sharing: true` en `config_infer_yolo26.pbtxt`. Arranca
+  sin errores, 533 detecciones/5 s. Si se recrea alguno de los dos sin
+  `pid: host`, vuelve el fallo; síntoma inequívoco: ese log de Triton.
 - **Transiciones: primera noche y ajuste (7 sep 01:30):** 75 filas en 9 h
   (47 eefe→ef0a, 28 ef0a→eefe), pero contaminadas: coches **aparcados** en
   ambas cámaras durante minutos casaban entre sí (`gap_seconds` hasta −331 s)
