@@ -679,8 +679,8 @@ que los paneles consultan por **nombre desnudo**. Valor nuevo: `motor=deepfrigat
     `recognized_license_plate` del smoke. Datasource ya existe
     (`frigate-smoke-pg`). SQL en §15.3.
 13. ⬜ **Dashboard `transiciones`**: matriz from→to, gaps y detalle desde
-    `camera_transitions` en la PG **de DeepFrigate**. Falta el datasource
-    `deepfrigate-pg` (receta en §15.2).
+    `camera_transitions` en la PG **de DeepFrigate**. Datasource
+    `deepfrigate-pg` ✅ (7 sep, §15.2); falta el JSON del dashboard.
 
 ---
 
@@ -767,7 +767,8 @@ curl -s --data-urlencode \
 - Dashboard legado (archivo Savant): `http://100.83.231.97:3001/d/analitica`
 - Dashboard PULC: `http://100.83.231.97:3001/d/pulc-atributos`
   (fuente: `/opt/observabilidad/grafana/dashboards/pulc-atributos.json`)
-- Datasource SQL: `/opt/observabilidad/grafana/provisioning/datasources/postgres-frigate.yml`
+- Datasource SQL Frigate smoke: `/opt/observabilidad/grafana/provisioning/datasources/postgres-frigate.yml`
+- Datasource SQL DeepFrigate (`events`, `camera_transitions`): `.../postgres-deepfrigate.yml`, uid `deepfrigate-pg`
 - Placas y marca/modelo (runbook): `docs/OPERACION.md` §6c; transiciones: §6b
 - API transiciones: `http://127.0.0.1:8082/v1/camera-transitions?hours=24[&detail=true]`
 - Contrato `plate` / `classification` de coche: `contracts/README.md`
@@ -1546,7 +1547,13 @@ ojo una transición (dos pestañas, mismo peatón).
 
 `camera_transitions` y `events` están en `deepfrigate-postgres-1`, **no** en
 la base del smoke. Grafana ya comparte la red `deepfrigate_default`, así que
-llega por nombre. Receta (no hecha; misma forma que `postgres-frigate.yml`):
+llega por nombre. **Hecho el 7 sep 22:54**: rol `grafana_ro` (solo `SELECT`,
+también sobre tablas futuras vía `ALTER DEFAULT PRIVILEGES`) y datasource
+`DeepFrigate (PG)`, uid **`deepfrigate-pg`**, en
+`/opt/observabilidad/grafana/provisioning/datasources/postgres-deepfrigate.yml`
+(640, root; contraseña solo ahí, no versionada). Verificado: `INSERT` denegado,
+`SELECT` sobre `camera_transitions` desde la red de Grafana funciona. Lo que
+se ejecutó:
 
 ```sql
 -- en deepfrigate-postgres-1, DB deepfrigate (superuser deepfrigate)
@@ -1572,7 +1579,8 @@ datasources:
 ```
 
 El puerto `127.0.0.1:5433` del host es para `psql` a mano; Grafana no lo
-necesita.
+necesita. Rotar la contraseña: `ALTER ROLE grafana_ro PASSWORD '...'` + editar
+el yml + `docker restart grafana`. `postgresVersion: 1700` (PG 17.6).
 
 ### 15.3 SQL ya probadas (7 sep, ~14:10 UTC)
 

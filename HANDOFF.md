@@ -113,6 +113,13 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
   eventos debido a timeouts del único worker MQTT es un trabajo aparte:
   desacoplar HTTP Frigate/coalescer por `object_id`; no reiniciar ni purgar
   MQTT para “arreglarlo”. Ver `docs/mejores-thumbnails.md`.
+- **Datasource Grafana `deepfrigate-pg` (7 sep 22:54):** rol `grafana_ro`
+  (solo lectura, default privileges) en `deepfrigate-postgres-1`; yml en
+  `/opt/observabilidad/grafana/provisioning/datasources/postgres-deepfrigate.yml`
+  (640 root, contraseña no versionada); `docker restart grafana`. Desbloquea
+  el dashboard `transiciones` (ANALITICAS §15.4). Agente Rekor + alpr-bridge
+  **apagados** a las 17:55 por CPU (host 0 % idle en hora pico, 793
+  coches/h en `user`; agente 85 %); volver con `--profile alpr-agent up -d`.
 - **Voto de placa entre pasadas (7 sep 16:00):** `services/ai-router/app/plate_vote.py`
   (`PlateBallot`: suma confianzas de lectura + candidatos por placa; gana la
   suma mayor si fue lectura principal alguna vez; `publishable` exige ≥ 80 %
