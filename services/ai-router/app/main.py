@@ -189,7 +189,7 @@ class FrameRefConsumer:
         self.openalpr = OpenALPRService(
             os.getenv("OPENALPR_URL", "http://alpr-worker:8080"),
             min_attribute_score=float(os.getenv("OPENALPR_MIN_ATTRIBUTE_SCORE", "0.3")),
-            plate_min_confidence=float(os.getenv("PLATE_MIN_CONFIDENCE", "50")),
+            plate_min_confidence=float(os.getenv("PLATE_MIN_CONFIDENCE", "80")),
             plate_min_crop_width=int(os.getenv("PLATE_MIN_CROP_WIDTH", "120")),
             timeout=float(os.getenv("OPENALPR_TIMEOUT_SECONDS", "5")),
         )

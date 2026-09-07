@@ -337,7 +337,8 @@ video-engine ── FrameRef (crop RGB del track `car`) ──► ai-router
   extra cada `PLATE_SAMPLE_SECONDS=1` hasta leer una placa. Las pasadas de
   placa no pisan los atributos del mejor crop. Crops < `PLATE_MIN_CROP_WIDTH`
   (120 px) van sin `plates=1` (solo clasificador, ~140 ms).
-- Umbrales: `PLATE_MIN_CONFIDENCE=50` (Rekor 0–100),
+- Umbrales: `PLATE_MIN_CONFIDENCE=80` (Rekor 0–100; era 50 hasta el 7 sep 14:30,
+  ver comparación abajo),
   `OPENALPR_MIN_ATTRIBUTE_SCORE=0.3` (atributos con menos confianza se
   descartan; de noche IR el color sale 0 y no se publica).
 - Coste: worker ~150–300 ms por crop en CPU, ~15 % de un core con 4 cámaras;
@@ -364,8 +365,10 @@ Si los dos corren, event-engine se queda con la lectura de mayor confianza.
 Comparación 7 sep 12:42–14:10 (ambos encendidos): SDK leyó 82 tracks, agente
 85, unión 115. En los 52 leídos por los dos coincidió la placa en 28 (54 %).
 El SDK ve un crop y publica desde 50 %; el agente vota entre frames y sale
-~93 %. Antes de apagar el agente: subir `PLATE_MIN_CONFIDENCE` a 70–80 o
-votar entre las `PLATE_MAX_ATTEMPTS` pasadas (hoy para en la primera lectura).
+~93 %. Decisión 7 sep 14:30: `PLATE_MIN_CONFIDENCE=80`. Una lectura < 80 no
+se publica y la pasada cuenta como intento; el coche sigue teniendo hasta
+`PLATE_MAX_ATTEMPTS` oportunidades. Se leerán menos placas y más fiables.
+Si la cobertura cae demasiado, la siguiente palanca es votar entre pasadas.
 
 ## 7. Variables que importan
 
@@ -379,7 +382,7 @@ votar entre las `PLATE_MAX_ATTEMPTS` pasadas (hoy para en la primera lectura).
 | `FRIGATE_EMBED_THUMBNAILS` | event-engine | false | ya no hace falta: Frigate embebe al END |
 | `semantic_search.*` | Frigate YAML | `jinav2`, `large`, `reindex: false` | buscador y embeddings |
 | `VEHICLE_ATTRIBUTE_PROVIDER` | ai-router | `openalpr` | `pulc` vuelve al head Triton (código intacto) |
-| `PLATE_MIN_CONFIDENCE` / `PLATE_MIN_CROP_WIDTH` / `PLATE_MAX_ATTEMPTS` / `PLATE_SAMPLE_SECONDS` / `OPENALPR_MIN_ATTRIBUTE_SCORE` | ai-router | 50 / 120 / 6 / 1.0 / 0.3 | placas: umbral, ancho mínimo del crop, reintentos por coche, cadencia; corte de atributos |
+| `PLATE_MIN_CONFIDENCE` / `PLATE_MIN_CROP_WIDTH` / `PLATE_MAX_ATTEMPTS` / `PLATE_SAMPLE_SECONDS` / `OPENALPR_MIN_ATTRIBUTE_SCORE` | ai-router | 80 / 120 / 6 / 1.0 / 0.3 | placas: umbral, ancho mínimo del crop, reintentos por coche, cadencia; corte de atributos |
 | `ALPR_COUNTRY` / `ALPR_TOP_N` | alpr-worker | `mx` / 5 | país del SDK y candidatos por placa |
 | `ALPR_CAMERAS` / `ALPR_MIN_CONFIDENCE` / `ALPR_MATCH_WINDOW_SECONDS` | alpr-bridge (perfil `alpr-agent`) | `1:user` / 50 / 3 | alternativa A: mapeo cámara del agente → nuestra, umbral y ventana de casado |
 | `TRANSITION_PAIRS` / `_MODE` / `_WINDOW_SECONDS` / `_OVERLAP_SECONDS` / `_MIN_MOVE` / `_DIRECTION` / `_MIN_SCORE` / `_EMBED_WAIT_SECONDS` / `_LABELS` | event-engine | `c4aac4f4eefe:c4aac4f4ef0a` / `cooccurrence` / 60 / 15 / 0.1 / `ignore` / 0.3 / 6 / `car,person` | transiciones entre cámaras; pares vacíos desactiva |

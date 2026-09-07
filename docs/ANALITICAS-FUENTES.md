@@ -1725,10 +1725,11 @@ Infinity, y ya se descartó (§8.5). Crear el datasource PG es más corto.
   placa si llega otra lectura con más `confidence`. Para ver todas las
   lecturas (y los desacuerdos) hay que ir a `events.plate_read` en la PG de
   DeepFrigate. Con los dos motores encendidos, en 52 tracks leídos por ambos
-  coincidieron 28 (54 %): el SDK lee un solo crop y acepta ≥ 50 %; el agente
-  vota entre frames. Mientras no se decida (subir `PLATE_MIN_CONFIDENCE` o
-  votar entre las 6 pasadas), tratar la placa como **lectura**, no como dato
-  fiscal.
+  coincidieron 28 (54 %): el SDK leía un solo crop y aceptaba ≥ 50 %; el
+  agente vota entre frames. Desde el 7 sep 14:30 `PLATE_MIN_CONFIDENCE=80`:
+  menos placas, más fiables. Aun así tratar la placa como **lectura**, no
+  como dato fiscal. Las filas `plate_read` anteriores a esa hora mezclan
+  umbrales.
 - **Transiciones: peatones fiables, coches con falsos.** Las de `person`
   salen con gap 0–5 s y un candidato. Las de `car` incluyen coches
   estacionados: tracks vivos 1–8 h (`c4aac4f4ef0a-2`, `c4aac4f4eefe-1`) cuyo

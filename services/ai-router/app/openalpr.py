@@ -108,7 +108,7 @@ class OpenALPRService:
         url: str,
         *,
         min_attribute_score: float = 0.3,
-        plate_min_confidence: float = 50.0,
+        plate_min_confidence: float = 80.0,
         plate_min_crop_width: int = 120,
         timeout: float = 5.0,
     ) -> None:

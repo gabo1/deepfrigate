@@ -113,6 +113,9 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
   eventos debido a timeouts del único worker MQTT es un trabajo aparte:
   desacoplar HTTP Frigate/coalescer por `object_id`; no reiniciar ni purgar
   MQTT para “arreglarlo”. Ver `docs/mejores-thumbnails.md`.
+- **`PLATE_MIN_CONFIDENCE` 50 → 80 (7 sep 14:30):** decisión tras el 54 % de
+  acuerdo SDK/agente. Default en código, compose y `.env.example`. Las
+  `plate_read` previas mezclan umbrales.
 - **Documentación analíticas nuevas (7 sep 14:20):** `docs/ANALITICAS-FUENTES.md`
   §15: dónde viven placas, marca/modelo y `camera_transitions`, SQL probadas,
   receta del datasource `deepfrigate-pg` (falta: `grafana_ro` en

@@ -50,10 +50,13 @@ def test_service_skips_plates_on_small_crops_and_filters_confidence(monkeypatch)
         return {"vehicle": VEHICLE, "plates": [PLATE, {"plate": "XX", "confidence": 20.0}]}
 
     monkeypatch.setattr(OpenALPRService, "_post", fake_post)
-    service = OpenALPRService("http://alpr-worker:8080/", plate_min_crop_width=120)
+    strict = OpenALPRService("http://alpr-worker:8080/")
+    assert strict.plate_min_confidence == 80.0
+    assert strict.enrich(REF, b"\0" * (300 * 200 * 3)).plates == ()  # 60 % dropped by default
+    service = OpenALPRService("http://alpr-worker:8080/", plate_min_confidence=50, plate_min_crop_width=120)
     result = service.enrich(REF, b"\0" * (300 * 200 * 3))
     assert isinstance(result, OpenALPRResult)
-    assert calls == ["/analyze?width=300&height=200&plates=1&vehicle=1"]
+    assert calls[-1] == "/analyze?width=300&height=200&plates=1&vehicle=1"
     assert [p["plate"] for p in result.plates] == ["jd6085b"]
     assert AttributeItem("color", "white", 0.812) in result.attributes
     small = dict(REF, width=100, height=60)
