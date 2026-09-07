@@ -113,6 +113,20 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
   eventos debido a timeouts del único worker MQTT es un trabajo aparte:
   desacoplar HTTP Frigate/coalescer por `object_id`; no reiniciar ni purgar
   MQTT para “arreglarlo”. Ver `docs/mejores-thumbnails.md`.
+- **Transiciones: primera noche y ajuste (7 sep 01:30):** 75 filas en 9 h
+  (47 eefe→ef0a, 28 ef0a→eefe), pero contaminadas: coches **aparcados** en
+  ambas cámaras durante minutos casaban entre sí (`gap_seconds` hasta −331 s)
+  porque solo se exigía "A empezó antes y B empezó ≤ 60 s tras la última
+  vista de A", sin cota inferior ni movimiento. Añadido
+  `TRANSITION_OVERLAP_SECONDS=15` (B no puede empezar más de 15 s antes de
+  que A se vaya) y `TRANSITION_MIN_MOVE=0.1` (ambos tracks con
+  `position_changes>0` o recorrido en x ≥ 10 % del ancho). Tabla vaciada tras
+  el deploy para no mezclar. Además **ningún** `to_vector_id`/`from_vector_id`
+  quedó grabado: el embedding final (llega 0.3–1.4 s tras END según logs de
+  ai-router) no parece alcanzar al matcher; en aislamiento el mismo código
+  sí lo procesa. Añadido log INFO `Final embedding for … attached` para
+  confirmarlo en vivo. Sin ese vector no hay desempate por apariencia; el
+  fallback es el candidato más cercano en tiempo. Tests event-engine 69.
 - **Transiciones por co-ocurrencia (6 sep 17:00):** decidido con el usuario
   tras ver que PP-ShiTu no separa. `TRANSITION_MODE=cooccurrence` (default):
   A en la cámara pareja empezó antes y B empezó ≤ `TRANSITION_WINDOW_SECONDS=60`

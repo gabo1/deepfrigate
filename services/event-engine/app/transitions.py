@@ -127,12 +127,20 @@ class TrackObs:
     matched: bool = False  # consumed as an origin
     decided: bool = False  # already evaluated as an arrival
     frigate_event_id: str | None = None
+    position_changes: int = 0
 
     @property
     def dx(self) -> float | None:
         if self.first_x is None or self.last_x is None:
             return None
         return self.last_x - self.first_x
+
+    def moved(self, min_move: float) -> bool:
+        """A parked car or a loiterer is not a transition candidate."""
+        if self.position_changes > 0:
+            return True
+        dx = self.dx
+        return dx is not None and abs(dx) >= min_move
 
 
 class TransitionMatcher:
@@ -148,6 +156,8 @@ class TransitionMatcher:
         labels: set[str] | None = None,
         direction: str = "ignore",
         embed_wait_seconds: float = 6.0,
+        overlap_seconds: float = 15.0,
+        min_move: float = 0.1,
         camera_sizes: dict[str, tuple[int, int]] | None = None,
         clock: Callable[[], float] = time.time,
     ) -> None:
@@ -160,6 +170,10 @@ class TransitionMatcher:
         self.labels = labels or {"car", "person"}
         self.direction = direction if direction in {"same", "opposite", "ignore"} else "ignore"
         self.embed_wait_seconds = float(embed_wait_seconds)
+        # B may start this long before A was last seen (adjacent views).
+        self.overlap_seconds = float(overlap_seconds)
+        # Minimum image-x travel (fraction of width) unless position_changes>0.
+        self.min_move = float(min_move)
         self.camera_sizes = camera_sizes or {}
         self.clock = clock
         self.tracks: dict[str, TrackObs] = {}
@@ -234,6 +248,10 @@ class TransitionMatcher:
                 self.tracks[object_id] = obs
             obs.end_ts = seen
             obs.last_x = self._center_x(camera_id, data.get("bbox")) or obs.last_x
+            try:
+                obs.position_changes = max(obs.position_changes, int(data.get("position_changes") or 0))
+            except (TypeError, ValueError):
+                pass
             obs.pending_since = self.clock()
             return self.flush()
         return None
@@ -265,6 +283,10 @@ class TransitionMatcher:
         if obs.end_ts is None:
             obs.end_ts = float(update.get("timestamp") or 0)
         obs.pending_since = obs.pending_since or self.clock()
+        logger.info(
+            "Final embedding for %s attached (decided=%s, moved=%s)",
+            object_id, obs.decided, obs.moved(self.min_move),
+        )
         return self.flush(force=obs.object_id)
 
     # ------------------------------------------------------------------ matching
@@ -302,6 +324,8 @@ class TransitionMatcher:
     def _candidates(self, arrival: TrackObs) -> list[TrackObs]:
         partners = set(self.partners(arrival.camera_id))
         out: list[TrackObs] = []
+        if not arrival.moved(self.min_move):
+            return out
         for obs in self.tracks.values():
             if obs.camera_id not in partners or obs.label != arrival.label or obs.matched:
                 continue
@@ -310,7 +334,11 @@ class TransitionMatcher:
             if obs.start_ts > arrival.start_ts:
                 continue  # the origin must appear first
             gap = arrival.start_ts - obs.end_ts
-            if gap > self.window_seconds:
+            # Too late after A left, or B started long before A left (both
+            # were simply present at once, e.g. two parked cars).
+            if gap > self.window_seconds or gap < -self.overlap_seconds:
+                continue
+            if not obs.moved(self.min_move):
                 continue
             if not self._direction_ok(obs, arrival):
                 continue
@@ -477,5 +505,7 @@ def matcher_from_env(
         labels=labels,
         direction=os.getenv("TRANSITION_DIRECTION", "ignore"),
         embed_wait_seconds=float(os.getenv("TRANSITION_EMBED_WAIT_SECONDS", "6")),
+        overlap_seconds=float(os.getenv("TRANSITION_OVERLAP_SECONDS", "15")),
+        min_move=float(os.getenv("TRANSITION_MIN_MOVE", "0.1")),
         camera_sizes=camera_sizes,
     )

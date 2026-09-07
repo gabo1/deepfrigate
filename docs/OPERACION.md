@@ -263,6 +263,11 @@ defecto es **co-ocurrencia temporal** (`TRANSITION_MODE=cooccurrence`,
    pareja: mismo `label`, A empezó antes que B, y B empezó como mucho
    `TRANSITION_WINDOW_SECONDS=60` después de la última vez que se vio A
    (puede solaparse: B empieza mientras A sigue visible).
+   Además B no puede haber empezado más de `TRANSITION_OVERLAP_SECONDS=15`
+   antes de esa última vista (dos objetos presentes a la vez durante minutos
+   no son un traspaso) y **ambos tracks deben haberse movido**
+   (`position_changes > 0` o recorrido en x ≥ `TRANSITION_MIN_MOVE=0.1` del
+   ancho): coches aparcados y gente parada quedan fuera.
 3. `TRANSITION_DIRECTION=same|opposite|ignore` puede vetar candidatos cuya
    dirección de movimiento en x no encaje (ignore por defecto; fijar tras
    mirar pares reales).
@@ -294,4 +299,4 @@ cuentan al END. Auditar con `detail=true` y ajustar ventana y dirección.
 | `FRIGATE_BRIDGE_UPDATE_SECONDS` | event-engine | 1 | coalescing de UPDATE hacia Frigate |
 | `FRIGATE_EMBED_THUMBNAILS` | event-engine | false | ya no hace falta: Frigate embebe al END |
 | `semantic_search.*` | Frigate YAML | `jinav2`, `large`, `reindex: false` | buscador y embeddings |
-| `TRANSITION_PAIRS` / `_MODE` / `_WINDOW_SECONDS` / `_DIRECTION` / `_MIN_SCORE` / `_EMBED_WAIT_SECONDS` / `_LABELS` | event-engine | `c4aac4f4eefe:c4aac4f4ef0a` / `cooccurrence` / 60 / `ignore` / 0.3 / 6 / `car,person` | transiciones entre cámaras; pares vacíos desactiva |
+| `TRANSITION_PAIRS` / `_MODE` / `_WINDOW_SECONDS` / `_OVERLAP_SECONDS` / `_MIN_MOVE` / `_DIRECTION` / `_MIN_SCORE` / `_EMBED_WAIT_SECONDS` / `_LABELS` | event-engine | `c4aac4f4eefe:c4aac4f4ef0a` / `cooccurrence` / 60 / 15 / 0.1 / `ignore` / 0.3 / 6 / `car,person` | transiciones entre cámaras; pares vacíos desactiva |

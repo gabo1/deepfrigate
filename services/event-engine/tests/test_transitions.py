@@ -34,7 +34,7 @@ class FakeRepo:
         return True
 
 
-def _det(object_id: str, camera: str, lifecycle: str, ts: float, label: str = "person", x: float = 600.0, last_seen: float | None = None):
+def _det(object_id: str, camera: str, lifecycle: str, ts: float, label: str = "person", x: float = 600.0, last_seen: float | None = None, position_changes: int = 1):
     return {
         "type": "tracked_object_update",
         "object_id": object_id,
@@ -48,6 +48,7 @@ def _det(object_id: str, camera: str, lifecycle: str, ts: float, label: str = "p
             "confidence": 0.9,
             "bbox": {"x": x, "y": 300, "width": 40, "height": 80},
             "last_seen_at": last_seen if last_seen is not None else ts,
+            "position_changes": position_changes,
         },
     }
 
@@ -82,6 +83,8 @@ def _matcher(repo: FakeRepo, qdrant: FakeQdrant, clock: Clock, **kw) -> Transiti
         min_score=kw.get("min_score", 0.3),
         direction=kw.get("direction", "ignore"),
         embed_wait_seconds=kw.get("embed_wait", 6),
+        overlap_seconds=kw.get("overlap", 15),
+        min_move=kw.get("min_move", 0.1),
         clock=clock,
     )
 
@@ -189,3 +192,36 @@ def test_disabled_without_pairs_and_unpaired_cameras_are_ignored() -> None:
     m2 = _matcher(FakeRepo(), FakeQdrant(), Clock(1.0))
     assert m2.observe(_det("tienda-1", "tienda", "START", 1.0)) is None
     assert m2.tracks == {}
+
+
+def test_parked_objects_never_transition() -> None:
+    """Two parked cars visible at once are not a hand-over."""
+    repo, qdrant, clock = FakeRepo(), FakeQdrant(), Clock(1000.0)
+    m = _matcher(repo, qdrant, clock)
+    m.observe(_det(f"{A}-10", A, "START", 1000.0, label="car", x=300, position_changes=0))
+    m.observe(_det(f"{B}-22", B, "START", 1005.0, label="car", x=700, position_changes=0))
+    m.observe(_det(f"{A}-10", A, "END", 1600.0, label="car", x=305, last_seen=1595.0, position_changes=0))
+    m.observe(_det(f"{B}-22", B, "END", 1610.0, label="car", x=702, last_seen=1605.0, position_changes=0))
+    assert m.observe(_embedding(f"{B}-22", B, "vec-B", 1606.0)) is None
+    assert repo.rows == []
+    # Same timing but the arrival really moved: still no origin, because A never moved.
+    m.observe(_det(f"{B}-23", B, "START", 1590.0, label="car", x=100, position_changes=0))
+    m.observe(_det(f"{B}-23", B, "END", 1600.0, label="car", x=900, last_seen=1598.0, position_changes=0))
+    assert m.observe(_embedding(f"{B}-23", B, "vec-B23", 1599.0)) is None
+
+
+def test_arrival_starting_long_before_origin_left_is_not_a_transition() -> None:
+    repo, qdrant, clock = FakeRepo(), FakeQdrant(), Clock(1000.0)
+    m = _matcher(repo, qdrant, clock, overlap=15)
+    m.observe(_det(f"{A}-10", A, "START", 1000.0))
+    m.observe(_det(f"{B}-22", B, "START", 1010.0))          # B appears 40 s before A leaves
+    m.observe(_det(f"{A}-10", A, "END", 1055.0, last_seen=1050.0))
+    m.observe(_det(f"{B}-22", B, "END", 1070.0, last_seen=1065.0))
+    assert m.observe(_embedding(f"{B}-22", B, "vec-B", 1066.0)) is None
+    # Within the overlap bound it counts.
+    m.observe(_det(f"{A}-11", A, "START", 1100.0))
+    m.observe(_det(f"{B}-24", B, "START", 1140.0))          # 10 s before A-11 leaves
+    m.observe(_det(f"{A}-11", A, "END", 1155.0, last_seen=1150.0))
+    m.observe(_det(f"{B}-24", B, "END", 1170.0, last_seen=1165.0))
+    row = m.observe(_embedding(f"{B}-24", B, "vec-B24", 1166.0))
+    assert row is not None and row["gap_seconds"] == -10.0

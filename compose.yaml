@@ -241,6 +241,10 @@ services:
       TRANSITION_MIN_SCORE: ${TRANSITION_MIN_SCORE:-0.3}
       TRANSITION_DIRECTION: ${TRANSITION_DIRECTION:-ignore}
       TRANSITION_EMBED_WAIT_SECONDS: ${TRANSITION_EMBED_WAIT_SECONDS:-6}
+      # B may start up to this long before A was last seen; and a track must
+      # have moved (position_changes>0 or >= MIN_MOVE of the width in x).
+      TRANSITION_OVERLAP_SECONDS: ${TRANSITION_OVERLAP_SECONDS:-15}
+      TRANSITION_MIN_MOVE: ${TRANSITION_MIN_MOVE:-0.1}
       TRANSITION_LABELS: ${TRANSITION_LABELS:-car,person}
       QDRANT_URL: http://qdrant:6333
       QDRANT_COLLECTION: ${QDRANT_COLLECTION:-vehicle_embeddings}
