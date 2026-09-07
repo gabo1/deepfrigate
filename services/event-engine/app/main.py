@@ -231,6 +231,9 @@ class EventEngine:
                 "detection",
                 "zone",
                 "classification",
+                # Final embeddings feed the cross-camera transition matcher
+                # on the bridge worker (one message per ended track).
+                "embedding",
             }:
                 self._ack(message)
                 return

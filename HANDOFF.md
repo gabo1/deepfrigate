@@ -127,6 +127,11 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
   sí lo procesa. Añadido log INFO `Final embedding for … attached` para
   confirmarlo en vivo. Sin ese vector no hay desempate por apariencia; el
   fallback es el candidato más cercano en tiempo. Tests event-engine 69.
+  **Causa encontrada (7 sep 01:45):** `_on_message` en `main.py` ACKea y
+  descarta cualquier update sin evento normalizado cuyo `update_type` no esté
+  en {detection, zone, classification}; los `embedding` nunca entraban a la
+  cola, así que ni el modo `embedding` del 6 sep pudo funcionar. Añadido
+  `embedding` a esa lista (+ test en `test_main.py`). Tests event-engine 70.
 - **Transiciones por co-ocurrencia (6 sep 17:00):** decidido con el usuario
   tras ver que PP-ShiTu no separa. `TRANSITION_MODE=cooccurrence` (default):
   A en la cámara pareja empezó antes y B empezó ≤ `TRANSITION_WINDOW_SECONDS=60`

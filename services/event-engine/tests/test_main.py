@@ -55,3 +55,28 @@ def test_bridge_coalesces_repeated_detection_updates() -> None:
     assert engine._should_enqueue_bridge(thumbnail)
     assert engine._should_enqueue_bridge(end)
     assert engine._bridge_tracks == {}
+
+
+def test_final_embedding_updates_are_queued_for_the_bridge() -> None:
+    """Embeddings produce no normalized event but feed the transition matcher."""
+    import json
+    from types import SimpleNamespace
+
+    engine = object.__new__(EventEngine)
+    engine.queue = Queue()
+    engine.input_validator = SimpleNamespace(validate=lambda update: None)
+    engine.event_validator = SimpleNamespace(validate=lambda event: None)
+    engine.normalizer = SimpleNamespace(normalize=lambda update: None)
+    acked: list[int] = []
+    engine._ack = lambda message: acked.append(message.mid)  # type: ignore[method-assign]
+
+    def message(update: dict) -> SimpleNamespace:
+        return SimpleNamespace(payload=json.dumps(update).encode(), mid=len(acked) + 1, qos=1)
+
+    engine._on_message(None, None, message({"update_type": "embedding", "object_id": "c4aac4f4ef0a-1"}))
+    assert engine.queue.get_nowait()[0]["update_type"] == "embedding"
+    assert acked == []
+
+    engine._on_message(None, None, message({"update_type": "visual_match", "object_id": "c4aac4f4ef0a-1"}))
+    assert engine.queue.empty()
+    assert acked == [1]
