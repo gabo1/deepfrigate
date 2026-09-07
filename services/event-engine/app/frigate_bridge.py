@@ -79,7 +79,7 @@ def person_attributes_from_items(
 def vehicle_sub_label(summary: dict[str, Any]) -> str | None:
     """Frigate Explore shows this next to `car`. Keep it short."""
     parts: list[str] = []
-    for name in ("color", "body_type"):
+    for name in ("color", "make_model", "body_type"):
         entry = summary.get(name)
         if isinstance(entry, dict) and entry.get("value"):
             parts.append(str(entry["value"]))
@@ -849,7 +849,7 @@ class FrigateReviewBridge:
         if label == "car":
             data_update["person_attributes"] = {
                 key: summary[key]
-                for key in ("color", "body_type", "updated_at")
+                for key in ("color", "body_type", "make", "make_model", "year", "updated_at")
                 if key in summary
             }
         pending = self._pending.get(object_id)

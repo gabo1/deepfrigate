@@ -68,6 +68,18 @@ def test_vehicle_sub_label_joins_color_and_body() -> None:
     )
     assert vehicle_sub_label({"color": {"value": "white", "score": 0.9}}) == "white"
     assert vehicle_sub_label({}) is None
+    # OpenALPR adds make_model between colour and body type.
+    assert (
+        vehicle_sub_label(
+            {
+                "color": {"value": "white", "score": 0.8},
+                "make_model": {"value": "nissan_versa", "score": 0.4},
+                "body_type": {"value": "sedan-standard", "score": 0.6},
+                "make": {"value": "nissan", "score": 0.5},
+            }
+        )
+        == "white nissan_versa sedan-standard"
+    )
 
 
 class FakeRepository:

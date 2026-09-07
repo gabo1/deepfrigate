@@ -55,17 +55,28 @@ Campos requeridos en el esquema. El ancla geométrica es el **pie** del bbox
 `dimensions`, `distance`, `frame_ref_id`, `inference_ms`, `end_to_end_ms`.
 `visual_match`: vecinos devueltos por Qdrant para ese vector.
 
-### `update_type: plate` (alpr-bridge, desde Rekor Scout)
+### `update_type: plate` (ai-router vía alpr-worker; alternativa alpr-bridge)
 
 `plate` (texto), `confidence` (0–100), `region` (p. ej. `mx-nle`),
 `region_confidence`, `candidates` (top 5 `{plate, confidence}`), `bbox` de la
-placa en píxeles de la cámara, `plate_center`, `vehicle_region`, `vehicle`
-(`color`, `make`, `make_model` si el agente los da), `travel_direction`,
-`epoch_start`/`epoch_end`, `source: rekor-scout`, `agent_camera_id`,
+placa en píxeles de la cámara (el worker ve solo el crop; ai-router suma el
+origen del bbox del FrameRef), `plate_center`, `vehicle` (`color`, `make`,
+`make_model`, `body_type`, `year` que dio el clasificador), `source:
+openalpr-sdk`, `frame_ref_id`, `inference_ms`, `end_to_end_ms`,
 `matched`/`specific` (false salvo listas de vigilancia). El `object_id` es el
-track `car` del adapter con el que se casó la lectura. event-engine lo
-convierte en `plate_read` (o `specific_plate`) y en Frigate en `sub_label` +
-`data.recognized_license_plate`.
+track `car` cuyo crop se analizó. La alternativa A (`alpr-bridge`) emite el
+mismo tipo con `source: rekor-scout`, `vehicle_region`, `travel_direction`,
+`epoch_start`/`epoch_end` y `agent_camera_id`. event-engine lo convierte en
+`plate_read` (o `specific_plate`) y en Frigate en `sub_label` +
+`data.recognized_license_plate`; si llegan varias lecturas gana la de mayor
+`confidence`.
+
+`classification` de coches con `model: openalpr-vehicle`
+(`model_version: OpenALPR/4.1.13`): atributos `color`, `body_type` (vocabulario
+OpenALPR: `sedan-standard`, `suv-crossover`, `truck-standard`, `van-full`,
+`taxi`, `motorcycle`…), `make`, `make_model` (`ford_transit`), `year`
+(`2015-2019`), `score` = confianza/100 con corte
+`OPENALPR_MIN_ATTRIBUTE_SCORE`.
 
 ## `object-detection` (DeepStream)
 

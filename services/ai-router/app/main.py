@@ -32,6 +32,7 @@ from .clothing_color import (
 )
 from .embedding import VehicleEmbeddingService
 from .explore_thumb import load_explore_thumb
+from .openalpr import MODEL_VERSION as OPENALPR_MODEL_VERSION, OpenALPRService, plate_update
 from .vehicle_attribute import (
     MODEL_VERSION as VEHICLE_MODEL_VERSION,
     VehicleAttributeService,
@@ -149,6 +150,13 @@ class FrameRefConsumer:
             tuple[str, int], dict[str, deque[str]]
         ] = {}
         self.pulc_items: dict[tuple[str, int], tuple[AttributeItem, ...]] = {}
+        self.plate_reads: dict[tuple[str, int], list[dict[str, Any]]] = {}
+        # Plate retries: a car shows a legible plate only for a moment, so
+        # cars get extra OpenALPR passes (every PLATE_SAMPLE_SECONDS, up to
+        # PLATE_MAX_ATTEMPTS) until one plate is read.
+        self.plate_attempts: dict[tuple[str, int], int] = {}
+        self.last_plate_at: dict[tuple[str, int], float] = {}
+        self.plates_found: set[tuple[str, int]] = set()
         self.lock = Lock()
         self.embedding = VehicleEmbeddingService(
             triton_url=os.getenv("TRITON_URL", "triton:8001"),
@@ -164,12 +172,31 @@ class FrameRefConsumer:
                 "ATTRIBUTE_TRITON_MODEL", "person-attribute"
             ),
         )
+        # "openalpr" (default): Rekor SDK in alpr-worker gives color, body
+        # type, make, model, year AND the plate from the same car crop.
+        # "pulc": the previous Triton PULC vehicle-attribute head (kept, off).
+        self.vehicle_provider = os.getenv(
+            "VEHICLE_ATTRIBUTE_PROVIDER", "openalpr"
+        ).strip().lower()
+        if self.vehicle_provider not in {"openalpr", "pulc"}:
+            raise ValueError("VEHICLE_ATTRIBUTE_PROVIDER must be openalpr or pulc")
         self.vehicle_attributes = VehicleAttributeService(
             triton_url=os.getenv("TRITON_URL", "triton:8001"),
             model_name=os.getenv(
                 "VEHICLE_ATTRIBUTE_TRITON_MODEL", "vehicle-attribute"
             ),
         )
+        self.openalpr = OpenALPRService(
+            os.getenv("OPENALPR_URL", "http://alpr-worker:8080"),
+            min_attribute_score=float(os.getenv("OPENALPR_MIN_ATTRIBUTE_SCORE", "0.3")),
+            plate_min_confidence=float(os.getenv("PLATE_MIN_CONFIDENCE", "50")),
+            plate_min_crop_width=int(os.getenv("PLATE_MIN_CROP_WIDTH", "120")),
+            timeout=float(os.getenv("OPENALPR_TIMEOUT_SECONDS", "5")),
+        )
+        self.plate_max_attempts = int(os.getenv("PLATE_MAX_ATTEMPTS", "6"))
+        self.plate_sample_seconds = float(os.getenv("PLATE_SAMPLE_SECONDS", "1.0"))
+        if self.plate_max_attempts < 0 or self.plate_sample_seconds <= 0:
+            raise ValueError("PLATE_MAX_ATTEMPTS must be >= 0 and PLATE_SAMPLE_SECONDS > 0")
         with open(
             os.getenv(
                 "TRACKED_OBJECT_SCHEMA",
@@ -284,7 +311,8 @@ class FrameRefConsumer:
                     and time.time() - self.last_color_at.get(key, 0.0)
                     >= self.color_sample_seconds
                 )
-                if not need_pulc and not color_due:
+                plate_due = self._plate_due_locked(key, label)
+                if not need_pulc and not color_due and not plate_due:
                     return
                 self.pending.add(key)
             try:
@@ -374,6 +402,16 @@ class FrameRefConsumer:
         sample_color = label == "person" and self._color_sample_allowed(ref)
         if infer_attrs and not self._crop_is_eligible(ref, label):
             infer_attrs = False
+        key = (str(ref["camera_id"]), int(ref["track_id"]))
+        plate_pass = False
+        if not infer_attrs and int(ref["width"]) >= self.openalpr.plate_min_crop_width:
+            with self.lock:
+                plate_pass = self._plate_due_locked(key, label)
+            infer_attrs = plate_pass
+        if infer_attrs and label == "car" and self.vehicle_provider == "openalpr":
+            with self.lock:
+                self.plate_attempts[key] = self.plate_attempts.get(key, 0) + 1
+                self.last_plate_at[key] = time.time()
         if not infer_attrs and not sample_color:
             if not self._crop_is_eligible(ref, label):
                 min_width, min_height = self._min_crop(label)
@@ -428,8 +466,9 @@ class FrameRefConsumer:
                 age_ms,
                 infer_attrs=infer_attrs,
                 sample_color=sample_color,
+                keep_attributes=plate_pass,
             )
-            if infer_attrs:
+            if infer_attrs and not plate_pass:
                 self._remember_crop_quality(ref, label)
             if update is not None:
                 self._publish_update(
@@ -441,7 +480,16 @@ class FrameRefConsumer:
                     age_ms,
                     first_for_track,
                 )
-            return infer_attrs
+            with self.lock:
+                plates = self.plate_reads.pop(key, [])
+                if plates:
+                    self.plates_found.add(key)
+            for plate in plates:
+                self._publish_update(
+                    plate, "Read plate", ref, ref_id, digest, age_ms, True
+                )
+            # Plate-only passes do not count against ATTRIBUTE_MAX_PER_TRACK.
+            return infer_attrs and not plate_pass
         finally:
             try:
                 self._request(
@@ -507,13 +555,27 @@ class FrameRefConsumer:
         age_ms: float,
         infer_attrs: bool = True,
         sample_color: bool = True,
+        keep_attributes: bool = False,
     ) -> dict[str, Any] | None:
         key = (str(ref["camera_id"]), int(ref["track_id"]))
         inference_ms = 0.0
         model_name = self.attributes.model_name
         model_version = MODEL_VERSION
         if infer_attrs:
-            if label == "car":
+            if label == "car" and self.vehicle_provider == "openalpr":
+                result = self.openalpr.enrich(ref, pixels)
+                model_name = self.openalpr.model_name
+                model_version = OPENALPR_MODEL_VERSION
+                if result.plates:
+                    best = result.plates[0]
+                    vehicle = {item.name: {"value": item.value} for item in result.attributes}
+                    with self.lock:
+                        self.plate_reads.setdefault(key, []).append(
+                            plate_update(
+                                ref, best, ref_id, result.inference_ms, age_ms, vehicle=vehicle
+                            )
+                        )
+            elif label == "car":
                 result = self.vehicle_attributes.enrich(ref, pixels)
                 model_name = self.vehicle_attributes.model_name
                 model_version = VEHICLE_MODEL_VERSION
@@ -521,7 +583,9 @@ class FrameRefConsumer:
                 result = self.attributes.enrich(ref, pixels)
             inference_ms = result.inference_ms
             with self.lock:
-                self.pulc_items[key] = result.attributes
+                # A plate retry pass keeps the attributes of the best crop.
+                if not keep_attributes or not self.pulc_items.get(key):
+                    self.pulc_items[key] = result.attributes
         if sample_color:
             self._record_color_votes(
                 key,
@@ -663,6 +727,10 @@ class FrameRefConsumer:
             self.last_bbox.pop(key, None)
             self.color_votes.pop(key, None)
             self.pulc_items.pop(key, None)
+            self.plate_reads.pop(key, None)
+            self.plate_attempts.pop(key, None)
+            self.last_plate_at.pop(key, None)
+            self.plates_found.discard(key)
             self.finalize.discard(key)
             self.pending.discard(key)
 
@@ -721,6 +789,16 @@ class FrameRefConsumer:
             age_ms,
             digest[:12],
         )
+
+    def _plate_due_locked(self, key: tuple[str, int], label: str) -> bool:
+        """Caller holds self.lock. Extra OpenALPR pass wanted for this car?"""
+        if label != "car" or self.vehicle_provider != "openalpr":
+            return False
+        if key in self.plates_found:
+            return False
+        if self.plate_attempts.get(key, 0) >= self.plate_max_attempts:
+            return False
+        return time.time() - self.last_plate_at.get(key, 0.0) >= self.plate_sample_seconds
 
     def _max_for_label(self, label: str) -> int:
         if label in self.attribute_labels:

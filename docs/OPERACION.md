@@ -296,38 +296,60 @@ Límites: con varias personas a la vez la co-ocurrencia se confunde y el
 desempate por PP-ShiTu es débil. Eventos abiertos (coches aparcados) solo
 cuentan al END. Auditar con `detail=true` y ajustar ventana y dirección.
 
-## 6c. Placas (Rekor Scout / OpenALPR agent → alpr-bridge)
+## 6c. Placas y marca/modelo (OpenALPR SDK → alpr-worker)
 
-Motor comercial (licencia de evaluación 2 semanas, después suscripción Rekor
-por cámara). La clave vive en `config/openalpr/license.conf` (git-ignored,
-montada en `/etc/openalpr/license.conf`). Sin ella `alpr` responde
-`ALPR failed licensing check`.
+Motor comercial Rekor/OpenALPR (licencia de evaluación 2 semanas, después
+suscripción). La clave vive en `config/openalpr/license.conf` (git-ignored,
+montada en `/etc/openalpr/license.conf`). Sin ella el SDK no carga
+(`OpenALPR failed to load (license?)` en el log del worker).
+
+Desde el 7 sep el proveedor de atributos de coche es OpenALPR. No hay segundo
+decode: el ai-router manda al worker el mismo crop (FrameRef en SHM) que ya
+usaba para PULC y recibe placa + color/marca/modelo/tipo/año en una llamada.
+El head PULC `vehicle_attribute` sigue cargado en Triton y en el código, pero
+apagado (`VEHICLE_ATTRIBUTE_PROVIDER=pulc` lo vuelve a encender).
 
 ```text
-openalpr (alprd, país mx, CPU) ── decodifica rtsp://…/user por su cuenta
-   └─ HTTP POST alpr_group → alpr-bridge :8080/rekor
-        └─ casa la placa con el track `car` del adapter (bbox contiene el
-           centro de la placa / IoU con vehicle_region, ±3 s)
-             └─ MQTT deepfrigate/tracked-objects/user  update_type: plate
-                  └─ event-engine: Frigate `sub_label` = placa,
-                     `data.recognized_license_plate` (+ `license_plate{}`),
-                     PG `events` tipo `plate_read` (`specific_plate` si la
-                     placa viene marcada `matched`/`specific`)
+video-engine ── FrameRef (crop RGB del track `car`) ──► ai-router
+   └─ POST alpr-worker:8080/analyze?width&height&plates&vehicle  (RGB crudo)
+        │  Alpr("mx").recognize_ndarray  +  VehicleClassifier.recognize_ndarray
+        ▼
+   ai-router publica en deepfrigate/tracked-objects/{cam}:
+     update_type: classification  (color, body_type, make, make_model, year)
+     update_type: plate           (source: openalpr-sdk, bbox en píxeles de cámara)
+        └─ event-engine: Frigate `sub_label` = placa (o "color modelo tipo"),
+           `data.recognized_license_plate` (+ `license_plate{}`),
+           `data.vehicle_attributes{}`; PG `events` tipo `plate_read`
 ```
 
-- Solo `user`: placas de ~60–70 px. `tienda` y las de calle dan ~12–15 px:
-  ilegibles para cualquier motor. Añadir cámara = archivo en
-  `config/openalpr/stream.d/` + `ALPR_CAMERAS="1:user,2:otra"`.
-- Config del agente: `config/openalpr/alprd.conf` (`country = mx`,
-  `analysis_threads = 1`, `store_plates = 0`, `upload_address` al bridge,
-  `websockets_enabled = 0`). Reiniciar `deepfrigate-openalpr-1` tras cambiar.
-- Bridge: `ALPR_MIN_CONFIDENCE=50` (Rekor 0–100), `ALPR_MATCH_WINDOW_SECONDS=3`.
-  `GET /healthz` da contadores `received/published/unmatched/low_confidence`.
-- Coste: segundo decode de `user` en CPU dentro del agente (~1 core con
-  `analysis_threads = 1`). El tag CUDA (5 GB) exige licencia GPU.
+- Presupuesto por track `car`: `ATTRIBUTE_MAX_PER_TRACK=2` pasadas de
+  atributos (crop mejor → se repite) y hasta `PLATE_MAX_ATTEMPTS=6` pasadas
+  extra cada `PLATE_SAMPLE_SECONDS=1` hasta leer una placa. Las pasadas de
+  placa no pisan los atributos del mejor crop. Crops < `PLATE_MIN_CROP_WIDTH`
+  (120 px) van sin `plates=1` (solo clasificador, ~140 ms).
+- Umbrales: `PLATE_MIN_CONFIDENCE=50` (Rekor 0–100),
+  `OPENALPR_MIN_ATTRIBUTE_SCORE=0.3` (atributos con menos confianza se
+  descartan; de noche IR el color sale 0 y no se publica).
+- Coste: worker ~150–300 ms por crop en CPU, ~15 % de un core con 4 cámaras;
+  ai-router ~10 %. El agente Rekor (decode completo de `user`) gastaba ~80 %.
+- Solo `user` tiene placas legibles (~60–70 px). `tienda` y las de calle dan
+  12–15 px: ilegibles; ahí solo se aprovechan marca/modelo/tipo.
+- `GET alpr-worker:8080/healthz`: `requests/plates/vehicles/errors`.
 - Frigate muestra la placa como sub_label en Explore/Review y en el chip
-  `recognized_license_plate`; `/api/events/explore` y `search` sí la exponen
-  (está en su lista blanca).
+  `recognized_license_plate`; marca/modelo/año aparecen en el panel de
+  atributos (`DeepFrigatePersonAttributes.tsx`: etiquetas `Marca`, `Modelo`,
+  `Año`; requiere reconstruir la web del smoke).
+- Cuerpos OpenALPR ≠ PULC: `sedan-standard`, `suv-crossover`,
+  `truck-standard`, `van-full`, `taxi`, `motorcycle`… Los dashboards que
+  filtren por `body_type` deben aceptar ambos vocabularios.
+
+**Alternativa A (tag `alpr-agent-v1`, perfil `alpr-agent`):** agente Rekor
+Scout `openalpr` (decodifica `rtsp://…/user` por su cuenta, `alprd.conf`,
+`stream.d/`) + `alpr-bridge` (casa la lectura con el track `car` por
+bbox/IoU ±3 s). Lee en cada frame, así que acierta más placas que las 6
+pasadas del worker, a costa de ~1 core. Encender para comparar:
+`docker compose --env-file .env.example --profile alpr-agent up -d openalpr alpr-bridge`.
+Si los dos corren, event-engine se queda con la lectura de mayor confianza.
 
 ## 7. Variables que importan
 
@@ -340,5 +362,8 @@ openalpr (alprd, país mx, CPU) ── decodifica rtsp://…/user por su cuenta
 | `FRIGATE_BRIDGE_UPDATE_SECONDS` | event-engine | 1 | coalescing de UPDATE hacia Frigate |
 | `FRIGATE_EMBED_THUMBNAILS` | event-engine | false | ya no hace falta: Frigate embebe al END |
 | `semantic_search.*` | Frigate YAML | `jinav2`, `large`, `reindex: false` | buscador y embeddings |
-| `ALPR_CAMERAS` / `ALPR_MIN_CONFIDENCE` / `ALPR_MATCH_WINDOW_SECONDS` | alpr-bridge | `1:user` / 50 / 3 | mapeo cámara del agente → nuestra, umbral y ventana de casado |
+| `VEHICLE_ATTRIBUTE_PROVIDER` | ai-router | `openalpr` | `pulc` vuelve al head Triton (código intacto) |
+| `PLATE_MIN_CONFIDENCE` / `PLATE_MIN_CROP_WIDTH` / `PLATE_MAX_ATTEMPTS` / `PLATE_SAMPLE_SECONDS` / `OPENALPR_MIN_ATTRIBUTE_SCORE` | ai-router | 50 / 120 / 6 / 1.0 / 0.3 | placas: umbral, ancho mínimo del crop, reintentos por coche, cadencia; corte de atributos |
+| `ALPR_COUNTRY` / `ALPR_TOP_N` | alpr-worker | `mx` / 5 | país del SDK y candidatos por placa |
+| `ALPR_CAMERAS` / `ALPR_MIN_CONFIDENCE` / `ALPR_MATCH_WINDOW_SECONDS` | alpr-bridge (perfil `alpr-agent`) | `1:user` / 50 / 3 | alternativa A: mapeo cámara del agente → nuestra, umbral y ventana de casado |
 | `TRANSITION_PAIRS` / `_MODE` / `_WINDOW_SECONDS` / `_OVERLAP_SECONDS` / `_MIN_MOVE` / `_DIRECTION` / `_MIN_SCORE` / `_EMBED_WAIT_SECONDS` / `_LABELS` | event-engine | `c4aac4f4eefe:c4aac4f4ef0a` / `cooccurrence` / 60 / 15 / 0.1 / `ignore` / 0.3 / 6 / `car,person` | transiciones entre cámaras; pares vacíos desactiva |

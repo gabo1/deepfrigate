@@ -143,6 +143,16 @@ services:
       ATTRIBUTE_MIN_CROP_HEIGHT: ${ATTRIBUTE_MIN_CROP_HEIGHT:-96}
       VEHICLE_ATTRIBUTE_MIN_CROP_WIDTH: ${VEHICLE_ATTRIBUTE_MIN_CROP_WIDTH:-80}
       VEHICLE_ATTRIBUTE_MIN_CROP_HEIGHT: ${VEHICLE_ATTRIBUTE_MIN_CROP_HEIGHT:-48}
+      # Car crops: "openalpr" = alpr-worker (color, make, model, body type,
+      # year + plate); "pulc" = the previous Triton head (kept, disabled).
+      VEHICLE_ATTRIBUTE_PROVIDER: ${VEHICLE_ATTRIBUTE_PROVIDER:-openalpr}
+      OPENALPR_URL: http://alpr-worker:8080
+      OPENALPR_MIN_ATTRIBUTE_SCORE: ${OPENALPR_MIN_ATTRIBUTE_SCORE:-0.3}
+      OPENALPR_TIMEOUT_SECONDS: ${OPENALPR_TIMEOUT_SECONDS:-5}
+      PLATE_MIN_CONFIDENCE: ${PLATE_MIN_CONFIDENCE:-50}
+      PLATE_MIN_CROP_WIDTH: ${PLATE_MIN_CROP_WIDTH:-120}
+      PLATE_MAX_ATTEMPTS: ${PLATE_MAX_ATTEMPTS:-6}
+      PLATE_SAMPLE_SECONDS: ${PLATE_SAMPLE_SECONDS:-1.0}
     volumes:
       - ./data/ds-snapshots:/opt/ds-snapshots:ro
     depends_on:
@@ -150,6 +160,23 @@ services:
       - triton
       - frame-store
       - qdrant
+      - alpr-worker
+
+  # OpenALPR SDK as a service. ai-router sends the same car crop it already
+  # has (FrameRef) and gets plate + vehicle make/model/color back. Needs
+  # config/openalpr/license.conf (trial key, git-ignored). CPU only.
+  alpr-worker:
+    build:
+      context: .
+      dockerfile: services/alpr-worker/Dockerfile
+      args:
+        OPENALPR_SDK_IMAGE: ${OPENALPR_SDK_IMAGE:-openalpr/agent:4.1.13-sdk}
+    restart: unless-stopped
+    environment:
+      ALPR_COUNTRY: ${ALPR_COUNTRY:-mx}
+      ALPR_TOP_N: ${ALPR_TOP_N:-5}
+    volumes:
+      - ./config/openalpr/license.conf:/etc/openalpr/license.conf:ro
 
   frame-store:
     build:
@@ -205,11 +232,13 @@ services:
     depends_on:
       - mqtt
 
-  # Rekor Scout (OpenALPR) agent: decodes `user` on its own and POSTs plate
-  # groups to alpr-bridge. Needs config/openalpr/license.conf (trial key,
-  # git-ignored). CPU build; the CUDA tag is 5 GB and needs a GPU license.
+  # Alternative A (tag alpr-agent-v1): Rekor Scout agent decodes `user` on its
+  # own and POSTs plate groups to alpr-bridge, which matches them to DeepStream
+  # tracks. Superseded by alpr-worker (same crop, no second decode); kept under
+  # `--profile alpr-agent` for comparison. Same license file.
   openalpr:
     image: ${OPENALPR_IMAGE:-openalpr/agent:raccoon-nocuda-runtime}
+    profiles: ["alpr-agent"]
     restart: unless-stopped
     cap_add:
       - SYS_NICE
@@ -225,6 +254,7 @@ services:
     build:
       context: .
       dockerfile: services/alpr-bridge/Dockerfile
+    profiles: ["alpr-agent"]
     restart: unless-stopped
     environment:
       MQTT_HOST: mqtt

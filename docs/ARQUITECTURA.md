@@ -112,10 +112,16 @@ Triton. Código: `services/ai-router/app/attribute.py`,
 `models/person-attribute/README.md`,
 `models/vehicle-attribute/README.md`.
 
-**Placas** (7 sep) no siguen este patrón: el agente Rekor Scout
-(`openalpr`) decodifica `user` por su cuenta y `alpr-bridge` casa cada
-lectura con el track `car` del adapter (`update_type: plate`). Ver
-`docs/OPERACION.md` §6c.
+**Coches: OpenALPR en vez de PULC (7 sep).** El crop `car` sigue el mismo
+patrón (FrameRef en SHM → ai-router) pero el modelo no está en Triton: va
+por HTTP al `alpr-worker` (SDK comercial Rekor, CPU, licencia en
+`config/openalpr/license.conf`), que devuelve placa + color/marca/modelo/
+tipo/año en una llamada. Salen dos updates: `classification` (`model:
+openalpr-vehicle`) y `plate` (`source: openalpr-sdk`). El head PULC
+`vehicle_attribute` sigue en Triton y en `vehicle_attribute.py`, apagado con
+`VEHICLE_ATTRIBUTE_PROVIDER=openalpr`. La alternativa A (agente Rekor Scout
+con su propio decode + `alpr-bridge`, tag `alpr-agent-v1`) queda en el
+perfil compose `alpr-agent`. Ver `docs/OPERACION.md` §6c.
 
 Embeddings (PP-ShiTu) son el mismo patrón: crop SHM → Triton → Qdrant,
 `update_type: embedding` / `visual_match`. Tampoco son SGIE.

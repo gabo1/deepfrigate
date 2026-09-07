@@ -113,6 +113,28 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
   eventos debido a timeouts del único worker MQTT es un trabajo aparte:
   desacoplar HTTP Frigate/coalescer por `object_id`; no reiniciar ni purgar
   MQTT para “arreglarlo”. Ver `docs/mejores-thumbnails.md`.
+- **OpenALPR reemplaza a PULC en coches (7 sep 12:40):** nuevo
+  `services/alpr-worker` (FROM `openalpr/agent:4.1.13-sdk` + FastAPI;
+  `POST /analyze` recibe el crop RGB crudo y corre `Alpr("mx")` +
+  `VehicleClassifier` bajo un lock; `/healthz` con contadores). ai-router:
+  `app/openalpr.py` (`OpenALPRService.enrich` → `AttributeResult` + placas,
+  `plate_update` traslada el bbox del crop a píxeles de cámara) y
+  `VEHICLE_ATTRIBUTE_PROVIDER=openalpr|pulc` en el ramal `car` de
+  `_classification_update`; PULC (`vehicle_attribute.py`, modelo en Triton)
+  queda intacto y apagado. Reintentos de placa por coche
+  (`PLATE_MAX_ATTEMPTS=6` cada `PLATE_SAMPLE_SECONDS=1` hasta leer una; no
+  gastan `ATTRIBUTE_MAX_PER_TRACK` ni pisan los atributos del mejor crop).
+  event-engine: `vehicle_sub_label` = "color make_model body_type"; espejo a
+  `person_attributes` incluye make/make_model/year; overlay
+  `DeepFrigatePersonAttributes.tsx` con `Marca/Modelo/Año` (falta rebuild web).
+  Verificado en vivo: `white ford_transit van-full`, `yellow taxi hyundai`,
+  placa `JUD4423` 92.55 % desde el SDK (misma lectura que el agente, 92.8 %).
+  CPU: worker ~15 %, ai-router ~10 %; agente Rekor ~80 %. `openalpr` +
+  `alpr-bridge` pasan al perfil compose `alpr-agent` (alternativa A, tag
+  `alpr-agent-v1`); siguen corriendo hoy para comparar aciertos y se apagan
+  al terminar la comparación. Tests: alpr-worker 3, ai-router 44,
+  event-engine 73. Ojo: `.env` no existe en la VM; compose siempre con
+  `--env-file .env.example`.
 - **Placas con Rekor Scout (7 sep 06:00):** `openalpr/agent:latest` no existe;
   tag usado `raccoon-nocuda-runtime` (CPU, 858 MB; CUDA = 5 GB y licencia
   GPU). Motor `alpr` 6.0.4, comercial: sin clave responde `ALPR failed

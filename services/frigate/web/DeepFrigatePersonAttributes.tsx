@@ -22,11 +22,17 @@ const LABELS: Record<string, string> = {
   lower_color: "Abajo",
   color: "Color",
   body_type: "Tipo",
+  make: "Marca",
+  make_model: "Modelo",
+  year: "Año",
 };
 
 const ORDER = [
   "color",
+  "make",
+  "make_model",
   "body_type",
+  "year",
   "gender",
   "age",
   "orientation",

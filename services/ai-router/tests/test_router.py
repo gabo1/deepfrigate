@@ -46,6 +46,13 @@ def _consumer() -> FrameRefConsumer:
     consumer.last_bbox = {}
     consumer.color_votes = {}
     consumer.pulc_items = {}
+    consumer.plate_reads = {}
+    consumer.plate_attempts = {}
+    consumer.last_plate_at = {}
+    consumer.plates_found = set()
+    consumer.plate_max_attempts = 6
+    consumer.plate_sample_seconds = 1.0
+    consumer.vehicle_provider = "openalpr"
     consumer.lock = Lock()
     return consumer
 
@@ -95,6 +102,7 @@ def test_router_queues_car_when_vehicle_attributes_enabled() -> None:
 
     consumer.pending.discard(("trafico", 7))
     consumer.inference_counts[("trafico", 7)] = 2
+    consumer.plates_found.add(("trafico", 7))  # plate done: no retry pass either
     consumer._on_message(None, None, _message("car"))
     assert consumer.work.empty()
 
@@ -276,4 +284,70 @@ def test_router_does_not_queue_person_for_embedding_during_track() -> None:
     consumer.last_color_at[key] = time.time()
 
     consumer._on_message(None, None, _message("person", track_id=8))
+    assert consumer.work.empty()
+
+
+def test_classification_car_uses_openalpr_and_queues_plate() -> None:
+    from app.openalpr import OpenALPRResult
+
+    consumer = _consumer()
+    consumer.attribute_labels = {"person", "car"}
+    ref = {"id": "ref-9", "camera_id": "trafico", "track_id": 7, "timestamp": 1.0, "width": 300, "height": 200, "bbox": {"x": 10, "y": 20, "width": 300, "height": 200}}
+    plate = {"plate": "JD6085B", "confidence": 61.0, "bbox": {"x": 1, "y": 2, "width": 60, "height": 30}, "candidates": []}
+    consumer.attributes = SimpleNamespace(model_name="person-attribute")
+    consumer.openalpr = SimpleNamespace(
+        model_name="openalpr-vehicle",
+        enrich=lambda ref, pixels: OpenALPRResult(
+            attributes=(AttributeItem("color", "white", 0.8), AttributeItem("make", "nissan", 0.5)),
+            inference_ms=250.0,
+            plates=(plate,),
+        ),
+    )
+    consumer.vehicle_attributes = SimpleNamespace(
+        enrich=lambda ref, pixels: (_ for _ in ()).throw(AssertionError("PULC must stay disabled"))
+    )
+    update = consumer._classification_update(ref, b"", "car", "ref-9", 100.0, infer_attrs=True, sample_color=False)
+    assert update["data"]["model"] == "openalpr-vehicle"
+    assert {(a["name"], a["value"]) for a in update["data"]["attributes"]} == {("color", "white"), ("make", "nissan")}
+    queued = consumer.plate_reads[("trafico", 7)]
+    assert len(queued) == 1 and queued[0]["update_type"] == "plate"
+    assert queued[0]["data"]["plate"] == "JD6085B" and queued[0]["data"]["bbox"]["x"] == 11.0
+    assert queued[0]["data"]["vehicle"] == {"color": "white", "make": "nissan"}
+
+    consumer.vehicle_provider = "pulc"
+    consumer.vehicle_attributes = SimpleNamespace(
+        model_name="vehicle-attribute",
+        enrich=lambda ref, pixels: OpenALPRResult(attributes=(AttributeItem("color", "gray", 0.7),), inference_ms=5.0),
+    )
+    update = consumer._classification_update(ref, b"", "car", "ref-9", 100.0, infer_attrs=True, sample_color=False)
+    assert update["data"]["model"] == "vehicle-attribute"
+
+
+def test_router_retries_cars_for_plates_until_one_is_read() -> None:
+    consumer = _consumer()
+    consumer.attribute_labels = {"person", "car"}
+    key = ("trafico", 7)
+    consumer.inference_counts[key] = 2  # attribute budget spent
+
+    consumer._on_message(None, None, _message("car"))
+    assert consumer.work.get_nowait() == ("trafico", 7, "car")
+    consumer.pending.discard(key)
+
+    consumer.last_plate_at[key] = time.time()  # sampled just now: wait
+    consumer._on_message(None, None, _message("car"))
+    assert consumer.work.empty()
+
+    consumer.last_plate_at[key] = time.time() - 5
+    consumer.plate_attempts[key] = 6  # budget spent
+    consumer._on_message(None, None, _message("car"))
+    assert consumer.work.empty()
+
+    consumer.plate_attempts[key] = 1
+    consumer.plates_found.add(key)  # already read: stop
+    consumer._on_message(None, None, _message("car"))
+    assert consumer.work.empty()
+
+    consumer.plates_found.discard(key)
+    consumer.vehicle_provider = "pulc"  # no retries with the old head
+    consumer._on_message(None, None, _message("car"))
     assert consumer.work.empty()
