@@ -1411,6 +1411,15 @@ def test_plate_becomes_frigate_sub_label_and_recognized_plate(monkeypatch):
     bridge.observe(_plate(plate="JO6085B", confidence=40.0, ts=106.0))
     assert store.rows["frigate-event-1"]["sub_label"] == "JD6085B"
 
+    # Two agreeing passes (votes=2) beat one louder single read.
+    voted = _plate(plate="JD6O85B", confidence=55.0, ts=106.5)
+    voted["data"].update({"source": "openalpr-sdk", "votes": 2, "reads": 3})
+    bridge.observe(voted)
+    row = store.rows["frigate-event-1"]
+    assert row["sub_label"] == "JD6O85B" and row["data"]["license_plate"]["votes"] == 2
+    bridge.observe(_plate(plate="JD6085B", confidence=95.0, ts=106.8))  # single read, votes=1
+    assert store.rows["frigate-event-1"]["sub_label"] == "JD6O85B"
+
     # Vehicle attributes must not overwrite the plate as sub_label.
     bridge.observe({
         "type": "tracked_object_update", "object_id": "tienda-42", "camera_id": "tienda", "track_id": 42,
@@ -1419,7 +1428,7 @@ def test_plate_becomes_frigate_sub_label_and_recognized_plate(monkeypatch):
                  "attributes": [{"name": "color", "value": "gray", "score": 0.9}, {"name": "body_type", "value": "sedan", "score": 0.8}],
                  "frame_ref_id": "tienda-42-1-abcd", "inference_ms": 1.0, "end_to_end_ms": 1.0},
     })
-    assert store.rows["frigate-event-1"]["sub_label"] == "JD6085B"
+    assert store.rows["frigate-event-1"]["sub_label"] == "JD6O85B"
     assert store.rows["frigate-event-1"]["data"]["vehicle_attributes"]["color"]["value"] == "gray"
 
 

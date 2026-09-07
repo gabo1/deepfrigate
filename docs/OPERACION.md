@@ -334,13 +334,25 @@ video-engine ── FrameRef (crop RGB del track `car`) ──► ai-router
 
 - Presupuesto por track `car`: `ATTRIBUTE_MAX_PER_TRACK=2` pasadas de
   atributos (crop mejor → se repite) y hasta `PLATE_MAX_ATTEMPTS=6` pasadas
-  extra cada `PLATE_SAMPLE_SECONDS=1` hasta leer una placa. Las pasadas de
-  placa no pisan los atributos del mejor crop. Crops < `PLATE_MIN_CROP_WIDTH`
-  (120 px) van sin `plates=1` (solo clasificador, ~140 ms).
-- Umbrales: `PLATE_MIN_CONFIDENCE=80` (Rekor 0–100; era 50 hasta el 7 sep 14:30,
-  ver comparación abajo),
-  `OPENALPR_MIN_ATTRIBUTE_SCORE=0.3` (atributos con menos confianza se
-  descartan; de noche IR el color sale 0 y no se publica).
+  extra cada `PLATE_SAMPLE_SECONDS=1`. Las pasadas de placa no pisan los
+  atributos del mejor crop. Crops < `PLATE_MIN_CROP_WIDTH` (120 px) van sin
+  `plates=1` (solo clasificador, ~140 ms).
+- **Voto entre pasadas (7 sep 16:00, `app/plate_vote.py`).** Cada pasada con
+  lectura ≥ `PLATE_VOTE_MIN_CONFIDENCE=50` entra en la urna del track: suma la
+  confianza de la placa leída y de sus candidatos. Gana la suma mayor; una
+  placa solo puede ganar si fue lectura principal al menos una vez. Se
+  publica `update_type: plate` con `votes` (pasadas que la leyeron arriba) y
+  `reads` cuando la ganadora tiene confianza ≥ `PLATE_MIN_CONFIDENCE=80` **o**
+  ≥ `PLATE_MIN_VOTES=2` lecturas coincidentes; se vuelve a publicar cada vez
+  que suben los votos. Con `PLATE_STOP_VOTES=3` el track deja de gastar
+  pasadas. event-engine ordena lecturas por `(votes, confidence)`: dos
+  pasadas al 72 % ganan a una sola al 90 %, también frente al agente Rekor
+  (que llega con `votes` = 1). `license_plate{}` en Frigate guarda
+  `votes`/`reads`.
+- Umbrales: `PLATE_MIN_CONFIDENCE=80` (Rekor 0–100; era 50 hasta el 7 sep
+  14:30, ver comparación abajo), `OPENALPR_MIN_ATTRIBUTE_SCORE=0.3`
+  (atributos con menos confianza se descartan; de noche IR el color sale 0 y
+  no se publica).
 - Coste: worker ~150–300 ms por crop en CPU, ~15 % de un core con 4 cámaras;
   ai-router ~10 %. El agente Rekor (decode completo de `user`) gastaba ~80 %.
 - Solo `user` tiene placas legibles (~60–70 px). `tienda` y las de calle dan
@@ -365,10 +377,10 @@ Si los dos corren, event-engine se queda con la lectura de mayor confianza.
 Comparación 7 sep 12:42–14:10 (ambos encendidos): SDK leyó 82 tracks, agente
 85, unión 115. En los 52 leídos por los dos coincidió la placa en 28 (54 %).
 El SDK ve un crop y publica desde 50 %; el agente vota entre frames y sale
-~93 %. Decisión 7 sep 14:30: `PLATE_MIN_CONFIDENCE=80`. Una lectura < 80 no
-se publica y la pasada cuenta como intento; el coche sigue teniendo hasta
-`PLATE_MAX_ATTEMPTS` oportunidades. Se leerán menos placas y más fiables.
-Si la cobertura cae demasiado, la siguiente palanca es votar entre pasadas.
+~93 %. Decisión 7 sep 14:30: `PLATE_MIN_CONFIDENCE=80`. Medido 41 min después:
+acuerdo 37 de 53 (70 %), pero cobertura SDK 65 tracks frente a 104 del agente.
+Por eso el voto entre pasadas (16:00): recupera lecturas de 50–80 % cuando dos
+pasadas coinciden, sin bajar el umbral de una lectura sola.
 
 ## 7. Variables que importan
 
@@ -382,7 +394,8 @@ Si la cobertura cae demasiado, la siguiente palanca es votar entre pasadas.
 | `FRIGATE_EMBED_THUMBNAILS` | event-engine | false | ya no hace falta: Frigate embebe al END |
 | `semantic_search.*` | Frigate YAML | `jinav2`, `large`, `reindex: false` | buscador y embeddings |
 | `VEHICLE_ATTRIBUTE_PROVIDER` | ai-router | `openalpr` | `pulc` vuelve al head Triton (código intacto) |
-| `PLATE_MIN_CONFIDENCE` / `PLATE_MIN_CROP_WIDTH` / `PLATE_MAX_ATTEMPTS` / `PLATE_SAMPLE_SECONDS` / `OPENALPR_MIN_ATTRIBUTE_SCORE` | ai-router | 80 / 120 / 6 / 1.0 / 0.3 | placas: umbral, ancho mínimo del crop, reintentos por coche, cadencia; corte de atributos |
+| `PLATE_MIN_CONFIDENCE` / `PLATE_MIN_CROP_WIDTH` / `PLATE_MAX_ATTEMPTS` / `PLATE_SAMPLE_SECONDS` / `OPENALPR_MIN_ATTRIBUTE_SCORE` | ai-router | 80 / 120 / 6 / 1.0 / 0.3 | placas: umbral de una lectura sola, ancho mínimo del crop, pasadas por coche, cadencia; corte de atributos |
+| `PLATE_VOTE_MIN_CONFIDENCE` / `PLATE_MIN_VOTES` / `PLATE_STOP_VOTES` | ai-router | 50 / 2 / 3 | voto entre pasadas: piso para entrar en la urna, lecturas coincidentes para publicar, votos para dejar de gastar pasadas |
 | `ALPR_COUNTRY` / `ALPR_TOP_N` | alpr-worker | `mx` / 5 | país del SDK y candidatos por placa |
 | `ALPR_CAMERAS` / `ALPR_MIN_CONFIDENCE` / `ALPR_MATCH_WINDOW_SECONDS` | alpr-bridge (perfil `alpr-agent`) | `1:user` / 50 / 3 | alternativa A: mapeo cámara del agente → nuestra, umbral y ventana de casado |
 | `TRANSITION_PAIRS` / `_MODE` / `_WINDOW_SECONDS` / `_OVERLAP_SECONDS` / `_MIN_MOVE` / `_DIRECTION` / `_MIN_SCORE` / `_EMBED_WAIT_SECONDS` / `_LABELS` | event-engine | `c4aac4f4eefe:c4aac4f4ef0a` / `cooccurrence` / 60 / 15 / 0.1 / `ignore` / 0.3 / 6 / `car,person` | transiciones entre cámaras; pares vacíos desactiva |

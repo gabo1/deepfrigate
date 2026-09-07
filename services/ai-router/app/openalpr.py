@@ -57,8 +57,14 @@ def plate_update(
     age_ms: float,
     *,
     vehicle: dict[str, Any] | None = None,
+    votes: int = 1,
+    reads: int = 1,
 ) -> dict[str, Any]:
-    """Contract-shaped ``update_type: plate`` from one crop read."""
+    """Contract-shaped ``update_type: plate`` from one crop read or a vote.
+
+    ``votes``/``reads`` tell the consumer how many passes agreed; event-engine
+    prefers more votes before higher confidence.
+    """
     bbox = plate.get("bbox")
     center = None
     if bbox:
@@ -89,6 +95,8 @@ def plate_update(
             "plate_center": center,
             "vehicle": {k: v.get("value") for k, v in (vehicle or {}).items() if isinstance(v, dict)} or None,
             "source": "openalpr-sdk",
+            "votes": int(votes),
+            "reads": int(reads),
             "frame_ref_id": ref_id,
             "inference_ms": round(inference_ms, 3),
             "end_to_end_ms": round(age_ms, 3),
@@ -108,7 +116,7 @@ class OpenALPRService:
         url: str,
         *,
         min_attribute_score: float = 0.3,
-        plate_min_confidence: float = 80.0,
+        plate_min_confidence: float = 50.0,
         plate_min_crop_width: int = 120,
         timeout: float = 5.0,
     ) -> None:

@@ -32,7 +32,7 @@ def test_attributes_keep_pulc_names_and_drop_weak_fields() -> None:
 
 
 def test_plate_update_matches_contract_and_maps_box_to_frame() -> None:
-    update = plate_update(REF, PLATE, "ref-1", 250.0, 900.0, vehicle={"color": {"value": "white"}})
+    update = plate_update(REF, PLATE, "ref-1", 250.0, 900.0, vehicle={"color": {"value": "white"}}, votes=2, reads=3)
     jsonschema.Draft202012Validator(json.loads(SCHEMA.read_text())).validate(update)
     assert update["object_id"] == "user-7" and update["update_type"] == "plate"
     data = update["data"]
@@ -40,6 +40,7 @@ def test_plate_update_matches_contract_and_maps_box_to_frame() -> None:
     assert data["bbox"] == {"x": 429.0, "y": 398.0, "width": 69.0, "height": 32.0}
     assert data["plate_center"] == [463.5, 414.0]
     assert len(data["candidates"]) == 5 and data["vehicle"] == {"color": "white"}
+    assert data["votes"] == 2 and data["reads"] == 3
 
 
 def test_service_skips_plates_on_small_crops_and_filters_confidence(monkeypatch) -> None:
@@ -50,10 +51,10 @@ def test_service_skips_plates_on_small_crops_and_filters_confidence(monkeypatch)
         return {"vehicle": VEHICLE, "plates": [PLATE, {"plate": "XX", "confidence": 20.0}]}
 
     monkeypatch.setattr(OpenALPRService, "_post", fake_post)
-    strict = OpenALPRService("http://alpr-worker:8080/")
-    assert strict.plate_min_confidence == 80.0
-    assert strict.enrich(REF, b"\0" * (300 * 200 * 3)).plates == ()  # 60 % dropped by default
-    service = OpenALPRService("http://alpr-worker:8080/", plate_min_confidence=50, plate_min_crop_width=120)
+    strict = OpenALPRService("http://alpr-worker:8080/", plate_min_confidence=80)
+    assert strict.enrich(REF, b"\0" * (300 * 200 * 3)).plates == ()  # 60 % below the floor
+    service = OpenALPRService("http://alpr-worker:8080/", plate_min_crop_width=120)
+    assert service.plate_min_confidence == 50.0  # vote floor; publishing decides with votes
     result = service.enrich(REF, b"\0" * (300 * 200 * 3))
     assert isinstance(result, OpenALPRResult)
     assert calls[-1] == "/analyze?width=300&height=200&plates=1&vehicle=1"

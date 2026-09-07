@@ -62,14 +62,18 @@ Campos requeridos en el esquema. El ancla geométrica es el **pie** del bbox
 placa en píxeles de la cámara (el worker ve solo el crop; ai-router suma el
 origen del bbox del FrameRef), `plate_center`, `vehicle` (`color`, `make`,
 `make_model`, `body_type`, `year` que dio el clasificador), `source:
-openalpr-sdk`, `frame_ref_id`, `inference_ms`, `end_to_end_ms`,
+openalpr-sdk`, `votes` (pasadas cuya lectura principal fue esta placa) y
+`reads` (pasadas con lectura, total), `frame_ref_id`, `inference_ms`,
+`end_to_end_ms`,
 `matched`/`specific` (false salvo listas de vigilancia). El `object_id` es el
 track `car` cuyo crop se analizó. La alternativa A (`alpr-bridge`) emite el
 mismo tipo con `source: rekor-scout`, `vehicle_region`, `travel_direction`,
 `epoch_start`/`epoch_end` y `agent_camera_id`. event-engine lo convierte en
 `plate_read` (o `specific_plate`) y en Frigate en `sub_label` +
-`data.recognized_license_plate`; si llegan varias lecturas gana la de mayor
-`confidence`.
+`data.recognized_license_plate`; si llegan varias lecturas gana la de más
+`votes` (1 si falta) y, a igualdad, la de mayor `confidence`. Los
+`candidates` de una lectura votada son la suma de confianzas por placa a lo
+largo de las pasadas, no la salida cruda del motor.
 
 `classification` de coches con `model: openalpr-vehicle`
 (`model_version: OpenALPR/4.1.13`): atributos `color`, `body_type` (vocabulario

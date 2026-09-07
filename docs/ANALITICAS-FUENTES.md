@@ -1726,10 +1726,14 @@ Infinity, y ya se descartó (§8.5). Crear el datasource PG es más corto.
   lecturas (y los desacuerdos) hay que ir a `events.plate_read` en la PG de
   DeepFrigate. Con los dos motores encendidos, en 52 tracks leídos por ambos
   coincidieron 28 (54 %): el SDK leía un solo crop y aceptaba ≥ 50 %; el
-  agente vota entre frames. Desde el 7 sep 14:30 `PLATE_MIN_CONFIDENCE=80`:
-  menos placas, más fiables. Aun así tratar la placa como **lectura**, no
-  como dato fiscal. Las filas `plate_read` anteriores a esa hora mezclan
-  umbrales.
+  agente vota entre frames. Desde el 7 sep 14:30 `PLATE_MIN_CONFIDENCE=80`
+  (acuerdo 70 %, cobertura 65 vs 104 tracks) y desde las 16:00 el SDK también
+  vota entre sus pasadas (`data.votes`/`reads` en `license_plate{}` y en
+  `events.plate_read`). Un track puede tener **varias filas `plate_read`** del
+  SDK (una por subida de votos): para contar tracks usar `count(DISTINCT
+  object_id)`, para la placa final la fila con más `votes`. Aun así tratar la
+  placa como **lectura**, no como dato fiscal. Las filas anteriores a las
+  14:30 mezclan umbrales.
 - **Transiciones: peatones fiables, coches con falsos.** Las de `person`
   salen con gap 0–5 s y un candidato. Las de `car` incluyen coches
   estacionados: tracks vivos 1–8 h (`c4aac4f4ef0a-2`, `c4aac4f4eefe-1`) cuyo

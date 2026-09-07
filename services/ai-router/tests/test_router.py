@@ -47,6 +47,10 @@ def _consumer() -> FrameRefConsumer:
     consumer.color_votes = {}
     consumer.pulc_items = {}
     consumer.plate_reads = {}
+    consumer.plate_votes = {}
+    consumer.plate_min_confidence = 80.0
+    consumer.plate_min_votes = 2
+    consumer.plate_stop_votes = 3
     consumer.plate_attempts = {}
     consumer.last_plate_at = {}
     consumer.plates_found = set()
@@ -287,20 +291,24 @@ def test_router_does_not_queue_person_for_embedding_during_track() -> None:
     assert consumer.work.empty()
 
 
-def test_classification_car_uses_openalpr_and_queues_plate() -> None:
+def test_classification_car_uses_openalpr_and_votes_plates() -> None:
     from app.openalpr import OpenALPRResult
 
     consumer = _consumer()
     consumer.attribute_labels = {"person", "car"}
     ref = {"id": "ref-9", "camera_id": "trafico", "track_id": 7, "timestamp": 1.0, "width": 300, "height": 200, "bbox": {"x": 10, "y": 20, "width": 300, "height": 200}}
-    plate = {"plate": "JD6085B", "confidence": 61.0, "bbox": {"x": 1, "y": 2, "width": 60, "height": 30}, "candidates": []}
+    reads = iter([
+        {"plate": "JD6085B", "confidence": 61.0, "bbox": {"x": 1, "y": 2, "width": 60, "height": 30}, "candidates": [{"plate": "JO6085B", "confidence": 55.0}]},
+        {"plate": "JD6085B", "confidence": 72.0, "bbox": {"x": 3, "y": 2, "width": 60, "height": 30}, "candidates": []},
+        {"plate": "JD6O85B", "confidence": 90.0, "bbox": None, "candidates": [{"plate": "JD6085B", "confidence": 80.0}]},
+    ])
     consumer.attributes = SimpleNamespace(model_name="person-attribute")
     consumer.openalpr = SimpleNamespace(
         model_name="openalpr-vehicle",
         enrich=lambda ref, pixels: OpenALPRResult(
             attributes=(AttributeItem("color", "white", 0.8), AttributeItem("make", "nissan", 0.5)),
             inference_ms=250.0,
-            plates=(plate,),
+            plates=(next(reads),),
         ),
     )
     consumer.vehicle_attributes = SimpleNamespace(
@@ -309,10 +317,20 @@ def test_classification_car_uses_openalpr_and_queues_plate() -> None:
     update = consumer._classification_update(ref, b"", "car", "ref-9", 100.0, infer_attrs=True, sample_color=False)
     assert update["data"]["model"] == "openalpr-vehicle"
     assert {(a["name"], a["value"]) for a in update["data"]["attributes"]} == {("color", "white"), ("make", "nissan")}
+    assert ("trafico", 7) not in consumer.plate_reads  # one 61 % read: not yet
+
+    consumer._classification_update(ref, b"", "car", "ref-9", 100.0, infer_attrs=True, sample_color=False)
     queued = consumer.plate_reads[("trafico", 7)]
     assert len(queued) == 1 and queued[0]["update_type"] == "plate"
-    assert queued[0]["data"]["plate"] == "JD6085B" and queued[0]["data"]["bbox"]["x"] == 11.0
-    assert queued[0]["data"]["vehicle"] == {"color": "white", "make": "nissan"}
+    data = queued[0]["data"]
+    assert data["plate"] == "JD6085B" and data["votes"] == 2 and data["reads"] == 2
+    assert data["confidence"] == 72.0 and data["bbox"]["x"] == 13.0  # latest read of that plate
+    assert data["vehicle"] == {"color": "white", "make": "nissan"}
+
+    consumer._classification_update(ref, b"", "car", "ref-9", 100.0, infer_attrs=True, sample_color=False)
+    # A louder misread (JD6O85B 90 %) does not flip the vote; JD6085B keeps the sum.
+    assert len(consumer.plate_reads[("trafico", 7)]) == 1
+    assert consumer.plate_votes[("trafico", 7)].consensus().plate == "JD6085B"
 
     consumer.vehicle_provider = "pulc"
     consumer.vehicle_attributes = SimpleNamespace(
@@ -343,7 +361,7 @@ def test_router_retries_cars_for_plates_until_one_is_read() -> None:
     assert consumer.work.empty()
 
     consumer.plate_attempts[key] = 1
-    consumer.plates_found.add(key)  # already read: stop
+    consumer.plates_found.add(key)  # vote settled: stop
     consumer._on_message(None, None, _message("car"))
     assert consumer.work.empty()
 

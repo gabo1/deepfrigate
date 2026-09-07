@@ -88,6 +88,15 @@ def vehicle_sub_label(summary: dict[str, Any]) -> str | None:
     return " ".join(parts)[:100]
 
 
+def _plate_rank(data: dict[str, Any]) -> tuple[int, float]:
+    """Order plate reads: agreeing passes first (`votes`, default 1), then confidence."""
+    try:
+        votes = int(data.get("votes") or 1)
+    except (TypeError, ValueError):
+        votes = 1
+    return (votes, float(data.get("confidence") or 0))
+
+
 @dataclass
 class _PendingTrack:
     start_event: dict[str, Any]
@@ -873,7 +882,8 @@ class FrigateReviewBridge:
             self._persist_plate(object_id, update)
             return
         previous = (pending.last_plate or {}).get("data") or {}
-        if float(data.get("confidence") or 0) >= float(previous.get("confidence") or 0):
+        # More agreeing reads beat one louder read; ties go to confidence.
+        if _plate_rank(data) >= _plate_rank(previous):
             pending.last_plate = update
         if pending.created:
             self._persist_plate(object_id, pending.last_plate or update)
@@ -902,6 +912,8 @@ class FrigateReviewBridge:
                     "region": data.get("region"),
                     "candidates": (data.get("candidates") or [])[:5],
                     "source": data.get("source"),
+                    "votes": data.get("votes"),
+                    "reads": data.get("reads"),
                     "read_at": float(update.get("timestamp") or 0),
                 },
             },

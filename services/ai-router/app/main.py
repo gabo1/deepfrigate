@@ -33,6 +33,7 @@ from .clothing_color import (
 from .embedding import VehicleEmbeddingService
 from .explore_thumb import load_explore_thumb
 from .openalpr import MODEL_VERSION as OPENALPR_MODEL_VERSION, OpenALPRService, plate_update
+from .plate_vote import PlateBallot
 from .vehicle_attribute import (
     MODEL_VERSION as VEHICLE_MODEL_VERSION,
     VehicleAttributeService,
@@ -156,6 +157,8 @@ class FrameRefConsumer:
         # PLATE_MAX_ATTEMPTS) until one plate is read.
         self.plate_attempts: dict[tuple[str, int], int] = {}
         self.last_plate_at: dict[tuple[str, int], float] = {}
+        # Reads of every pass, voted; `plates_found` = vote settled, stop.
+        self.plate_votes: dict[tuple[str, int], PlateBallot] = {}
         self.plates_found: set[tuple[str, int]] = set()
         self.lock = Lock()
         self.embedding = VehicleEmbeddingService(
@@ -189,10 +192,15 @@ class FrameRefConsumer:
         self.openalpr = OpenALPRService(
             os.getenv("OPENALPR_URL", "http://alpr-worker:8080"),
             min_attribute_score=float(os.getenv("OPENALPR_MIN_ATTRIBUTE_SCORE", "0.3")),
-            plate_min_confidence=float(os.getenv("PLATE_MIN_CONFIDENCE", "80")),
+            # Floor for a read to enter the vote; publishing needs
+            # PLATE_MIN_CONFIDENCE or PLATE_MIN_VOTES agreeing reads.
+            plate_min_confidence=float(os.getenv("PLATE_VOTE_MIN_CONFIDENCE", "50")),
             plate_min_crop_width=int(os.getenv("PLATE_MIN_CROP_WIDTH", "120")),
             timeout=float(os.getenv("OPENALPR_TIMEOUT_SECONDS", "5")),
         )
+        self.plate_min_confidence = float(os.getenv("PLATE_MIN_CONFIDENCE", "80"))
+        self.plate_min_votes = int(os.getenv("PLATE_MIN_VOTES", "2"))
+        self.plate_stop_votes = int(os.getenv("PLATE_STOP_VOTES", "3"))
         self.plate_max_attempts = int(os.getenv("PLATE_MAX_ATTEMPTS", "6"))
         self.plate_sample_seconds = float(os.getenv("PLATE_SAMPLE_SECONDS", "1.0"))
         if self.plate_max_attempts < 0 or self.plate_sample_seconds <= 0:
@@ -482,7 +490,8 @@ class FrameRefConsumer:
                 )
             with self.lock:
                 plates = self.plate_reads.pop(key, [])
-                if plates:
+                ballot = self.plate_votes.get(key)
+                if ballot is not None and ballot.settled(self.plate_stop_votes):
                     self.plates_found.add(key)
             for plate in plates:
                 self._publish_update(
@@ -567,14 +576,31 @@ class FrameRefConsumer:
                 model_name = self.openalpr.model_name
                 model_version = OPENALPR_MODEL_VERSION
                 if result.plates:
-                    best = result.plates[0]
                     vehicle = {item.name: {"value": item.value} for item in result.attributes}
                     with self.lock:
-                        self.plate_reads.setdefault(key, []).append(
-                            plate_update(
-                                ref, best, ref_id, result.inference_ms, age_ms, vehicle=vehicle
+                        ballot = self.plate_votes.setdefault(key, PlateBallot())
+                        ballot.add(result.plates[0])
+                        agreed = ballot.publishable(self.plate_min_confidence, self.plate_min_votes)
+                        if agreed is not None:
+                            self.plate_reads.setdefault(key, []).append(
+                                plate_update(
+                                    ref,
+                                    {
+                                        "plate": agreed.plate,
+                                        "confidence": agreed.confidence,
+                                        "region": agreed.region,
+                                        "region_confidence": agreed.region_confidence,
+                                        "candidates": agreed.candidates,
+                                        "bbox": agreed.bbox,
+                                    },
+                                    ref_id,
+                                    result.inference_ms,
+                                    age_ms,
+                                    vehicle=vehicle,
+                                    votes=agreed.votes,
+                                    reads=agreed.reads,
+                                )
                             )
-                        )
             elif label == "car":
                 result = self.vehicle_attributes.enrich(ref, pixels)
                 model_name = self.vehicle_attributes.model_name
@@ -728,6 +754,7 @@ class FrameRefConsumer:
             self.color_votes.pop(key, None)
             self.pulc_items.pop(key, None)
             self.plate_reads.pop(key, None)
+            self.plate_votes.pop(key, None)
             self.plate_attempts.pop(key, None)
             self.last_plate_at.pop(key, None)
             self.plates_found.discard(key)

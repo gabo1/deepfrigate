@@ -113,6 +113,20 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
   eventos debido a timeouts del único worker MQTT es un trabajo aparte:
   desacoplar HTTP Frigate/coalescer por `object_id`; no reiniciar ni purgar
   MQTT para “arreglarlo”. Ver `docs/mejores-thumbnails.md`.
+- **Voto de placa entre pasadas (7 sep 16:00):** `services/ai-router/app/plate_vote.py`
+  (`PlateBallot`: suma confianzas de lectura + candidatos por placa; gana la
+  suma mayor si fue lectura principal alguna vez; `publishable` exige ≥ 80 %
+  o ≥ `PLATE_MIN_VOTES=2` coincidencias y solo re-publica al subir votos;
+  `settled` con `PLATE_STOP_VOTES=3` corta las pasadas). `plate_update` lleva
+  `votes`/`reads`; event-engine `_plate_rank` ordena por `(votes,
+  confidence)` y guarda ambos en `license_plate{}`. Piso de urna
+  `PLATE_VOTE_MIN_CONFIDENCE=50`. Medición con umbral 80 sin voto (41 min):
+  acuerdo 37/53, cobertura 65 vs 104. Tests: ai-router 47, event-engine 73.
+  **Incidente:** recreé event-engine sin las cuatro variables smoke; parado
+  en < 2 min (Frigate `frigate` no resolvía: nada escrito; `frigate.db` del
+  NVR con mtime 1 sep). Recreado con las variables; compose volvió a crear
+  `deepfrigate_frigate-media` vacío y se borró de nuevo. Regla sigue:
+  event-engine solo con el comando de OPERACION §4.
 - **`PLATE_MIN_CONFIDENCE` 50 → 80 (7 sep 14:30):** decisión tras el 54 % de
   acuerdo SDK/agente. Default en código, compose y `.env.example`. Las
   `plate_read` previas mezclan umbrales.
