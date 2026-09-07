@@ -10,23 +10,13 @@ services:
       - ./config/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
       - mqtt-data:/mosquitto/data
 
-  postgres:
-    image: postgres:17.6-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-deepfrigate}
-      POSTGRES_USER: ${POSTGRES_USER:-deepfrigate}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
-    ports:
-      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
+  # PostgreSQL: one server for everything since 7 sep. Frigate (fork
+  # PostgreSQL+pgvector, repo frigate-pg) owns schema `public`; our tables
+  # (events, frigate_event_links, camera_transitions) live in schema
+  # `deepfrigate` of the same database, role `deepfrigate` with
+  # search_path=deepfrigate,public. The server runs in the frigate-pg compose
+  # project (container frigate-pgvector-smoke-db, alias pgvector-smoke-db, on
+  # network deepfrigate_default).
   minio:
     # Deprecated with recording-sync. Not started unless --profile deprecated.
     profiles: ["deprecated"]
@@ -89,11 +79,11 @@ services:
     build: ./services/platform-api
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-deepfrigate}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-deepfrigate}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-deepfrigate}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@${POSTGRES_HOST:-pgvector-smoke-db}:5432/${POSTGRES_DB:-frigate_pgvector_smoke}
       QDRANT_URL: http://qdrant:6333
       QDRANT_COLLECTION: ${QDRANT_COLLECTION:-vehicle_embeddings}
-      FRIGATE_API_URL: ${FRIGATE_API_URL:-http://frigate:5000/api}
-      FRIGATE_EVENT_STORE_URL: ${FRIGATE_EVENT_STORE_URL:-}
+      FRIGATE_API_URL: ${FRIGATE_API_URL:-http://frigate-pgvector-smoke:5000/api}
+      FRIGATE_EVENT_STORE_URL: ${FRIGATE_EVENT_STORE_URL:-postgresql://frigate_pgvector:${FRIGATE_PG_PASSWORD:-frigate_pgvector_smoke}@${POSTGRES_HOST:-pgvector-smoke-db}:5432/${POSTGRES_DB:-frigate_pgvector_smoke}}
       PIPELINE_CONFIG: /app/pipeline-config/pipeline.yaml
       PIPELINE_SCHEMA: /app/contracts/pipeline.schema.json
       ZONES_CONFIG: /app/config/zones.json
@@ -109,8 +99,6 @@ services:
     ports:
       - "127.0.0.1:${PLATFORM_API_PORT:-8082}:8080"
     depends_on:
-      postgres:
-        condition: service_healthy
       qdrant:
         condition: service_started
       triton:
@@ -276,7 +264,7 @@ services:
       dockerfile: services/event-engine/Dockerfile
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-deepfrigate}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-deepfrigate}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-deepfrigate}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@${POSTGRES_HOST:-pgvector-smoke-db}:5432/${POSTGRES_DB:-frigate_pgvector_smoke}
       MQTT_HOST: mqtt
       MQTT_PORT: 1883
       TRACKED_OBJECTS_TOPIC: deepfrigate/tracked-objects/+
@@ -288,14 +276,15 @@ services:
       FRIGATE_BRIDGE_UPDATE_SECONDS: ${FRIGATE_BRIDGE_UPDATE_SECONDS:-1}
       FRIGATE_REVIEW_BRIDGE: ${FRIGATE_REVIEW_BRIDGE:-true}
       FRIGATE_REVIEW_LABELS: ${FRIGATE_REVIEW_LABELS:-person,car}
-      FRIGATE_API_URL: ${FRIGATE_API_URL:-http://frigate:5000/api}
+      FRIGATE_API_URL: ${FRIGATE_API_URL:-http://frigate-pgvector-smoke:5000/api}
       FRIGATE_API_TIMEOUT_SECONDS: ${FRIGATE_API_TIMEOUT_SECONDS:-5}
       # Leave empty when the bridge targets a PostgreSQL-backed Frigate; its
       # legacy SQLite geometry store cannot update that instance.
-      FRIGATE_DB_PATH: ${FRIGATE_DB_PATH-/frigate/frigate.db}
+      # Empty: the bridge writes Frigate PostgreSQL directly (store URL above).
+      FRIGATE_DB_PATH: ${FRIGATE_DB_PATH-}
       # PostgreSQL URL for the Frigate Event/Timeline store. Takes precedence
       # over FRIGATE_DB_PATH when the bridge targets PostgreSQL-backed Frigate.
-      FRIGATE_EVENT_STORE_URL: ${FRIGATE_EVENT_STORE_URL:-}
+      FRIGATE_EVENT_STORE_URL: ${FRIGATE_EVENT_STORE_URL:-postgresql://frigate_pgvector:${FRIGATE_PG_PASSWORD:-frigate_pgvector_smoke}@${POSTGRES_HOST:-pgvector-smoke-db}:5432/${POSTGRES_DB:-frigate_pgvector_smoke}}
       ZONES_CONFIG: /app/config/zones.json
       DS_SNAPSHOT_DIR: /opt/ds-snapshots
       FRIGATE_CLIPS_DIR: /media/frigate/clips
@@ -322,8 +311,6 @@ services:
       - ./data/ds-snapshots:/opt/ds-snapshots:ro
       - frigate-bridge-media:/media/frigate
     depends_on:
-      postgres:
-        condition: service_healthy
       mqtt:
         condition: service_started
       frigate:
@@ -337,7 +324,7 @@ services:
       dockerfile: services/recording-sync/Dockerfile
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-deepfrigate}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-deepfrigate}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-deepfrigate}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@${POSTGRES_HOST:-pgvector-smoke-db}:5432/${POSTGRES_DB:-frigate_pgvector_smoke}
       SITE_ID: ${SITE_ID:-local}
       S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
       S3_BUCKET: ${S3_BUCKET:-deepfrigate}
@@ -352,8 +339,6 @@ services:
       - ./config/frigate:/frigate:ro
       - frigate-media:/media/frigate:ro
     depends_on:
-      postgres:
-        condition: service_healthy
       minio:
         condition: service_healthy
       frigate:
@@ -477,10 +462,9 @@ services:
 volumes:
   openalpr-data:
   frigate-bridge-media:
-    name: ${FRIGATE_BRIDGE_MEDIA_VOLUME:-deepfrigate_frigate-media}
+    name: ${FRIGATE_BRIDGE_MEDIA_VOLUME:-frigate-pg_pgvector-smoke-media}
     external: true
   mqtt-data:
-  postgres-data:
   qdrant-data:
   frigate-media:
   minio-data:

@@ -33,8 +33,8 @@ flowchart LR
   MQTT["MQTT deepfrigate/detections"]
   AD["detection-adapter<br/>START/UPDATE/LOST/END · zonas/líneas/crowd"]
   EE["event-engine<br/>PG events · puente Frigate · transiciones"]
-  PG["PostgreSQL deepfrigate<br/>events · camera_transitions"]
-  FR["Frigate smoke :3005 (PG+pgvector)<br/>Explore · Jina v2 GPU"]
+  PG["PostgreSQL único (pgvector)<br/>public: Frigate · deepfrigate: events, links, camera_transitions"]
+  FR["Frigate smoke :3005<br/>Explore · Jina v2 GPU"]
   API["platform-api :8082<br/>/v1/camera-transitions · heatmap"]
   PR["Prometheus ← adapter :9110"]
   GR["Grafana :3001"]
@@ -46,6 +46,7 @@ flowchart LR
   RTSP --> PGIE
   TEE --> MQTT --> AD --> EE --> FR
   EE --> PG --> API --> GR
+  FR --- PG
   AD --> PR --> GR
   TEE -->|"snapshots + bundles bbox"| EE
   TEE --> FS --> AR

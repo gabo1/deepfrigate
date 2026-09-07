@@ -113,11 +113,26 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
   eventos debido a timeouts del único worker MQTT es un trabajo aparte:
   desacoplar HTTP Frigate/coalescer por `object_id`; no reiniciar ni purgar
   MQTT para “arreglarlo”. Ver `docs/mejores-thumbnails.md`.
-- **Datasource Grafana `deepfrigate-pg` (7 sep 22:54):** rol `grafana_ro`
-  (solo lectura, default privileges) en `deepfrigate-postgres-1`; yml en
-  `/opt/observabilidad/grafana/provisioning/datasources/postgres-deepfrigate.yml`
-  (640 root, contraseña no versionada); `docker restart grafana`. Desbloquea
-  el dashboard `transiciones` (ANALITICAS §15.4). Agente Rekor + alpr-bridge
+- **Un solo PostgreSQL (7 sep 23:05, sin histórico por decisión):** las
+  tablas `events`, `frigate_event_links`, `camera_transitions` viven ahora en
+  el esquema `deepfrigate` de `frigate_pgvector_smoke`
+  (`frigate-pgvector-smoke-db`, alias `pgvector-smoke-db`). Rol `deepfrigate`
+  con `search_path = deepfrigate, public`; `grafana_ro` lee ambos esquemas
+  (`search_path = public, deepfrigate`). `compose.yaml`: servicio `postgres`
+  y volumen `postgres-data` eliminados; `DATABASE_URL` →
+  `${POSTGRES_HOST:-pgvector-smoke-db}/${POSTGRES_DB:-frigate_pgvector_smoke}`;
+  **defaults del smoke** para `FRIGATE_API_URL`, `FRIGATE_DB_PATH` (vacío),
+  `FRIGATE_EVENT_STORE_URL`, `FRIGATE_BRIDGE_MEDIA_VOLUME`: recrear
+  event-engine ya no exige exportar nada (OPERACION §4). Contenedor
+  `deepfrigate-postgres-1` y volumen `deepfrigate_postgres-data` borrados
+  (488 k `events` históricos perdidos, aceptado). Datasource `deepfrigate-pg`
+  creado a las 22:54 y borrado a las 23:12 (`deleteDatasources` necesita
+  `uid`+`name`+`orgId`; con menos, Grafana 12 no arranca). Todo va por
+  `frigate-smoke-pg`. Verificado: 19 eventos Frigate creados en el primer
+  minuto, `/v1/camera-transitions` responde, `grafana_ro` hace `JOIN event ↔
+  frigate_event_links` y no puede escribir.
+- **Datasource Grafana `deepfrigate-pg` (7 sep 22:54, ya borrado, ver arriba):**
+  rol `grafana_ro` en `deepfrigate-postgres-1`. Agente Rekor + alpr-bridge
   **apagados** a las 17:55 por CPU (host 0 % idle en hora pico, 793
   coches/h en `user`; agente 85 %); volver con `--profile alpr-agent up -d`.
 - **Voto de placa entre pasadas (7 sep 16:00):** `services/ai-router/app/plate_vote.py`
@@ -1074,13 +1089,13 @@ El **Milestone 13 — Visual Workflow Builder** está implementado como MVP:
 
 ## Restricción importante
 
-En este daemon Docker, CUDA IPC entre los contenedores DeepStream y Triton falla. Mantener:
+(Histórico, resuelto el 7 sep: `enable_cuda_buffer_sharing: true` funciona con
+`pid: host` + `ipc: host` en video-engine y triton. Antes fallaba con
+`invalid device context`.)
 
-```text
-enable_cuda_buffer_sharing: false
-```
-
-en `config_infer_yolo26.pbtxt`. La inferencia sigue en GPU mediante gRPC y funciona correctamente.
+Vigente: **un solo PostgreSQL** (`frigate-pgvector-smoke-db`). No volver a
+levantar `deepfrigate-postgres-1`; el esquema `deepfrigate` está en la base de
+Frigate. No `compose down -v`: se llevaría `frigate-pg_pgvector-smoke-media`.
 
 ## Comandos útiles
 

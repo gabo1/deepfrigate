@@ -25,8 +25,7 @@ ya probadas y los dashboards que faltan.
 | Adapter (zonas/líneas/crowd/dirección) | `deepfrigate-detection-adapter-1` | arriba; `/metrics` en `:9110` |
 | Event Engine + puente Frigate | `deepfrigate-event-engine-1` | arriba; apunta al smoke |
 | Frigate PG + pgvector | `https://100.83.231.97:3005` (`frigate-pgvector-smoke`) | healthy; NVR copy-only (sin decode); Jina v2 large en GPU (5 sep) |
-| PG Frigate | `frigate-pgvector-smoke-db` / base `frigate_pgvector_smoke` | healthy |
-| PG DeepFrigate (tabla `events`) | `deepfrigate-postgres-1` / base `deepfrigate` | healthy |
+| PG único (7 sep) | `frigate-pgvector-smoke-db` / base `frigate_pgvector_smoke`: esquema `public` (Frigate) + esquema `deepfrigate` (`events`, `frigate_event_links`, `camera_transitions`) | healthy; `deepfrigate-postgres-1` ya no existe |
 | Reporter | — | **APAGADO el 3 sep** (§11 ter). Su heatmap vive en `platform-api` |
 | Grafana | `http://100.83.231.97:3001` | arriba; `analitica` (legado) + `analitica-deepfrigate` (vivo) |
 | Prometheus | `127.0.0.1:9090` (contenedor `prometheus`) | arriba |
@@ -474,8 +473,9 @@ Solo si el Event de Frigate **ya existe** (o tras flush de
 
 ### Tablas
 
-**DeepFrigate** (`deepfrigate-postgres-1`, DB `deepfrigate`, user
-`deepfrigate`):
+**DeepFrigate** (desde 7 sep: esquema `deepfrigate` dentro de
+`frigate_pgvector_smoke` en `frigate-pgvector-smoke-db`, rol `deepfrigate`;
+antes servidor aparte `deepfrigate-postgres-1`):
 
 ```
 events (
@@ -680,7 +680,8 @@ que los paneles consultan por **nombre desnudo**. Valor nuevo: `motor=deepfrigat
     (`frigate-smoke-pg`). SQL en §15.3.
 13. ⬜ **Dashboard `transiciones`**: matriz from→to, gaps y detalle desde
     `camera_transitions` en la PG **de DeepFrigate**. Datasource
-    `deepfrigate-pg` ✅ (7 sep, §15.2); falta el JSON del dashboard.
+    Datasource: el mismo `frigate-smoke-pg` (una sola base desde el 7 sep,
+    §15.2); falta el JSON del dashboard.
 
 ---
 
@@ -768,7 +769,7 @@ curl -s --data-urlencode \
 - Dashboard PULC: `http://100.83.231.97:3001/d/pulc-atributos`
   (fuente: `/opt/observabilidad/grafana/dashboards/pulc-atributos.json`)
 - Datasource SQL Frigate smoke: `/opt/observabilidad/grafana/provisioning/datasources/postgres-frigate.yml`
-- Datasource SQL DeepFrigate (`events`, `camera_transitions`): `.../postgres-deepfrigate.yml`, uid `deepfrigate-pg`
+- Datasource SQL único: `frigate-smoke-pg` llega también al esquema `deepfrigate` (`events`, `camera_transitions`) vía `search_path`
 - Placas y marca/modelo (runbook): `docs/OPERACION.md` §6c; transiciones: §6b
 - API transiciones: `http://127.0.0.1:8082/v1/camera-transitions?hours=24[&detail=true]`
 - Contrato `plate` / `classification` de coche: `contracts/README.md`
@@ -1535,52 +1536,44 @@ levantar. Runbook de cada motor en `docs/OPERACION.md` §6b (transiciones) y
 |---|---|---|---|---|
 | Marca, modelo, color, tipo, año del coche | Frigate smoke (`frigate-smoke-pg`) | `event.data->'vehicle_attributes'->{make,make_model,color,body_type,year}->>'value'` (+ `score` 0–1) | 7 sep 12:36 | Antes de esa hora solo `color` + `body_type` de PULC |
 | Placa | Frigate smoke | `event.data->>'recognized_license_plate'`, `recognized_license_plate_score` (0–1), `data->'license_plate'` (`confidence` 0–100, `region`, `candidates`, `source`, `read_at`) | 7 sep 06:00 | `sub_label` = placa. Solo `user` |
-| Placa (evento crudo, una fila por lectura) | DeepFrigate PG (`deepfrigate-postgres-1`, **sin datasource aún**) | `events` con `event_type='plate_read'`, `data->>'plate'`, `confidence`, `source` (`openalpr-sdk` / `rekor-scout`) | 7 sep | Sirve para medir aciertos y comparar motores, no para el dashboard de negocio |
-| Transición entre cámaras | DeepFrigate PG | `camera_transitions` (`from_camera`, `to_camera`, `from_object_id`, `to_object_id`, `from_frigate_event_id`, `to_frigate_event_id`, `label`, `from_seen_at`, `to_seen_at`, `gap_seconds`, `score`, `method`, `candidates`) | 7 sep 01:30 | Solo el par `c4aac4f4eefe`↔`c4aac4f4ef0a`; `method='cooccurrence'`, `score` casi siempre NULL |
+| Placa (evento crudo, una fila por lectura) | misma base, esquema `deepfrigate` | `events` con `event_type='plate_read'`, `data->>'plate'`, `confidence`, `source` (`openalpr-sdk` / `rekor-scout`), `votes` | 7 sep | Sirve para medir aciertos y comparar motores, no para el dashboard de negocio |
+| Transición entre cámaras | misma base, esquema `deepfrigate` | `camera_transitions` (`from_camera`, `to_camera`, `from_object_id`, `to_object_id`, `from_frigate_event_id`, `to_frigate_event_id`, `label`, `from_seen_at`, `to_seen_at`, `gap_seconds`, `score`, `method`, `candidates`) | 7 sep 01:30 | Solo el par `c4aac4f4eefe`↔`c4aac4f4ef0a`; `method='cooccurrence'`, `score` casi siempre NULL |
 | Transición (agregado) | platform-api | `GET /v1/camera-transitions?hours=24` (`detail=true` da filas) | 7 sep | `127.0.0.1:8082`; desde Grafana vía proxy `deepfrigate-platform-api` |
 
 Los `frigate_event_id` de `camera_transitions` enlazan con Explore:
 `https://100.83.231.97:3005/explore?event_id=<id>`. Es la forma de validar a
 ojo una transición (dos pestañas, mismo peatón).
 
-### 15.2 Datasource que falta: PG de DeepFrigate
+### 15.2 Una sola base: esquema `deepfrigate` en la de Frigate (7 sep 23:00)
 
-`camera_transitions` y `events` están en `deepfrigate-postgres-1`, **no** en
-la base del smoke. Grafana ya comparte la red `deepfrigate_default`, así que
-llega por nombre. **Hecho el 7 sep 22:54**: rol `grafana_ro` (solo `SELECT`,
-también sobre tablas futuras vía `ALTER DEFAULT PRIVILEGES`) y datasource
-`DeepFrigate (PG)`, uid **`deepfrigate-pg`**, en
-`/opt/observabilidad/grafana/provisioning/datasources/postgres-deepfrigate.yml`
-(640, root; contraseña solo ahí, no versionada). Verificado: `INSERT` denegado,
-`SELECT` sobre `camera_transitions` desde la red de Grafana funciona. Lo que
-se ejecutó:
+Hasta el 7 sep nuestras tablas vivían en un segundo servidor
+(`deepfrigate-postgres-1`) y hubo que crear un datasource aparte
+(`deepfrigate-pg`, 22:54). Esa misma noche se decidió **un solo PostgreSQL**
+y se hizo sin conservar histórico:
 
-```sql
--- en deepfrigate-postgres-1, DB deepfrigate (superuser deepfrigate)
-CREATE ROLE grafana_ro LOGIN PASSWORD '<no versionar>';
-GRANT CONNECT ON DATABASE deepfrigate TO grafana_ro;
-GRANT USAGE ON SCHEMA public TO grafana_ro;
-GRANT SELECT ON ALL TABLES IN SCHEMA public TO grafana_ro;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO grafana_ro;
-```
+- Base `frigate_pgvector_smoke` en `frigate-pgvector-smoke-db` (imagen
+  `pgvector/pgvector:pg17`, red `deepfrigate_default`, alias
+  `pgvector-smoke-db`). Frigate manda en `public`; nosotros en el esquema
+  **`deepfrigate`** (`events`, `frigate_event_links`, `camera_transitions`,
+  creadas por event-engine al arrancar).
+- Rol `deepfrigate`: dueño del esquema, `search_path = deepfrigate, public`,
+  `SELECT` sobre `public`. `DATABASE_URL` de event-engine, platform-api y
+  recording-sync apuntan ahí (defaults de `compose.yaml`).
+- Rol `grafana_ro` (ya existía para el smoke): `USAGE` + `SELECT` sobre
+  `deepfrigate` con default privileges, `search_path = public, deepfrigate`.
+  Datasource: **`frigate-smoke-pg`, el de siempre**. El `deepfrigate-pg` se
+  borró (Grafana: `deleteDatasources` con `uid` + `name` + `orgId`; con solo
+  `uid` u solo `name` Grafana 12 no arranca:
+  `unique identifier and org id are needed`).
+- Ventaja inmediata: `JOIN` entre lo nuestro y Frigate en una query
+  (`frigate_event_links.frigate_event_id = event.id`).
+- El servidor viejo y su volumen `deepfrigate_postgres-data` se borraron.
+  Los conteos históricos de §15.3 (`events` 488 k, 5 543 `plate_read`) ya no
+  existen; la tabla arrancó vacía a las 23:05 UTC.
 
-```yaml
-# /opt/observabilidad/grafana/provisioning/datasources/postgres-deepfrigate.yml (640, root)
-apiVersion: 1
-datasources:
-  - name: DeepFrigate (PG)
-    uid: deepfrigate-pg
-    type: grafana-postgresql-datasource
-    url: deepfrigate-postgres-1:5432
-    user: grafana_ro
-    secureJsonData: { password: "<la misma>" }
-    jsonData: { database: deepfrigate, sslmode: disable, postgresVersion: 1600 }
-    editable: false
-```
-
-El puerto `127.0.0.1:5433` del host es para `psql` a mano; Grafana no lo
-necesita. Rotar la contraseña: `ALTER ROLE grafana_ro PASSWORD '...'` + editar
-el yml + `docker restart grafana`. `postgresVersion: 1700` (PG 17.6).
+Nombres unificados en las queries: sin cualificar funciona (`events`,
+`camera_transitions`, `event`) gracias al `search_path`; si un editor de
+Grafana autocompleta, usar `deepfrigate.events`.
 
 ### 15.3 SQL ya probadas (7 sep, ~14:10 UTC)
 
@@ -1629,7 +1622,7 @@ GROUP BY 1 ORDER BY 1;
 -- lab 13:00 UTC: 79 placas de 167 coches (47 %); 12:00: 30/55
 ```
 
-**Matriz from→to** (datasource `deepfrigate-pg`, pendiente).
+**Matriz from→to** (datasource `frigate-smoke-pg`, tabla `camera_transitions`).
 
 ```sql
 SELECT from_camera, to_camera, label, count(*) AS n,
@@ -1656,8 +1649,8 @@ ORDER BY created_at DESC LIMIT 100;
 **Transiciones por hora** (serie): `date_trunc('hour', created_at)`,
 `count(*)`, `GROUP BY 1`.
 
-**Comparar motores de placa** (DeepFrigate PG, `events`; solo mientras corra el
-perfil `alpr-agent`):
+**Comparar motores de placa** (`events`; solo mientras corra el perfil
+`alpr-agent`):
 
 ```sql
 WITH r AS (
@@ -1692,7 +1685,7 @@ salen vacíos **por construcción** (12–15 px de placa en `tienda` y calle).
 Mejor ocultarlos con una fila colapsada "Placas (solo user)" que mostrar
 ceros.
 
-**`transiciones`** (`$label`, datasource `deepfrigate-pg`):
+**`transiciones`** (`$label`, datasource `frigate-smoke-pg`):
 
 | Panel | Query | Tipo |
 |---|---|---|
@@ -1702,9 +1695,8 @@ ceros.
 | Detalle | §15.3 detalle con links | tabla |
 | Estado del matcher | `GET /v1/camera-transitions` vía proxy (stat) | stat |
 
-Alternativa sin datasource nuevo: panel de tipo tabla sobre el proxy
-`deepfrigate-platform-api` no sirve (es tipo `prometheus`); haría falta
-Infinity, y ya se descartó (§8.5). Crear el datasource PG es más corto.
+El proxy `deepfrigate-platform-api` (tipo `prometheus`) no sirve para tablas;
+todo va por SQL sobre `frigate-smoke-pg`.
 
 ### 15.5 Avisos para no leer mal los paneles
 

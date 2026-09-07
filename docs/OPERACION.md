@@ -17,8 +17,7 @@ se repite. Arquitectura en `docs/ARQUITECTURA.md`.
 | `deepfrigate-ai-router-1` | PULC persona/vehículo, color HSV, PP-ShiTu → Qdrant | log `Classified FrameRef` / `Embedded FrameRef` |
 | `deepfrigate-frame-store-1` | crops RGB en SHM | `curl 127.0.0.1:8083/healthz` |
 | `frigate-pgvector-smoke` | Frigate PG + pgvector, NVR copy-only, Explore | `docker ps` healthy; `curl -sk https://100.83.231.97:3005/api/version` → 401 en ~20 ms |
-| `frigate-pgvector-smoke-db` | PostgreSQL de Frigate | `psql -U frigate_pgvector -d frigate_pgvector_smoke` |
-| `deepfrigate-postgres-1` | PG de producto (`events`, `frigate_event_links`) | `psql -U deepfrigate -d deepfrigate` |
+| `frigate-pgvector-smoke-db` | **el único PostgreSQL** (7 sep): esquema `public` de Frigate + esquema `deepfrigate` (`events`, `frigate_event_links`, `camera_transitions`) | `psql -U frigate_pgvector -d frigate_pgvector_smoke` / `psql -U deepfrigate -d frigate_pgvector_smoke` |
 
 Frigate **no decodifica**: `detect.enabled: false` en todas las cámaras.
 Todo frame sale de DeepStream.
@@ -147,20 +146,37 @@ Comprobar que `RTSP_TIENDA`/`RTSP_USER` del contenedor coinciden con
 
 ### event-engine (imagen, hay que reconstruir)
 
-Siempre con las cuatro variables del puente smoke; sin ellas el crop va al
-volumen equivocado y Explore muestra escenas de 70 KiB:
+Desde el 7 sep los valores del smoke son los **defaults** de `compose.yaml`
+(`FRIGATE_API_URL`, `FRIGATE_DB_PATH` vacío, `FRIGATE_EVENT_STORE_URL`,
+`FRIGATE_BRIDGE_MEDIA_VOLUME`, `DATABASE_URL` al esquema `deepfrigate`). Ya
+no hay que exportar nada:
 
 ```bash
-FRIGATE_API_URL=http://frigate-pgvector-smoke:5000/api \
-FRIGATE_DB_PATH= \
-FRIGATE_EVENT_STORE_URL=postgresql://frigate_pgvector:frigate_pgvector_smoke@pgvector-smoke-db:5432/frigate_pgvector_smoke \
-FRIGATE_BRIDGE_MEDIA_VOLUME=frigate-pg_pgvector-smoke-media \
 docker compose --env-file .env.example up -d --build --no-deps event-engine
 ```
 
-Verificar: `docker inspect deepfrigate-event-engine-1 --format
-'{{range .Mounts}}{{.Name}} {{end}}'` contiene
-`frigate-pg_pgvector-smoke-media`.
+Verificar igual que antes: `docker inspect deepfrigate-event-engine-1
+--format '{{range .Mounts}}{{.Name}} {{end}}'` contiene
+`frigate-pg_pgvector-smoke-media`, y el log dice `PostgreSQL event store
+ready` + `Created Frigate review event=`.
+
+### PostgreSQL único (7 sep)
+
+Hasta el 7 sep había dos servidores: `deepfrigate-postgres-1` (producto) y
+`frigate-pgvector-smoke-db` (fork Frigate). Se fusionaron en el segundo, sin
+histórico (decisión del 7 sep): la base `frigate_pgvector_smoke` tiene el
+esquema `public` de Frigate y el esquema **`deepfrigate`** con nuestras
+tablas. Rol `deepfrigate` (`search_path = deepfrigate, public`, `SELECT` sobre
+`public`), rol `grafana_ro` (`SELECT` en ambos, `search_path = public,
+deepfrigate`). El código no cualifica esquemas: funciona por `search_path`.
+`event-engine` crea las tablas al arrancar (`sql/001_events.sql`).
+`deepfrigate-postgres-1` y su volumen se borraron. Consultas a mano:
+
+```bash
+docker exec -it frigate-pgvector-smoke-db psql -U deepfrigate -d frigate_pgvector_smoke
+# JOIN directo entre lo nuestro y Frigate:
+#   select e.sub_label, l.object_id from event e join frigate_event_links l on l.frigate_event_id = e.id;
+```
 
 ### detection-adapter (imagen)
 
