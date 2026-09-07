@@ -113,6 +113,24 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
   eventos debido a timeouts del único worker MQTT es un trabajo aparte:
   desacoplar HTTP Frigate/coalescer por `object_id`; no reiniciar ni purgar
   MQTT para “arreglarlo”. Ver `docs/mejores-thumbnails.md`.
+- **Zonas desde Frigate, fases 1 y 2 (7 sep 23:50):** fork `frigate-pg`
+  (commit local, no se pushea): `ZoneConfig` + `overcrowding_threshold/
+  clear_threshold/hold_s`; `frigate/config/camera/analytics.py` con
+  `LineConfig`/`DirectionConfig` (2 puntos relativos); `CameraConfig.lines`/
+  `.directions`; `verify_analytics_names_are_unique`; 5 tests nuevos
+  (`test_config` 69 OK). Aplicado al contenedor con `docker cp` + restart;
+  `mqtt.enabled: true` en el smoke. Adapter: `app/frigate_zones.py`
+  (`frigate_to_zones_config`, `fetch_frigate_config`), `ZONES_SOURCE=frigate`
+  default, recarga por `frigate/available=online` y `deepfrigate/zones/reload`,
+  backoff si Frigate no responde, sin poll; 57 tests. Probado: zona `calle` +
+  línea `cruce` + dirección `hacia_arriba` en `user` vía `config/set` +
+  restart → adapter `Zonas (frigate, 13ccd7c4…): user: zonas=1 lineas=1
+  direcciones=1`, eventos `object_entered_zone` 7 / `line_crossed_out` 3 /
+  `direction_match` 1 en 2 min, Explore con `zones: ["calle"]`. Hallazgo:
+  `ZoneConfig` es `BaseModel` plano (no `extra=forbid`): claves desconocidas en
+  una zona se ignoran, no fallan; a nivel cámara sí fallan. Pendiente fase 3:
+  editor visual de líneas/direcciones en `MasksAndZonesView.tsx`; platform-api
+  aún pinta polígonos de `zones.json` en el heatmap.
 - **Un solo PostgreSQL (7 sep 23:05, sin histórico por decisión):** las
   tablas `events`, `frigate_event_links`, `camera_transitions` viven ahora en
   el esquema `deepfrigate` de `frigate_pgvector_smoke`

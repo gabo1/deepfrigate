@@ -16,6 +16,12 @@ import paho.mqtt.client as mqtt
 
 from .crowd import CrowdEngine
 from .direction import DirectionEngine
+from .frigate_zones import (
+    config_digest,
+    fetch_frigate_config,
+    frigate_to_zones_config,
+    summarize,
+)
 from .lifecycle import Detection, InvalidDetection, Lifecycle, parse_deepstream_payload
 from .lines import LineEngine
 from .metrics import Metrics
@@ -59,21 +65,40 @@ class Adapter:
             ),
             threshold=float(os.getenv("OBJECT_THRESHOLD", "0.7")),
         )
-        zones_path = Path(os.getenv("ZONES_CONFIG", "/app/config/zones.json"))
-        zones_config = json.loads(zones_path.read_text(encoding="utf-8"))
-        self.zones = ZoneEngine(
-            zones_config,
-            dwell_update_interval=_positive_float(
-                "ZONE_DWELL_UPDATE_SECONDS", "1"
-            ),
+        # Where zones/lines/directions come from. "frigate" (default): the
+        # fork's /api/config, drawn in its UI; reloaded when Frigate announces
+        # itself on MQTT (frigate/available = online) or on ZONES_RELOAD_TOPIC.
+        # "file": the legacy config/zones.json.
+        self.zones_source = os.getenv("ZONES_SOURCE", "frigate").strip().lower()
+        if self.zones_source not in {"frigate", "file"}:
+            raise ValueError("ZONES_SOURCE must be frigate or file")
+        self.zones_path = Path(os.getenv("ZONES_CONFIG", "/app/config/zones.json"))
+        self.frigate_api_url = os.getenv(
+            "FRIGATE_API_URL", "http://frigate-pgvector-smoke:5000/api"
         )
-        self.crowd = CrowdEngine(
-            self.zones,
-            clear_margin=int(os.getenv("OVERCROWDING_CLEAR_MARGIN", "2")),
-            hold_s=float(os.getenv("OVERCROWDING_HOLD_SECONDS", "10")),
+        self.frigate_available_topic = os.getenv(
+            "FRIGATE_AVAILABLE_TOPIC", "frigate/available"
         )
-        self.lines = LineEngine(zones_config)
-        self.directions = DirectionEngine(zones_config)
+        self.zones_reload_topic = os.getenv(
+            "ZONES_RELOAD_TOPIC", "deepfrigate/zones/reload"
+        )
+        self.frame_width = int(os.getenv("ZONES_FRAME_WIDTH", "1280"))
+        self.frame_height = int(os.getenv("ZONES_FRAME_HEIGHT", "720"))
+        self._zone_dwell_interval = _positive_float("ZONE_DWELL_UPDATE_SECONDS", "1")
+        self._crowd_clear_margin = int(os.getenv("OVERCROWDING_CLEAR_MARGIN", "2"))
+        self._crowd_hold_s = float(os.getenv("OVERCROWDING_HOLD_SECONDS", "10"))
+        self._zones_digest = ""
+        self._reload_requested = self.zones_source == "frigate"
+        self._reload_not_before = 0.0
+        self._reload_failures = 0
+        if self.zones_source == "file":
+            self._apply_zones_config(
+                json.loads(self.zones_path.read_text(encoding="utf-8")), "file"
+            )
+        else:
+            # Start empty; the run loop fetches Frigate right away and keeps
+            # retrying (with backoff) until it answers. No periodic polling.
+            self._apply_zones_config({"cameras": {}}, "vacío")
         self.input_prefix = os.getenv(
             "DETECTIONS_TOPIC_PREFIX", "deepfrigate/detections"
         ).rstrip("/")
@@ -123,6 +148,11 @@ class Adapter:
             return
         client.subscribe(self.input_topic, qos=1)
         logger.info("Subscribed to %s", self.input_topic)
+        if self.zones_source == "frigate":
+            client.subscribe(self.frigate_available_topic, qos=0)
+            client.subscribe(self.zones_reload_topic, qos=0)
+            # Reconnect = maybe we missed Frigate's announcement.
+            self._reload_requested = True
 
     def _on_disconnect(
         self,
@@ -138,6 +168,8 @@ class Adapter:
     def _on_message(
         self, _client: mqtt.Client, _userdata: Any, message: mqtt.MQTTMessage
     ) -> None:
+        if self._control_message(message.topic, message.payload):
+            return
         camera_id = topic_camera_id(message.topic, self.input_prefix)
         started_at = time.perf_counter()
         cameras_seen: set[str] = set()
@@ -222,6 +254,65 @@ class Adapter:
                 self.crowd.snapshot(camera),
             )
 
+    # ------------------------------------------------------------ zones source
+    def _control_message(self, topic: str, payload: bytes) -> bool:
+        """Handle reload triggers. True when the message was not a detection."""
+        if topic == self.frigate_available_topic:
+            state = payload.decode("utf-8", "replace").strip().lower()
+            if state == "online" and self.zones_source == "frigate":
+                logger.info("Frigate anunció %s; recargo zonas", state)
+                self._reload_requested = True
+                self._reload_not_before = 0.0
+            return True
+        if topic == self.zones_reload_topic:
+            logger.info("Recarga de zonas pedida por %s", topic)
+            self._reload_requested = True
+            self._reload_not_before = 0.0
+            return True
+        return False
+
+    def _apply_zones_config(self, zones_config: dict[str, Any], origin: str) -> bool:
+        """Rebuild the analytics engines. Returns True when something changed."""
+        digest = config_digest(zones_config)
+        if digest == self._zones_digest:
+            return False
+        zones = ZoneEngine(zones_config, dwell_update_interval=self._zone_dwell_interval)
+        crowd = CrowdEngine(
+            zones, clear_margin=self._crowd_clear_margin, hold_s=self._crowd_hold_s
+        )
+        lines = LineEngine(zones_config)
+        directions = DirectionEngine(zones_config)
+        # Swap together so a message never sees half of the new config.
+        self.zones, self.crowd, self.lines, self.directions = zones, crowd, lines, directions
+        self._zones_digest = digest
+        logger.info("Zonas (%s, %s): %s", origin, digest, summarize(zones_config))
+        return True
+
+    def _maybe_reload_zones(self) -> None:
+        if not self._reload_requested or self.zones_source != "frigate":
+            return
+        now = time.monotonic()
+        if now < self._reload_not_before:
+            return
+        try:
+            frigate_config = fetch_frigate_config(self.frigate_api_url)
+        except (OSError, ValueError) as error:
+            self._reload_failures += 1
+            delay = min(60.0, 2.0 * self._reload_failures)
+            self._reload_not_before = now + delay
+            logger.warning(
+                "Frigate %s no respondió (%s); reintento en %.0f s",
+                self.frigate_api_url, error, delay,
+            )
+            return
+        self._reload_requested = False
+        self._reload_failures = 0
+        zones_config = frigate_to_zones_config(
+            frigate_config, frame_width=self.frame_width, frame_height=self.frame_height
+        )
+        if not self._apply_zones_config(zones_config, "frigate"):
+            logger.info("Zonas de Frigate sin cambios (%s)", self._zones_digest)
+
     def run(self) -> None:
         host = os.getenv("MQTT_HOST", "mqtt")
         port = int(os.getenv("MQTT_PORT", "1883"))
@@ -229,6 +320,7 @@ class Adapter:
         self.client.connect(host, port, keepalive=60)
         while not shutdown_requested.is_set():
             self.client.loop(timeout=0.5)
+            self._maybe_reload_zones()
             self.refresh_metrics()
             for update in self.lifecycle.expire():
                 if update["data"]["lifecycle_event"] == "END":

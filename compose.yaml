@@ -202,6 +202,15 @@ services:
       END_AFTER_SECONDS: ${END_AFTER_SECONDS:-5}
       DETECT_FPS: ${DETECT_FPS:-5}
       OBJECT_THRESHOLD: ${OBJECT_THRESHOLD:-0.7}
+      # Zones/lines/directions: drawn in Frigate's UI, read from /api/config,
+      # reloaded when Frigate announces itself on MQTT (no polling).
+      ZONES_SOURCE: ${ZONES_SOURCE:-frigate}
+      FRIGATE_API_URL: ${FRIGATE_API_URL:-http://frigate-pgvector-smoke:5000/api}
+      ZONES_RELOAD_TOPIC: deepfrigate/zones/reload
+      # DeepStream frame the detections are expressed in (mux size).
+      ZONES_FRAME_WIDTH: ${ZONES_FRAME_WIDTH:-1280}
+      ZONES_FRAME_HEIGHT: ${ZONES_FRAME_HEIGHT:-720}
+      # Legacy file source (ZONES_SOURCE=file).
       ZONES_CONFIG: /app/config/zones.json
       ZONE_DWELL_UPDATE_SECONDS: ${ZONE_DWELL_UPDATE_SECONDS:-1}
       # Antiparpadeo del overcrowding. Los valores por zona en zones.json

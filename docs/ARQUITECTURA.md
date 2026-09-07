@@ -31,7 +31,7 @@ flowchart LR
     PGIE --> TRK --> TEE
   end
   MQTT["MQTT deepfrigate/detections"]
-  AD["detection-adapter<br/>START/UPDATE/LOST/END · zonas/líneas/crowd"]
+  AD["detection-adapter<br/>START/UPDATE/LOST/END · zonas/líneas/crowd<br/>(config desde Frigate /api/config)"]
   EE["event-engine<br/>PG events · puente Frigate · transiciones"]
   PG["PostgreSQL único (pgvector)<br/>public: Frigate · deepfrigate: events, links, camera_transitions"]
   FR["Frigate smoke :3005<br/>Explore · Jina v2 GPU"]
@@ -45,6 +45,7 @@ flowchart LR
   QD["Qdrant vehicle_embeddings"]
   RTSP --> PGIE
   TEE --> MQTT --> AD --> EE --> FR
+  FR -.->|"zonas · líneas · direcciones<br/>(frigate/available → GET /api/config)"| AD
   EE --> PG --> API --> GR
   FR --- PG
   AD --> PR --> GR
@@ -142,6 +143,12 @@ Embeddings (PP-ShiTu) son el mismo patrón: crop SHM → Triton → Qdrant,
 
 El pie (centro de la base del bbox) es el ancla. Geometría propia
 (`geometry.py`, ray-cast, cruce de segmento). Sin Supervision.
+
+**Configuración (7 sep): Frigate es la fuente.** Zonas, líneas y direcciones
+viven en el YAML de Frigate (fork con `lines:`/`directions:` y umbrales de
+overcrowding en las zonas). El adapter las lee de `/api/config` y recarga
+cuando Frigate anuncia `frigate/available = online` por MQTT. `zones.json`
+solo aporta el tamaño de frame. Ver `docs/OPERACION.md` §6a.
 
 | Motor | Qué |
 |---|---|

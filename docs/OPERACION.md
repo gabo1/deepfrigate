@@ -29,9 +29,10 @@ Cámaras en el pipeline (orden = `source_id` = `sensorN` en
 el exporter las devuelve a 960×720 al escribir. Para añadir una cámara:
 `pipeline.yaml` + variable `RTSP_*` en compose/.env.example + bloque
 `sensorN`/`placeN`/`analyticsN` en msgconv + entrada 1280×720 en
-`config/zones.json` + cámara record-only en el YAML de Frigate; luego
-recrear video-engine (`--profile video --no-deps`) y reiniciar adapter,
-event-engine y Frigate.
+`config/zones.json` (solo tamaño de frame; los polígonos ya no van ahí) +
+cámara record-only en el YAML de Frigate; luego recrear video-engine
+(`--profile video --no-deps`) y reiniciar adapter, event-engine y Frigate.
+Zonas, líneas y direcciones: en Frigate (§6a).
 
 ---
 
@@ -217,7 +218,7 @@ cp -r services/event-engine/. $S/ && cp -r contracts $S/contracts
 docker run --rm -v "$S:/app" -w /app --entrypoint sh deepfrigate-event-engine \
   -c 'pip install -q pytest; python -m pytest -q -p no:cacheprovider tests'
 
-# detection-adapter (necesita config/zones.json)
+# detection-adapter (necesita config/zones.json para los tests legacy)
 S=/tmp/da-test; rm -rf $S; mkdir -p $S
 cp -r services/detection-adapter/. $S/ && cp -r contracts $S/contracts && cp -r config $S/config
 docker run --rm -v "$S:/app" -w /app --entrypoint sh deepfrigate-detection-adapter \
@@ -269,6 +270,46 @@ Cambiar de modelo Jina exige reindex (espacios distintos). El reindex del
 5 sep 02:19 y los primeros ~13 900 tienen vector.
 
 ---
+
+## 6a. Zonas, líneas y direcciones desde Frigate (7 sep)
+
+La fuente es el YAML de Frigate (fork `frigate-pg`): la UI dibuja zonas; el
+fork acepta además `overcrowding_threshold`, `overcrowding_clear_threshold`,
+`overcrowding_hold_s` en cada zona (`frigate/config/camera/zone.py`) y los
+bloques `lines:` y `directions:` por cámara (`frigate/config/camera/analytics.py`,
+dos puntos relativos `x1,y1,x2,y2`, `objects`, `enabled`; direcciones con
+`tolerance_deg` y `min_move`). Validación: nombres únicos entre zonas, líneas y
+direcciones de la cámara; `objects` deben estar en `objects.track`.
+
+```text
+UI Frigate / PUT /api/config/set ──► YAML ──► restart Frigate
+   └─ MQTT frigate/available = online ──► detection-adapter GET /api/config
+        └─ frigate_zones.py → ZoneEngine/CrowdEngine/LineEngine/DirectionEngine (swap atómico)
+```
+
+- Adapter: `ZONES_SOURCE=frigate` (default) | `file`; `FRIGATE_API_URL`;
+  `ZONES_RELOAD_TOPIC=deepfrigate/zones/reload` (recarga manual);
+  `ZONES_FRAME_WIDTH/HEIGHT=1280/720` (frame DeepStream, no el `detect` de
+  Frigate). Sin poll: recarga al arrancar, al reconectar MQTT, al `online` de
+  Frigate y al topic manual. Si Frigate no responde reintenta con backoff
+  (2 s × fallos, máx. 60 s) hasta que conteste.
+- Frigate smoke con `mqtt.enabled: true, host: mqtt` para anunciarse. Publica
+  también `frigate/stats` cada minuto; inofensivo.
+- Entradas `enabled: false` se ignoran. Una zona/línea mal escrita se salta con
+  `WARNING Zona ignorada …` y el resto carga.
+- Recargar reinicia el estado de las zonas (dwell, overcrowding): un
+  `overcrowding` puede volver a dispararse tras el reinicio de Frigate.
+- Mapeo: `loitering_time`→`loitering_threshold_s`; el resto igual nombre. El
+  lado "in" de una línea es la izquierda del vector de→a (cross product > 0).
+- Fase 3 pendiente: dibujar líneas y direcciones en la UI (hoy por YAML o
+  `config/set`). event-engine y platform-api siguen leyendo `zones.json` solo
+  para el tamaño 1280×720; platform-api aún pinta polígonos del JSON en el
+  heatmap (pendiente pasar a `/api/config`).
+- Fork: código en `frigate-pg` rama `deepfrigate/pgsql`, aplicado al contenedor
+  con `docker cp` + `docker restart` (imagen sin reconstruir; ver
+  `frigate-pg/docs/RECREAR-IMAGEN-3005.md` para hornearlo). Tests:
+  `python3 -m unittest frigate.test.test_config` dentro de la imagen con
+  `version.py` copiado del contenedor.
 
 ## 6b. Transiciones entre cámaras (`camera_transitions`)
 

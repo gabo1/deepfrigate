@@ -1007,35 +1007,68 @@ Los tres primeros están en `camara-eventos`. Los demás **no**, y a propósito:
 sin geometría no valen 0, es que no pueden existir, y un cero permanente en un
 panel parece un dato.
 
-#### Cómo encender merodeo y overcrowding en una cámara
+#### Cómo encender merodeo, overcrowding, cruces y dirección en una cámara
 
-Los dos salen de **una zona**, así que la receta es la misma: añadir el
-polígono a `config/zones.json` y sus umbrales. Sin polígono no hay nada que
-encender.
+**Desde el 7 sep las zonas se dibujan en Frigate**, no en `config/zones.json`.
+Settings → Masks/Zones → cámara → polígono; los umbrales DeepFrigate van en el
+mismo YAML de Frigate (el fork los acepta: `overcrowding_threshold`,
+`overcrowding_clear_threshold`, `overcrowding_hold_s`; `loitering_time` es el
+merodeo). Líneas (`lines`) y direcciones (`directions`) son bloques nuevos por
+cámara, dos puntos relativos cada uno; hasta la fase 3 (editor visual) se
+escriben en el editor YAML de Settings o con `config/set`:
 
-```jsonc
-"user": {
-  "width": 1280, "height": 720,
-  "zones": {
-    "carril_derecho": {
-      "coordinates": [[0.55,0.25],[1.0,0.25],[1.0,1.0],[0.55,1.0]],
-      "objects": ["car"],          // sin esto contaría también personas
-      "inertia": 3,                // frames dentro/fuera antes de contar
-      "overcrowding_threshold": 6, // entra: >= 6 coches a la vez
-      "overcrowding_clear_threshold": 3,
-      "overcrowding_hold_s": 10,
-      "loitering_threshold_s": 120 // "merodeo" = coche parado 2 min
-    }
-  }
-}
+```yaml
+cameras:
+  user:
+    zones:
+      calle:
+        coordinates: 0.05,0.35,0.95,0.35,0.95,1,0.05,1
+        objects: car
+        loitering_time: 120            # "merodeo" = coche 2 min dentro
+        overcrowding_threshold: 6      # entra: >= 6 coches a la vez
+        overcrowding_clear_threshold: 3
+        overcrowding_hold_s: 10
+    lines:
+      cruce:
+        coordinates: 0.1,0.7,0.9,0.7   # de izquierda a derecha; cruzar de arriba a abajo = out
+        objects: car
+    directions:
+      hacia_arriba:
+        coordinates: 0.5,0.95,0.5,0.4  # flecha de → a
+        objects: car
+        tolerance_deg: 45
 ```
+
+Frigate guarda el YAML y pide **reiniciar**. Al arrancar publica
+`frigate/available = online`; el detection-adapter lo oye, hace `GET
+/api/config` y reconstruye sus motores en el acto (log `Zonas (frigate, …):
+user: zonas=1 lineas=1 direcciones=1`). Sin reinicio no cambia nada: no hay
+poll. Recarga manual: publicar cualquier cosa en `deepfrigate/zones/reload`.
+Probado el 7 sep 23:48 con exactamente ese YAML: en 2 min `object_entered_zone`
+7, `line_crossed_out` 3, `direction_match` 1, y los Events de Frigate salen con
+`zones: ["calle"]`, así que el filtro por zona de Explore funciona por primera
+vez.
+
+Por API (red interna, sin auth; lo mismo que hace la UI):
+
+```bash
+docker exec -i deepfrigate-event-engine-1 python3 -c "import urllib.request as u; \
+  print(u.urlopen(u.Request('http://frigate-pgvector-smoke:5000/api/config/set?' \
+  'cameras.user.lines.cruce.coordinates=0.1,0.7,0.9,0.7&cameras.user.lines.cruce.objects=car', \
+  data=b'{}', method='PUT', headers={'Content-Type':'application/json'})).read())"
+docker restart frigate-pgvector-smoke
+```
+
+`config/zones.json` sigue existiendo solo como escape (`ZONES_SOURCE=file`) y
+porque event-engine y platform-api leen de ahí el tamaño de frame 1280×720.
+Sus polígonos ya no se usan.
 
 Qué aparece al recargar el adapter, y qué **no**:
 
-| Se enciende | Sigue apagado |
+| Con una zona | Con una línea / dirección |
 |---|---|
-| `sv_zona_presentes`, `sv_zona_permanencia_*` | `sv_cruces_*` (necesita `lines`) |
-| `sv_merodeo_ahora` | `df_direction_match` (necesita `directions`) |
+| `sv_zona_presentes`, `sv_zona_permanencia_*` | `sv_cruces_entrada_total` / `sv_cruces_salida_total` (`lines`) |
+| `sv_merodeo_ahora` | `df_direction_match_total` (`directions`) |
 | `df_overcrowding_state` y sus flancos | |
 | `df_zone_enter/exit`, `df_zone_dwell_seconds` | |
 
