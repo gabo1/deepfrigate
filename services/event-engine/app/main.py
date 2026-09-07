@@ -234,6 +234,9 @@ class EventEngine:
                 # Final embeddings feed the cross-camera transition matcher
                 # on the bridge worker (one message per ended track).
                 "embedding",
+                # License plates from alpr-bridge: Frigate sub_label +
+                # recognized_license_plate (and PG when normalized).
+                "plate",
             }:
                 self._ack(message)
                 return

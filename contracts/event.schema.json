@@ -15,8 +15,13 @@
     "data"
   ],
   "properties": {
-    "type": {"const": "event"},
-    "id": {"type": "string", "format": "uuid"},
+    "type": {
+      "const": "event"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
     "event_type": {
       "enum": [
         "object_detected",
@@ -25,6 +30,7 @@
         "object_entered_zone",
         "object_exited_zone",
         "object_stationary",
+        "plate_read",
         "specific_plate",
         "visual_match",
         "dwell_time",
@@ -35,10 +41,21 @@
         "direction_match"
       ]
     },
-    "object_id": {"type": "string", "minLength": 1},
-    "camera_id": {"type": "string", "minLength": 1},
-    "track_id": {"type": "integer", "minimum": 0},
-    "timestamp": {"type": "number"},
+    "object_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "camera_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "track_id": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "timestamp": {
+      "type": "number"
+    },
     "source_update_type": {
       "enum": [
         "detection",
@@ -51,8 +68,16 @@
         "direction"
       ]
     },
-    "severity": {"enum": ["info", "warning", "critical"]},
-    "data": {"type": "object"}
+    "severity": {
+      "enum": [
+        "info",
+        "warning",
+        "critical"
+      ]
+    },
+    "data": {
+      "type": "object"
+    }
   },
   "additionalProperties": false
 }

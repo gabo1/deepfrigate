@@ -105,6 +105,9 @@ class _PendingTrack:
     # repair of Frigate's own (green) clean/thumb already ran.
     created_at_ts: float | None = None
     post_create_repaired: bool = False
+    # Last license plate read for this track (alpr-bridge), persisted to
+    # Frigate as sub_label + recognized_license_plate once the event exists.
+    last_plate: dict[str, Any] | None = None
 
 
 class FrigateReviewBridge:
@@ -218,6 +221,8 @@ class FrigateReviewBridge:
                     )
         elif update_type == "classification":
             self._classification_update(update)
+        elif update_type == "plate":
+            self._plate_update(update)
         elif update_type in {"line", "overcrowding", "direction"} and event is not None:
             self._queue_or_write_analytics(update, event)
         elif update_type == "zone" and event is not None:
@@ -253,6 +258,8 @@ class FrigateReviewBridge:
                 object_id,
                 pending.last_classification or pending.last_update,
             )
+        if pending.created and pending.last_plate is not None:
+            self._persist_plate(object_id, pending.last_plate)
 
     def _event_from_pending(self, pending: _PendingTrack) -> dict[str, Any]:
         data = pending.last_update.get("data") or {}
@@ -845,10 +852,60 @@ class FrigateReviewBridge:
                 for key in ("color", "body_type", "updated_at")
                 if key in summary
             }
+        pending = self._pending.get(object_id)
+        has_plate = pending is not None and pending.last_plate is not None
         self.store.merge(
             str(link["frigate_event_id"]),
             data_update=data_update,
-            sub_label=vehicle_sub_label(summary) if label == "car" else None,
+            # A read plate is the better sub_label; never overwrite it with
+            # "gray sedan".
+            sub_label=vehicle_sub_label(summary) if label == "car" and not has_plate else None,
+        )
+
+    def _plate_update(self, update: dict[str, Any]) -> None:
+        object_id = str(update.get("object_id", ""))
+        data = update.get("data") or {}
+        if not object_id or not data.get("plate"):
+            return
+        pending = self._pending.get(object_id)
+        if pending is None:
+            # Plate can arrive after END/restart; persist straight to the link.
+            self._persist_plate(object_id, update)
+            return
+        previous = (pending.last_plate or {}).get("data") or {}
+        if float(data.get("confidence") or 0) >= float(previous.get("confidence") or 0):
+            pending.last_plate = update
+        if pending.created:
+            self._persist_plate(object_id, pending.last_plate or update)
+
+    def _persist_plate(self, object_id: str, update: dict[str, Any]) -> None:
+        if self.store is None:
+            return
+        link = self.repository.get_active_frigate_link(object_id)
+        if link is None or not link.get("frigate_event_id"):
+            return
+        data = update.get("data") or {}
+        plate = str(data.get("plate") or "").upper()
+        if not plate:
+            return
+        confidence = float(data.get("confidence") or 0)
+        # Frigate's own LPR stores a 0-1 score; Rekor reports 0-100.
+        score = confidence / 100.0 if confidence > 1.0 else confidence
+        self.store.merge(
+            str(link["frigate_event_id"]),
+            data_update={
+                "recognized_license_plate": plate,
+                "recognized_license_plate_score": round(score, 4),
+                "license_plate": {
+                    "plate": plate,
+                    "confidence": round(confidence, 2),
+                    "region": data.get("region"),
+                    "candidates": (data.get("candidates") or [])[:5],
+                    "source": data.get("source"),
+                    "read_at": float(update.get("timestamp") or 0),
+                },
+            },
+            sub_label=plate,
         )
 
     def _write_timeline(

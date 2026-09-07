@@ -150,3 +150,12 @@ def test_normalized_event_matches_contract() -> None:
     )
 
     validator.validate(event)
+
+
+def test_plate_reads_become_events_and_watchlist_hits_stay_specific() -> None:
+    normalizer = EventNormalizer()
+    read = normalizer.normalize(update("plate", {"plate": "JD6085B", "confidence": 60.5, "source": "rekor-scout"}))
+    assert read is not None and read["event_type"] == "plate_read" and read["severity"] == "info"
+    hit = normalizer.normalize(update("plate", {"plate": "JD6085B", "confidence": 60.5, "matched": True}))
+    assert hit is not None and hit["event_type"] == "specific_plate" and hit["severity"] == "warning"
+    assert normalizer.normalize(update("plate", {"confidence": 10.0})) is None

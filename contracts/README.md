@@ -55,6 +55,18 @@ Campos requeridos en el esquema. El ancla geométrica es el **pie** del bbox
 `dimensions`, `distance`, `frame_ref_id`, `inference_ms`, `end_to_end_ms`.
 `visual_match`: vecinos devueltos por Qdrant para ese vector.
 
+### `update_type: plate` (alpr-bridge, desde Rekor Scout)
+
+`plate` (texto), `confidence` (0–100), `region` (p. ej. `mx-nle`),
+`region_confidence`, `candidates` (top 5 `{plate, confidence}`), `bbox` de la
+placa en píxeles de la cámara, `plate_center`, `vehicle_region`, `vehicle`
+(`color`, `make`, `make_model` si el agente los da), `travel_direction`,
+`epoch_start`/`epoch_end`, `source: rekor-scout`, `agent_camera_id`,
+`matched`/`specific` (false salvo listas de vigilancia). El `object_id` es el
+track `car` del adapter con el que se casó la lectura. event-engine lo
+convierte en `plate_read` (o `specific_plate`) y en Frigate en `sub_label` +
+`data.recognized_license_plate`.
+
 ## `object-detection` (DeepStream)
 
 Payload nativo de `nvmsgconv` en `deepfrigate/detections` (esquema full o

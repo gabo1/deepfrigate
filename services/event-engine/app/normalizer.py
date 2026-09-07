@@ -94,11 +94,10 @@ class EventNormalizer:
             return "object_stationary"
         if update_type == "visual_match":
             return "visual_match"
-        if update_type == "plate" and (
-            data.get("specific") is True
-            or data.get("matched") is True
-        ):
-            return "specific_plate"
+        if update_type == "plate":
+            if data.get("specific") is True or data.get("matched") is True:
+                return "specific_plate"
+            return "plate_read" if data.get("plate") else None
         return None
 
     @staticmethod

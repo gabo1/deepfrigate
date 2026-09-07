@@ -77,6 +77,9 @@ def test_final_embedding_updates_are_queued_for_the_bridge() -> None:
     assert engine.queue.get_nowait()[0]["update_type"] == "embedding"
     assert acked == []
 
+    engine._on_message(None, None, message({"update_type": "plate", "object_id": "user-1"}))
+    assert engine.queue.get_nowait()[0]["update_type"] == "plate"
+
     engine._on_message(None, None, message({"update_type": "visual_match", "object_id": "c4aac4f4ef0a-1"}))
     assert engine.queue.empty()
     assert acked == [1]

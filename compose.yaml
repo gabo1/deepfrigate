@@ -205,6 +205,38 @@ services:
     depends_on:
       - mqtt
 
+  # Rekor Scout (OpenALPR) agent: decodes `user` on its own and POSTs plate
+  # groups to alpr-bridge. Needs config/openalpr/license.conf (trial key,
+  # git-ignored). CPU build; the CUDA tag is 5 GB and needs a GPU license.
+  openalpr:
+    image: ${OPENALPR_IMAGE:-openalpr/agent:raccoon-nocuda-runtime}
+    restart: unless-stopped
+    cap_add:
+      - SYS_NICE
+    volumes:
+      - ./config/openalpr/license.conf:/etc/openalpr/license.conf:ro
+      - ./config/openalpr/alprd.conf:/etc/openalpr/alprd.conf:ro
+      - ./config/openalpr/stream.d:/etc/openalpr/stream.d:ro
+      - openalpr-data:/var/lib/openalpr
+    depends_on:
+      - alpr-bridge
+
+  alpr-bridge:
+    build:
+      context: .
+      dockerfile: services/alpr-bridge/Dockerfile
+    restart: unless-stopped
+    environment:
+      MQTT_HOST: mqtt
+      MQTT_PORT: 1883
+      TRACKED_OBJECTS_TOPIC: deepfrigate/tracked-objects/{camera_id}
+      # agent camera_id -> DeepFrigate camera id
+      ALPR_CAMERAS: ${ALPR_CAMERAS:-1:user}
+      ALPR_MIN_CONFIDENCE: ${ALPR_MIN_CONFIDENCE:-50}
+      ALPR_MATCH_WINDOW_SECONDS: ${ALPR_MATCH_WINDOW_SECONDS:-3}
+    depends_on:
+      - mqtt
+
   event-engine:
     build:
       context: .
@@ -410,6 +442,7 @@ services:
       - ./models:/opt/models:ro
 
 volumes:
+  openalpr-data:
   frigate-bridge-media:
     name: ${FRIGATE_BRIDGE_MEDIA_VOLUME:-deepfrigate_frigate-media}
     external: true

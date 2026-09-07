@@ -296,6 +296,39 @@ Límites: con varias personas a la vez la co-ocurrencia se confunde y el
 desempate por PP-ShiTu es débil. Eventos abiertos (coches aparcados) solo
 cuentan al END. Auditar con `detail=true` y ajustar ventana y dirección.
 
+## 6c. Placas (Rekor Scout / OpenALPR agent → alpr-bridge)
+
+Motor comercial (licencia de evaluación 2 semanas, después suscripción Rekor
+por cámara). La clave vive en `config/openalpr/license.conf` (git-ignored,
+montada en `/etc/openalpr/license.conf`). Sin ella `alpr` responde
+`ALPR failed licensing check`.
+
+```text
+openalpr (alprd, país mx, CPU) ── decodifica rtsp://…/user por su cuenta
+   └─ HTTP POST alpr_group → alpr-bridge :8080/rekor
+        └─ casa la placa con el track `car` del adapter (bbox contiene el
+           centro de la placa / IoU con vehicle_region, ±3 s)
+             └─ MQTT deepfrigate/tracked-objects/user  update_type: plate
+                  └─ event-engine: Frigate `sub_label` = placa,
+                     `data.recognized_license_plate` (+ `license_plate{}`),
+                     PG `events` tipo `plate_read` (`specific_plate` si la
+                     placa viene marcada `matched`/`specific`)
+```
+
+- Solo `user`: placas de ~60–70 px. `tienda` y las de calle dan ~12–15 px:
+  ilegibles para cualquier motor. Añadir cámara = archivo en
+  `config/openalpr/stream.d/` + `ALPR_CAMERAS="1:user,2:otra"`.
+- Config del agente: `config/openalpr/alprd.conf` (`country = mx`,
+  `analysis_threads = 1`, `store_plates = 0`, `upload_address` al bridge,
+  `websockets_enabled = 0`). Reiniciar `deepfrigate-openalpr-1` tras cambiar.
+- Bridge: `ALPR_MIN_CONFIDENCE=50` (Rekor 0–100), `ALPR_MATCH_WINDOW_SECONDS=3`.
+  `GET /healthz` da contadores `received/published/unmatched/low_confidence`.
+- Coste: segundo decode de `user` en CPU dentro del agente (~1 core con
+  `analysis_threads = 1`). El tag CUDA (5 GB) exige licencia GPU.
+- Frigate muestra la placa como sub_label en Explore/Review y en el chip
+  `recognized_license_plate`; `/api/events/explore` y `search` sí la exponen
+  (está en su lista blanca).
+
 ## 7. Variables que importan
 
 | Variable | Servicio | Default | Qué hace |
@@ -307,4 +340,5 @@ cuentan al END. Auditar con `detail=true` y ajustar ventana y dirección.
 | `FRIGATE_BRIDGE_UPDATE_SECONDS` | event-engine | 1 | coalescing de UPDATE hacia Frigate |
 | `FRIGATE_EMBED_THUMBNAILS` | event-engine | false | ya no hace falta: Frigate embebe al END |
 | `semantic_search.*` | Frigate YAML | `jinav2`, `large`, `reindex: false` | buscador y embeddings |
+| `ALPR_CAMERAS` / `ALPR_MIN_CONFIDENCE` / `ALPR_MATCH_WINDOW_SECONDS` | alpr-bridge | `1:user` / 50 / 3 | mapeo cámara del agente → nuestra, umbral y ventana de casado |
 | `TRANSITION_PAIRS` / `_MODE` / `_WINDOW_SECONDS` / `_OVERLAP_SECONDS` / `_MIN_MOVE` / `_DIRECTION` / `_MIN_SCORE` / `_EMBED_WAIT_SECONDS` / `_LABELS` | event-engine | `c4aac4f4eefe:c4aac4f4ef0a` / `cooccurrence` / 60 / 15 / 0.1 / `ignore` / 0.3 / 6 / `car,person` | transiciones entre cámaras; pares vacíos desactiva |

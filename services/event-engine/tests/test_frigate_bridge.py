@@ -1367,3 +1367,57 @@ def test_frigate_green_files_are_repaired_shortly_after_create(monkeypatch):
     # Never again for this track.
     bridge.observe(_detection("UPDATE", 106.0, **_quality(thumbnail_changed=False)))
     assert len(calls) == created_calls + 1
+
+
+def _plate(object_id: str = "tienda-42", plate: str = "JD6085B", confidence: float = 60.5, ts: float = 105.0):
+    return {
+        "type": "tracked_object_update",
+        "object_id": object_id,
+        "camera_id": "tienda",
+        "track_id": 42,
+        "timestamp": ts,
+        "update_type": "plate",
+        "data": {"plate": plate, "confidence": confidence, "region": "mx-nle", "candidates": [{"plate": plate, "confidence": confidence}], "source": "rekor-scout", "matched": False, "specific": False},
+    }
+
+
+def test_plate_becomes_frigate_sub_label_and_recognized_plate(monkeypatch):
+    repository = FakeRepository()
+    store = FakeStore()
+    bridge = FrigateReviewBridge("http://frigate:5000/api", repository, store=store, camera_sizes={"tienda": (1280, 720)})
+    monkeypatch.setattr(bridge, "_request", lambda method, path, payload=None: ([] if method == "GET" else {"event_id": "frigate-event-1"}))
+    _publish(bridge, detected_event())
+
+    bridge.observe(_plate())
+    row = store.rows["frigate-event-1"]
+    assert row["data"]["recognized_license_plate"] == "JD6085B"
+    assert row["data"]["recognized_license_plate_score"] == 0.605
+    assert row["data"]["license_plate"]["source"] == "rekor-scout"
+    assert row["sub_label"] == "JD6085B"
+
+    # A weaker later read does not replace the best one.
+    bridge.observe(_plate(plate="JO6085B", confidence=40.0, ts=106.0))
+    assert store.rows["frigate-event-1"]["sub_label"] == "JD6085B"
+
+    # Vehicle attributes must not overwrite the plate as sub_label.
+    bridge.observe({
+        "type": "tracked_object_update", "object_id": "tienda-42", "camera_id": "tienda", "track_id": 42,
+        "timestamp": 107.0, "update_type": "classification",
+        "data": {"model": "vehicle-attribute", "model_version": "v", "label": "car",
+                 "attributes": [{"name": "color", "value": "gray", "score": 0.9}, {"name": "body_type", "value": "sedan", "score": 0.8}],
+                 "frame_ref_id": "tienda-42-1-abcd", "inference_ms": 1.0, "end_to_end_ms": 1.0},
+    })
+    assert store.rows["frigate-event-1"]["sub_label"] == "JD6085B"
+    assert store.rows["frigate-event-1"]["data"]["vehicle_attributes"]["color"]["value"] == "gray"
+
+
+def test_plate_before_creation_is_persisted_once_the_event_exists(monkeypatch):
+    repository = FakeRepository()
+    store = FakeStore()
+    bridge = FrigateReviewBridge("http://frigate:5000/api", repository, store=store, camera_sizes={"tienda": (1280, 720)})
+    monkeypatch.setattr(bridge, "_request", lambda method, path, payload=None: ([] if method == "GET" else {"event_id": "frigate-event-1"}))
+    bridge.observe(_detection("START", 100.0, false_positive=True, position_changes=0), detected_event())
+    bridge.observe(_plate(ts=100.5))
+    assert "frigate-event-1" not in store.rows
+    bridge.observe(_detection("UPDATE", 101.6, **_quality()))
+    assert store.rows["frigate-event-1"]["sub_label"] == "JD6085B"

@@ -112,6 +112,11 @@ Triton. Código: `services/ai-router/app/attribute.py`,
 `models/person-attribute/README.md`,
 `models/vehicle-attribute/README.md`.
 
+**Placas** (7 sep) no siguen este patrón: el agente Rekor Scout
+(`openalpr`) decodifica `user` por su cuenta y `alpr-bridge` casa cada
+lectura con el track `car` del adapter (`update_type: plate`). Ver
+`docs/OPERACION.md` §6c.
+
 Embeddings (PP-ShiTu) son el mismo patrón: crop SHM → Triton → Qdrant,
 `update_type: embedding` / `visual_match`. Tampoco son SGIE.
 

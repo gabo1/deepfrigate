@@ -113,6 +113,23 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
   eventos debido a timeouts del único worker MQTT es un trabajo aparte:
   desacoplar HTTP Frigate/coalescer por `object_id`; no reiniciar ni purgar
   MQTT para “arreglarlo”. Ver `docs/mejores-thumbnails.md`.
+- **Placas con Rekor Scout (7 sep 06:00):** `openalpr/agent:latest` no existe;
+  tag usado `raccoon-nocuda-runtime` (CPU, 858 MB; CUDA = 5 GB y licencia
+  GPU). Motor `alpr` 6.0.4, comercial: sin clave responde `ALPR failed
+  licensing check`; clave de evaluación (2 semanas) en
+  `config/openalpr/license.conf`, **git-ignored**. Probado sobre un frame de
+  `user`: `JD6085B` 60 %, región `mx-nle`, 100 ms en CPU. Solo `user` tiene
+  placas legibles (crops de coche p50 331 px; `tienda` 99 px, calle 74–78 px
+  → placas de 12–15 px). Servicios nuevos en compose: `openalpr` (alprd,
+  `config/openalpr/alprd.conf` + `stream.d/user.conf`, POST a
+  `http://alpr-bridge:8080/rekor`) y `alpr-bridge`
+  (`services/alpr-bridge`, FastAPI + MQTT: casa la placa con el track `car`
+  por bbox/IoU ±3 s y publica `update_type: plate`). event-engine: `plate`
+  entra a la cola, normalizer → `plate_read` (`specific_plate` si
+  `matched`/`specific`; enum añadido a `event.schema.json`), Frigate recibe
+  `sub_label` = placa + `recognized_license_plate` (+ `license_plate{}`); los
+  atributos de vehículo ya no pisan ese sub_label. Tests: alpr-bridge 5,
+  event-engine 73.
 - **CUDA buffer sharing DeepStream↔Triton (7 sep 02:15):** con 4 cámaras el
   host iba al ~57 %: `NetPreproc1` de `nvinferserver` 47 % de video-engine y
   Triton 24 %, porque `enable_cuda_buffer_sharing: false` copiaba cada tensor

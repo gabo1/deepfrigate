@@ -37,3 +37,6 @@ observabilidad/grafana/gf_pw
 .codex-inspect/
 skills-lock.json
 /*.png
+
+# OpenALPR / Rekor trial key (never commit)
+config/openalpr/license.conf
