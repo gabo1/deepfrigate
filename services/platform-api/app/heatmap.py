@@ -125,12 +125,12 @@ def _background(frigate_api_url: str, camera: str) -> Image.Image:
         return Image.new("RGB", size, (18, 18, 22))
 
 
-def _draw_zones(base: Image.Image, zones_path: Path, camera: str) -> None:
-    try:
-        config = json.loads(zones_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return
-    camera_config: dict[str, Any] = (config.get("cameras") or {}).get(camera) or {}
+def _draw_zones(base: Image.Image, camera_config: dict[str, Any]) -> None:
+    """Outline zones (white), lines (cyan) and direction arrows (amber).
+
+    `camera_config` is one camera of the zones config (relative coordinates),
+    whatever its source: Frigate /api/config or zones.json.
+    """
     draw = ImageDraw.Draw(base)
     w, h = base.size
     for name, zone in (camera_config.get("zones") or {}).items():
@@ -146,9 +146,28 @@ def _draw_zones(base: Image.Image, zones_path: Path, camera: str) -> None:
             # Al punto medio: en el extremo choca con la etiqueta de la zona.
             draw.text(((a[0] + b[0]) / 2 + 6, (a[1] + b[1]) / 2), name,
                       fill=(0, 229, 255))
+    for name, direction in (camera_config.get("directions") or {}).items():
+        if direction.get("from") and direction.get("to"):
+            a = (direction["from"][0] * w, direction["from"][1] * h)
+            b = (direction["to"][0] * w, direction["to"][1] * h)
+            _arrow(draw, a, b, (255, 191, 0))
+            draw.text((b[0] + 6, b[1] + 6), name, fill=(255, 191, 0))
 
 
-def render(store_url: str, frigate_api_url: str, zones_path: Path,
+def _arrow(draw: ImageDraw.ImageDraw, a: tuple[float, float], b: tuple[float, float],
+           color: tuple[int, int, int], head: float = 14.0) -> None:
+    draw.line([a, b], fill=color, width=2)
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    length = (dx * dx + dy * dy) ** 0.5
+    if length <= 0:
+        return
+    ux, uy = dx / length, dy / length
+    left = (b[0] - head * ux + head * 0.5 * uy, b[1] - head * uy - head * 0.5 * ux)
+    right = (b[0] - head * ux - head * 0.5 * uy, b[1] - head * uy + head * 0.5 * ux)
+    draw.polygon([b, left, right], fill=color)
+
+
+def render(store_url: str, frigate_api_url: str, camera_config: dict[str, Any],
            camera: str, start_s: float, end_s: float, weight: str,
            zones: bool, label: str = "") -> bytes:
     if label in TODAS:
@@ -190,8 +209,8 @@ def render(store_url: str, frigate_api_url: str, zones_path: Path,
         overlay = Image.merge("RGBA", [heat.point(lut) for lut in luts])
         base = Image.alpha_composite(base.convert("RGBA"), overlay).convert("RGB")
 
-    if zones:
-        _draw_zones(base, zones_path, camera)
+    if zones and camera_config:
+        _draw_zones(base, camera_config)
 
     if not cells:
         # Antes, un rango sin datos y un parametro invalido daban exactamente

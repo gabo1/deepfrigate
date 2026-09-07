@@ -86,6 +86,12 @@ services:
       FRIGATE_EVENT_STORE_URL: ${FRIGATE_EVENT_STORE_URL:-postgresql://frigate_pgvector:${FRIGATE_PG_PASSWORD:-frigate_pgvector_smoke}@${POSTGRES_HOST:-pgvector-smoke-db}:5432/${POSTGRES_DB:-frigate_pgvector_smoke}}
       PIPELINE_CONFIG: /app/pipeline-config/pipeline.yaml
       PIPELINE_SCHEMA: /app/contracts/pipeline.schema.json
+      # Zones/lines/directions for the heatmap overlay and pipeline options:
+      # Frigate /api/config (same as the adapter), cached ZONES_CACHE_SECONDS.
+      ZONES_SOURCE: ${ZONES_SOURCE:-frigate}
+      ZONES_CACHE_SECONDS: ${ZONES_CACHE_SECONDS:-5}
+      ZONES_FRAME_WIDTH: ${ZONES_FRAME_WIDTH:-1280}
+      ZONES_FRAME_HEIGHT: ${ZONES_FRAME_HEIGHT:-720}
       ZONES_CONFIG: /app/config/zones.json
       TRITON_MODEL_REPOSITORY: /app/models
       TRITON_HTTP_URL: http://triton:8000

@@ -75,7 +75,11 @@ def pipeline_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     )
     monkeypatch.setattr(main, "pipeline_config_path", pipeline)
     monkeypatch.setattr(main, "pipeline_schema_path", schema)
-    monkeypatch.setattr(main, "zones_config_path", zones)
+    monkeypatch.setattr(
+        main,
+        "zones_source",
+        main.ZonesSource(source="file", frigate_api_url="http://frigate.test/api", file_path=zones),
+    )
     monkeypatch.setattr(main, "model_repository_path", models)
     return pipeline
 

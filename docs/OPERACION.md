@@ -301,10 +301,14 @@ UI Frigate / PUT /api/config/set ──► YAML ──► restart Frigate
   `overcrowding` puede volver a dispararse tras el reinicio de Frigate.
 - Mapeo: `loitering_time`→`loitering_threshold_s`; el resto igual nombre. El
   lado "in" de una línea es la izquierda del vector de→a (cross product > 0).
+- platform-api también lee de Frigate (`app/zones_source.py`, copia de
+  `frigate_zones.py`; caché `ZONES_CACHE_SECONDS=5`, si Frigate cae sirve la
+  última copia): el heatmap (`/v1/heatmap/{cam}.jpg?zones=true`) dibuja zonas
+  en blanco, líneas en cian y direcciones como flecha ámbar; `/v1/pipelines/
+  options` y `validate` usan las mismas zonas. event-engine sigue leyendo
+  `zones.json` solo para el tamaño 1280×720.
 - Fase 3 pendiente: dibujar líneas y direcciones en la UI (hoy por YAML o
-  `config/set`). event-engine y platform-api siguen leyendo `zones.json` solo
-  para el tamaño 1280×720; platform-api aún pinta polígonos del JSON en el
-  heatmap (pendiente pasar a `/api/config`).
+  `config/set`).
 - Fork: código en `frigate-pg` rama `deepfrigate/pgsql`, aplicado al contenedor
   con `docker cp` + `docker restart` (imagen sin reconstruir; ver
   `frigate-pg/docs/RECREAR-IMAGEN-3005.md` para hornearlo). Tests:

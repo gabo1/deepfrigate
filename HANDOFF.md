@@ -129,8 +129,12 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
   `direction_match` 1 en 2 min, Explore con `zones: ["calle"]`. Hallazgo:
   `ZoneConfig` es `BaseModel` plano (no `extra=forbid`): claves desconocidas en
   una zona se ignoran, no fallan; a nivel cámara sí fallan. Pendiente fase 3:
-  editor visual de líneas/direcciones en `MasksAndZonesView.tsx`; platform-api
-  aún pinta polígonos de `zones.json` en el heatmap.
+  editor visual de líneas/direcciones en `MasksAndZonesView.tsx`.
+- **platform-api lee zonas de Frigate (8 sep 00:10):** `app/zones_source.py`
+  (`ZonesSource`, caché 5 s, última copia si Frigate cae) + copia de
+  `frigate_zones.py`; heatmap con zonas/líneas/flechas de dirección desde
+  `/api/config`; `/v1/pipelines/options` y `validate` igual. Tests 8.
+  Verificado: `options` devuelve `user: ['calle']`; heatmap 200 con overlay.
 - **Un solo PostgreSQL (7 sep 23:05, sin histórico por decisión):** las
   tablas `events`, `frigate_event_links`, `camera_transitions` viven ahora en
   el esquema `deepfrigate` de `frigate_pgvector_smoke`

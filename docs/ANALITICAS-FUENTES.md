@@ -1060,8 +1060,9 @@ docker restart frigate-pgvector-smoke
 ```
 
 `config/zones.json` sigue existiendo solo como escape (`ZONES_SOURCE=file`) y
-porque event-engine y platform-api leen de ahí el tamaño de frame 1280×720.
-Sus polígonos ya no se usan.
+porque event-engine lee de ahí el tamaño de frame 1280×720. Sus polígonos ya
+no se usan: el heatmap de platform-api (`/v1/heatmap/{cam}.jpg?zones=true`)
+también dibuja zonas, líneas y flechas de dirección desde `/api/config`.
 
 Qué aparece al recargar el adapter, y qué **no**:
 

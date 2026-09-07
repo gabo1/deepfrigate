@@ -3,6 +3,7 @@
 from datetime import datetime
 from hashlib import sha256
 import json
+import logging
 import os
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -17,6 +18,7 @@ from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import Response
 from jsonschema import Draft202012Validator
 from . import heatmap as heatmap_render
+from .zones_source import ZonesSource, ZonesUnavailable
 import psycopg
 from psycopg.rows import dict_row
 import yaml
@@ -49,9 +51,9 @@ pipeline_config_path = Path(
 pipeline_schema_path = Path(
     os.getenv("PIPELINE_SCHEMA", "/app/contracts/pipeline.schema.json")
 )
-zones_config_path = Path(
-    os.getenv("ZONES_CONFIG", "/app/config/zones.json")
-)
+# Zones/lines/directions come from Frigate (drawn in its UI) like in the
+# detection-adapter; ZONES_SOURCE=file falls back to config/zones.json.
+zones_source = ZonesSource.from_env()
 model_repository_path = Path(
     os.getenv("TRITON_MODEL_REPOSITORY", "/app/models")
 )
@@ -107,10 +109,8 @@ def validate_pipeline_document(document: Any) -> dict[str, Any]:
         )
 
     try:
-        zones = json.loads(
-            zones_config_path.read_text(encoding="utf-8")
-        ).get("cameras", {})
-    except (OSError, ValueError) as error:
+        zones = zones_source.cameras()
+    except ZonesUnavailable as error:
         raise HTTPException(
             status_code=503, detail="zone configuration unavailable"
         ) from error
@@ -208,10 +208,8 @@ def get_active_pipeline() -> dict[str, Any]:
 def get_pipeline_options() -> dict[str, Any]:
     """Return model and zone choices supported by the workflow editor."""
     try:
-        zones = json.loads(
-            zones_config_path.read_text(encoding="utf-8")
-        ).get("cameras", {})
-    except (OSError, ValueError) as error:
+        zones = zones_source.cameras()
+    except ZonesUnavailable as error:
         raise HTTPException(
             status_code=503, detail="pipeline options unavailable"
         ) from error
@@ -565,8 +563,15 @@ def get_heatmap(
     if start_s >= end_s:
         raise HTTPException(status_code=400, detail="start must be before end")
     try:
+        overlay: dict[str, Any] = {}
+        if zones:
+            try:
+                overlay = zones_source.cameras().get(camera) or {}
+            except ZonesUnavailable as error:
+                # The heat is the product; the outline is decoration.
+                logging.getLogger("platform-api").warning("Heatmap sin zonas: %s", error)
         payload = heatmap_render.render(
-            store_url, frigate_api_url, zones_config_path,
+            store_url, frigate_api_url, overlay,
             camera, start_s, end_s, weight, zones, label,
         )
     except psycopg.Error as error:
