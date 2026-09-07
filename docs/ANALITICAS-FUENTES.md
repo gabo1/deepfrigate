@@ -10,6 +10,11 @@ Fecha de este mapa: **4 sep 2026**. Lab vivo en esta VM.
 existen. El plan de Grafana (§8) lleva marcado lo hecho. No versionar
 contraseñas (Grafana/Frigate admin).
 
+**7 sep:** tres fuentes nuevas sin dashboard todavía: **placas** (OpenALPR),
+**marca/modelo/tipo/año de coche** (OpenALPR sustituye a PULC) y
+**transiciones entre cámaras** (`camera_transitions`). Todo en §15, con las SQL
+ya probadas y los dashboards que faltan.
+
 ---
 
 ## 1. Qué está vivo ahora (lab)
@@ -669,6 +674,13 @@ que los paneles consultan por **nombre desnudo**. Valor nuevo: `motor=deepfrigat
 11. **Heatmap de frame = deuda.** El del reporter (`:5008`) ya existe y
     es otra cosa (un punto por Event). Ver §14. No meter Supervision
     en el adapter para esto.
+12. ⬜ **Dashboard `vehiculos`** (`$camera`): marca, modelo, color, tipo y
+    placas desde `event.data->'vehicle_attributes'` /
+    `recognized_license_plate` del smoke. Datasource ya existe
+    (`frigate-smoke-pg`). SQL en §15.3.
+13. ⬜ **Dashboard `transiciones`**: matriz from→to, gaps y detalle desde
+    `camera_transitions` en la PG **de DeepFrigate**. Falta el datasource
+    `deepfrigate-pg` (receta en §15.2).
 
 ---
 
@@ -756,6 +768,9 @@ curl -s --data-urlencode \
 - Dashboard PULC: `http://100.83.231.97:3001/d/pulc-atributos`
   (fuente: `/opt/observabilidad/grafana/dashboards/pulc-atributos.json`)
 - Datasource SQL: `/opt/observabilidad/grafana/provisioning/datasources/postgres-frigate.yml`
+- Placas y marca/modelo (runbook): `docs/OPERACION.md` §6c; transiciones: §6b
+- API transiciones: `http://127.0.0.1:8082/v1/camera-transitions?hours=24[&detail=true]`
+- Contrato `plate` / `classification` de coche: `contracts/README.md`
 
 ---
 
@@ -939,7 +954,8 @@ cambia, se cambia aquí y en el sitio que dice la columna "dónde".
 |---|---|---|
 | Fuente | `tienda_10.mp4` en bucle (`-stream_loop -1`) | **cámara externa real**, `rtsp://cyberw.io:15190/?inst=1` |
 | Etiquetas | `person` | **`car` y `person`** (698 / 114 el 3 sep) |
-| Atributos PULC | sí | persona: `person_attributes`; coche: `vehicle_attributes` (color + tipo) |
+| Atributos | sí | persona: `person_attributes` (PULC); coche: `vehicle_attributes` (**OpenALPR desde 7 sep**: color, tipo, marca, modelo, año; antes PULC color + tipo) |
+| Placas | no | **sí** desde 7 sep: `recognized_license_plate` (OpenALPR vía ai-router). Única cámara con placas legibles |
 | Lectura por hora del día | **sin sentido** (bucle de 299 s) | **sí vale**: es tráfico real |
 | Geometría en `zones.json` | zona + línea + dirección | **ninguna** |
 
@@ -950,9 +966,10 @@ Dos consecuencias que hay que tener presentes:
   funcionan los paneles SQL y el heatmap. Dibujarla es el paso que desbloquea
   el resto, y el heatmap de rutas es la herramienta para decidir dónde: la
   primera imagen ya mostró **dos carriles de tráfico convergiendo**.
-- **Ni velocidad ni matrícula.** `average_estimated_speed` y el LPR existen en
-  Frigate pero no están configurados; la velocidad necesita `distances` en las
-  zonas. Es config de Frigate, no de dashboard.
+- **Ni velocidad ni LPR de Frigate.** `average_estimated_speed` necesita
+  `distances` en las zonas (config de Frigate). La matrícula **sí** existe
+  desde el 7 sep, pero no la lee Frigate: la escribe event-engine en
+  `recognized_license_plate` a partir de OpenALPR (§15). Solo en `user`.
 
 ### Dashboards: una pareja parametrizada, no un juego por especie
 
@@ -969,7 +986,7 @@ El eje correcto es **por cámara**, con variables de plantilla:
 |---|---|---|
 | `analitica-deepfrigate` | `$camera`, `$label` | Todo. `$label` **solo afecta al heatmap**; el resto ya desglosa por etiqueta |
 | `camara-eventos` | `$camera`, `$label` | Solo lo que funciona **en cualquier cámara**: métricas de escena + SQL + heatmap, sin depender de `zones.json` |
-| `pulc-atributos` | `$camera` | Solo lista cámaras con `person_attributes`. Los coches van en `vehicle_attributes` (aún sin dashboard) |
+| `pulc-atributos` | `$camera` | Solo lista cámaras con `person_attributes`. Los coches van en `vehicle_attributes` → dashboard `vehiculos` pendiente (§15.4) |
 
 **Qué métrica de Prometheus vale sin geometría.** No es evidente y conviene
 tenerlo escrito:
@@ -1501,3 +1518,229 @@ las trayectorias de 21 personas superpuestas ~800 veces. La densidad
   commit es **solo local** y así se queda.
 - Versionar `docker-compose.postgresql.yml`: lleva la credencial de PG en
   claro. Se dejó fuera del commit a propósito.
+
+---
+
+## 15. Placas, marca/modelo y transiciones entre cámaras (7 sep) — fuentes para los dashboards nuevos
+
+Tres datos nuevos desde el 7 sep. Ninguno tiene panel todavía. Aquí está
+dónde viven, las SQL que ya se ejecutaron contra el lab y qué dashboards
+levantar. Runbook de cada motor en `docs/OPERACION.md` §6b (transiciones) y
+§6c (placas).
+
+### 15.1 Dónde vive cada dato
+
+| Dato | Base | Tabla / campo | Desde | Notas |
+|---|---|---|---|---|
+| Marca, modelo, color, tipo, año del coche | Frigate smoke (`frigate-smoke-pg`) | `event.data->'vehicle_attributes'->{make,make_model,color,body_type,year}->>'value'` (+ `score` 0–1) | 7 sep 12:36 | Antes de esa hora solo `color` + `body_type` de PULC |
+| Placa | Frigate smoke | `event.data->>'recognized_license_plate'`, `recognized_license_plate_score` (0–1), `data->'license_plate'` (`confidence` 0–100, `region`, `candidates`, `source`, `read_at`) | 7 sep 06:00 | `sub_label` = placa. Solo `user` |
+| Placa (evento crudo, una fila por lectura) | DeepFrigate PG (`deepfrigate-postgres-1`, **sin datasource aún**) | `events` con `event_type='plate_read'`, `data->>'plate'`, `confidence`, `source` (`openalpr-sdk` / `rekor-scout`) | 7 sep | Sirve para medir aciertos y comparar motores, no para el dashboard de negocio |
+| Transición entre cámaras | DeepFrigate PG | `camera_transitions` (`from_camera`, `to_camera`, `from_object_id`, `to_object_id`, `from_frigate_event_id`, `to_frigate_event_id`, `label`, `from_seen_at`, `to_seen_at`, `gap_seconds`, `score`, `method`, `candidates`) | 7 sep 01:30 | Solo el par `c4aac4f4eefe`↔`c4aac4f4ef0a`; `method='cooccurrence'`, `score` casi siempre NULL |
+| Transición (agregado) | platform-api | `GET /v1/camera-transitions?hours=24` (`detail=true` da filas) | 7 sep | `127.0.0.1:8082`; desde Grafana vía proxy `deepfrigate-platform-api` |
+
+Los `frigate_event_id` de `camera_transitions` enlazan con Explore:
+`https://100.83.231.97:3005/explore?event_id=<id>`. Es la forma de validar a
+ojo una transición (dos pestañas, mismo peatón).
+
+### 15.2 Datasource que falta: PG de DeepFrigate
+
+`camera_transitions` y `events` están en `deepfrigate-postgres-1`, **no** en
+la base del smoke. Grafana ya comparte la red `deepfrigate_default`, así que
+llega por nombre. Receta (no hecha; misma forma que `postgres-frigate.yml`):
+
+```sql
+-- en deepfrigate-postgres-1, DB deepfrigate (superuser deepfrigate)
+CREATE ROLE grafana_ro LOGIN PASSWORD '<no versionar>';
+GRANT CONNECT ON DATABASE deepfrigate TO grafana_ro;
+GRANT USAGE ON SCHEMA public TO grafana_ro;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO grafana_ro;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO grafana_ro;
+```
+
+```yaml
+# /opt/observabilidad/grafana/provisioning/datasources/postgres-deepfrigate.yml (640, root)
+apiVersion: 1
+datasources:
+  - name: DeepFrigate (PG)
+    uid: deepfrigate-pg
+    type: grafana-postgresql-datasource
+    url: deepfrigate-postgres-1:5432
+    user: grafana_ro
+    secureJsonData: { password: "<la misma>" }
+    jsonData: { database: deepfrigate, sslmode: disable, postgresVersion: 1600 }
+    editable: false
+```
+
+El puerto `127.0.0.1:5433` del host es para `psql` a mano; Grafana no lo
+necesita.
+
+### 15.3 SQL ya probadas (7 sep, ~14:10 UTC)
+
+Frigate guarda `start_time` en epoch segundos: usar `to_timestamp(start_time)`
+y, en Grafana, `$__unixEpochFilter(start_time)`.
+
+**Marcas por cámara (24 h).** Datasource `frigate-smoke-pg`.
+
+```sql
+SELECT camera, data->'vehicle_attributes'->'make'->>'value' AS marca, count(*)
+FROM event
+WHERE label = 'car' AND data->'vehicle_attributes' ? 'make'
+  AND $__unixEpochFilter(start_time) AND camera IN ($camera)
+GROUP BY 1, 2 ORDER BY 3 DESC;
+-- lab: tienda chevrolet 50, ford 50, nissan 46; user nissan 43, toyota 32
+```
+
+Mismo molde con `make_model` (modelo), `color`, `year`. Para tipo de
+carrocería ver el aviso de vocabulario en §15.5.
+
+**Últimas placas (tabla con enlace a Explore).**
+
+```sql
+SELECT to_timestamp(start_time) AS inicio, camera,
+       data->>'recognized_license_plate'                          AS placa,
+       round((data->>'recognized_license_plate_score')::numeric*100) AS pct,
+       data->'license_plate'->>'source'                          AS fuente,
+       data->'vehicle_attributes'->'color'->>'value'             AS color,
+       data->'vehicle_attributes'->'make_model'->>'value'        AS modelo,
+       'https://100.83.231.97:3005/explore?event_id=' || id      AS explore
+FROM event
+WHERE data ? 'recognized_license_plate' AND $__unixEpochFilter(start_time)
+ORDER BY start_time DESC LIMIT 50;
+-- lab: PDS337B 92 % black; JCR493A 93 % red toyota_yaris
+```
+
+**Placas leídas vs coches vistos por hora** (mide cobertura del lector).
+
+```sql
+SELECT date_trunc('hour', to_timestamp(start_time)) AS time,
+       count(*) FILTER (WHERE data ? 'recognized_license_plate') AS placas,
+       count(*)                                                  AS coches
+FROM event
+WHERE label = 'car' AND camera = 'user' AND $__unixEpochFilter(start_time)
+GROUP BY 1 ORDER BY 1;
+-- lab 13:00 UTC: 79 placas de 167 coches (47 %); 12:00: 30/55
+```
+
+**Matriz from→to** (datasource `deepfrigate-pg`, pendiente).
+
+```sql
+SELECT from_camera, to_camera, label, count(*) AS n,
+       round(avg(gap_seconds)::numeric, 1) AS gap_medio_s,
+       round(percentile_cont(0.5) WITHIN GROUP (ORDER BY gap_seconds)::numeric, 1) AS gap_p50_s
+FROM camera_transitions
+WHERE $__timeFilter(created_at)
+GROUP BY 1, 2, 3 ORDER BY 4 DESC;
+-- lab 24 h: ef0a→eefe person 13 (gap 7 s); eefe→ef0a person 11 (19 s); car 3 + 1
+```
+
+**Detalle con enlaces (tabla).**
+
+```sql
+SELECT created_at AS time, label, from_camera, to_camera,
+       round(gap_seconds::numeric, 1) AS gap_s, candidates,
+       'https://100.83.231.97:3005/explore?event_id=' || from_frigate_event_id AS desde,
+       'https://100.83.231.97:3005/explore?event_id=' || to_frigate_event_id   AS hacia
+FROM camera_transitions
+WHERE $__timeFilter(created_at) AND label IN ($label)
+ORDER BY created_at DESC LIMIT 100;
+```
+
+**Transiciones por hora** (serie): `date_trunc('hour', created_at)`,
+`count(*)`, `GROUP BY 1`.
+
+**Comparar motores de placa** (DeepFrigate PG, `events`; solo mientras corra el
+perfil `alpr-agent`):
+
+```sql
+WITH r AS (
+  SELECT object_id, data->>'source' AS src, data->>'plate' AS plate
+  FROM events WHERE event_type = 'plate_read' AND $__timeFilter(created_at))
+SELECT count(DISTINCT object_id) FILTER (WHERE src = 'openalpr-sdk') AS sdk,
+       count(DISTINCT object_id) FILTER (WHERE src = 'rekor-scout')  AS agente,
+       count(DISTINCT object_id)                                     AS total
+FROM r;
+-- lab 12:42–14:10: sdk 82, agente 85, total 115 tracks
+```
+
+### 15.4 Dashboards que faltan
+
+Mismo criterio que §11 quater: **por cámara**, no por especie. Dos
+dashboards nuevos, no paneles sueltos en `analitica-deepfrigate` (sus filas
+ya son largas y estos datos tienen otro datasource).
+
+**`vehiculos`** (`$camera`, datasource `frigate-smoke-pg`):
+
+| Panel | Query | Tipo |
+|---|---|---|
+| Coches por hora | `count(*)` de `event` con `label='car'` por `date_trunc('hour', to_timestamp(start_time))` | serie |
+| Marcas / Modelos / Colores | §15.3 marcas, cambiando el campo | barras horizontales o pie |
+| Tipo de carrocería | idem `body_type` con el `CASE` de §15.5 | barras |
+| Placas leídas vs coches | §15.3 cobertura | serie doble |
+| Últimas placas | §15.3 tabla; columna `explore` como link | tabla |
+| Placa buscada | variable `$plate` texto → `WHERE data->>'recognized_license_plate' ILIKE '%$plate%'` | tabla |
+
+Solo `user` tiene placas: si `$camera` no es `user`, los paneles de placa
+salen vacíos **por construcción** (12–15 px de placa en `tienda` y calle).
+Mejor ocultarlos con una fila colapsada "Placas (solo user)" que mostrar
+ceros.
+
+**`transiciones`** (`$label`, datasource `deepfrigate-pg`):
+
+| Panel | Query | Tipo |
+|---|---|---|
+| Matriz from→to | §15.3 matriz | tabla o heatmap 2×2 |
+| Transiciones por hora | serie por `created_at` | serie |
+| Distribución del gap | histograma de `gap_seconds` (bucket 5 s) | histograma |
+| Detalle | §15.3 detalle con links | tabla |
+| Estado del matcher | `GET /v1/camera-transitions` vía proxy (stat) | stat |
+
+Alternativa sin datasource nuevo: panel de tipo tabla sobre el proxy
+`deepfrigate-platform-api` no sirve (es tipo `prometheus`); haría falta
+Infinity, y ya se descartó (§8.5). Crear el datasource PG es más corto.
+
+### 15.5 Avisos para no leer mal los paneles
+
+- **Dos vocabularios de `body_type`.** PULC escribió `sedan, suv, van,
+  hatchback, mpv, pickup, bus, truck, estate` (13 348 `sedan` en la base);
+  OpenALPR escribe `sedan-standard, sedan-compact, suv-standard,
+  suv-crossover, truck-standard, van-full, van-mini, taxi, motorcycle…`. Un
+  `GROUP BY` directo saca dos barras por tipo. Normalizar en la query:
+
+  ```sql
+  CASE
+    WHEN v LIKE 'sedan%'  THEN 'sedan'
+    WHEN v LIKE 'suv%'    THEN 'suv'
+    WHEN v LIKE 'truck%'  OR v = 'pickup' THEN 'pickup/truck'
+    WHEN v LIKE 'van%'    OR v = 'mpv'    THEN 'van/mpv'
+    ELSE v END
+  -- con v = data->'vehicle_attributes'->'body_type'->>'value'
+  ```
+
+- **`make`/`make_model`/`year` solo existen desde 7 sep 12:36.** Un panel a 7
+  días muestra un salto de cero a algo; no es un cambio de tráfico.
+- **Score de atributo ≠ probabilidad calibrada.** ai-router descarta
+  < 0.3 (`OPENALPR_MIN_ATTRIBUTE_SCORE`). De noche (IR) el color sale 0 y no
+  se publica: menos filas con `color` de noche es normal.
+- **Placa: una por Event, la de mayor confianza.** event-engine sustituye la
+  placa si llega otra lectura con más `confidence`. Para ver todas las
+  lecturas (y los desacuerdos) hay que ir a `events.plate_read` en la PG de
+  DeepFrigate. Con los dos motores encendidos, en 52 tracks leídos por ambos
+  coincidieron 28 (54 %): el SDK lee un solo crop y acepta ≥ 50 %; el agente
+  vota entre frames. Mientras no se decida (subir `PLATE_MIN_CONFIDENCE` o
+  votar entre las 6 pasadas), tratar la placa como **lectura**, no como dato
+  fiscal.
+- **Transiciones: peatones fiables, coches con falsos.** Las de `person`
+  salen con gap 0–5 s y un candidato. Las de `car` incluyen coches
+  estacionados: tracks vivos 1–8 h (`c4aac4f4ef0a-2`, `c4aac4f4eefe-1`) cuyo
+  jitter de bbox supera `TRANSITION_MIN_MOVE=0.1` en 60 s. Filtro pendiente:
+  edad máxima de track o flag `stationary` del adapter. Hasta entonces, en el
+  dashboard filtrar `label='person'` por defecto.
+- **Ida y vuelta en < 60 s no es un viaje.** `ef0a-561 → eefe-568 → ef0a-621`
+  es el mismo peatón re-trackeado en `ef0a` (id nuevo). Contar viajes por
+  `to_object_id` distinto infla; agrupar por minuto o descartar el sentido
+  inverso dentro de `TRANSITION_WINDOW_SECONDS`.
+- **`score` NULL en `cooccurrence`.** Solo se rellena cuando hubo empate y se
+  desempató con embedding PP-ShiTu (0.37–0.45 en el lab, muy poco
+  discriminante: §6b de OPERACION). No usar `avg(score)` como calidad.
+- **Zona horaria.** `created_at` es timestamptz; `start_time` epoch UTC. Los
+  ejemplos de arriba están en UTC (lab −6 h para México centro).

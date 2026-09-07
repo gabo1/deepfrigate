@@ -113,6 +113,15 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
   eventos debido a timeouts del único worker MQTT es un trabajo aparte:
   desacoplar HTTP Frigate/coalescer por `object_id`; no reiniciar ni purgar
   MQTT para “arreglarlo”. Ver `docs/mejores-thumbnails.md`.
+- **Documentación analíticas nuevas (7 sep 14:20):** `docs/ANALITICAS-FUENTES.md`
+  §15: dónde viven placas, marca/modelo y `camera_transitions`, SQL probadas,
+  receta del datasource `deepfrigate-pg` (falta: `grafana_ro` en
+  `deepfrigate-postgres-1`) y los dos dashboards pendientes (`vehiculos`,
+  `transiciones`) con sus avisos (dos vocabularios de `body_type`, coches
+  estacionados como transiciones falsas, acuerdo SDK/agente 28 de 52).
+  OPERACION §6b/§6c con estado y comparación. Transiciones a 14:00: 28
+  (person 24, car 4; 2 car falsas). Pendientes de decisión: filtro de edad de
+  track en transiciones, `PLATE_MIN_CONFIDENCE` 70–80 o voto entre pasadas.
 - **OpenALPR reemplaza a PULC en coches (7 sep 12:40):** nuevo
   `services/alpr-worker` (FROM `openalpr/agent:4.1.13-sdk` + FastAPI;
   `POST /analyze` recibe el crop RGB crudo y corre `Alpr("mx")` +

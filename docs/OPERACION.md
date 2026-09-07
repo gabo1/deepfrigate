@@ -296,6 +296,16 @@ Límites: con varias personas a la vez la co-ocurrencia se confunde y el
 desempate por PP-ShiTu es débil. Eventos abiertos (coches aparcados) solo
 cuentan al END. Auditar con `detail=true` y ajustar ventana y dirección.
 
+**Estado 7 sep 14:00.** 28 transiciones desde 01:30 (person 24, car 4).
+Peatones: gaps 0–5 s, candidato único; ejemplo bueno `ef0a-996 → eefe-993 →
+ef0a-1011` (cruza y vuelve). Falsos conocidos: 2 de las 4 de `car` son coches
+estacionados con tracks vivos 1–8 h (`c4aac4f4ef0a-2`, `c4aac4f4eefe-1`,
+`c4aac4f4ef0a-215`): el jitter del bbox en 60 s supera `TRANSITION_MIN_MOVE`.
+Arreglo pendiente: descartar tracks con edad > N s (p. ej. 120) o con
+`stationary` del adapter. También aparece "ida y vuelta" en 56 s cuando el
+tracker re-identifica al mismo peatón con id nuevo. SQL y paneles propuestos
+en `docs/ANALITICAS-FUENTES.md` §15.
+
 ## 6c. Placas y marca/modelo (OpenALPR SDK → alpr-worker)
 
 Motor comercial Rekor/OpenALPR (licencia de evaluación 2 semanas, después
@@ -350,6 +360,12 @@ bbox/IoU ±3 s). Lee en cada frame, así que acierta más placas que las 6
 pasadas del worker, a costa de ~1 core. Encender para comparar:
 `docker compose --env-file .env.example --profile alpr-agent up -d openalpr alpr-bridge`.
 Si los dos corren, event-engine se queda con la lectura de mayor confianza.
+
+Comparación 7 sep 12:42–14:10 (ambos encendidos): SDK leyó 82 tracks, agente
+85, unión 115. En los 52 leídos por los dos coincidió la placa en 28 (54 %).
+El SDK ve un crop y publica desde 50 %; el agente vota entre frames y sale
+~93 %. Antes de apagar el agente: subir `PLATE_MIN_CONFIDENCE` a 70–80 o
+votar entre las `PLATE_MAX_ATTEMPTS` pasadas (hoy para en la primera lectura).
 
 ## 7. Variables que importan
 
