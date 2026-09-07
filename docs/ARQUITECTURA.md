@@ -1,9 +1,10 @@
 # Arquitectura DeepFrigate
 
-Camino que **corre** en el lab (4 sep 2026). Tesla T4. Cámaras en el
-`pipeline.yaml` vivo: `tienda` y `user` (mux DS 1280×720; live Frigate
-`tienda` 1920×1080 @ 10). `trafico` está en MediaMTX / YAML de fuentes,
-no en el pipeline. Cómo se enganchó `user`: `docs/CAMARA-USER.md`.
+Camino que **corre** en el lab (7 sep 2026). Tesla T4, VM de 4 cores.
+Cámaras en el `pipeline.yaml` vivo: `tienda`, `user`, `c4aac4f4eefe`,
+`c4aac4f4ef0a` (mux DS 1280×720 sin padding; live Frigate `tienda`
+1920×1080 @ 10). `trafico` está en MediaMTX / YAML de fuentes, no en el
+pipeline. Cómo se enganchó `user`: `docs/CAMARA-USER.md`.
 Frigate smoke no decodifica (HANDOFF 4 sep).
 
 `/home/agent/arquitectura.md` es **Savant**. No editarlo. Este fichero es
@@ -21,33 +22,40 @@ Lab / recreate: `HANDOFF.md`.
 
 ```mermaid
 flowchart LR
-  RTSP["MediaMTX<br/>RTSP tienda + user"]
-  subgraph DS["video-engine · DeepStream 9"]
-    PGIE["NVDEC → mux<br/>nvinferserver unique-id 1<br/>Triton YOLO26"]
+  RTSP["MediaMTX / RTSP<br/>tienda · user · c4aac4f4eefe · c4aac4f4ef0a"]
+  subgraph DS["video-engine · DeepStream 9 (T4)"]
+    PGIE["NVDEC → mux 1280×720 sin padding<br/>nvinferserver → Triton YOLO26<br/>(CUDA buffer sharing, pid/ipc host)"]
     TRK["NvDCF"]
     TEE["tee"]
+    WD["watchdog · retención snapshots 24 h"]
     PGIE --> TRK --> TEE
   end
-  MQTT["MQTT detections"]
-  AD["detection-adapter<br/>lifecycle + zonas/líneas/crowd/dir"]
-  EE["event-engine"]
-  FR["Frigate smoke :3005"]
-  PR["Prometheus :9110→:9090"]
-  GR["Grafana analitica-deepfrigate"]
-  FS["frame-store SHM"]
-  AR["ai-router"]
-  TR["Triton gRPC"]
-  QD["Qdrant"]
-
+  MQTT["MQTT deepfrigate/detections"]
+  AD["detection-adapter<br/>START/UPDATE/LOST/END · zonas/líneas/crowd"]
+  EE["event-engine<br/>PG events · puente Frigate · transiciones"]
+  PG["PostgreSQL deepfrigate<br/>events · camera_transitions"]
+  FR["Frigate smoke :3005 (PG+pgvector)<br/>Explore · Jina v2 GPU"]
+  API["platform-api :8082<br/>/v1/camera-transitions · heatmap"]
+  PR["Prometheus ← adapter :9110"]
+  GR["Grafana :3001"]
+  FS["frame-store · FrameRef SHM"]
+  AR["ai-router<br/>voto de placa"]
+  TR["Triton gRPC<br/>YOLO26 · person-attribute PULC · PP-ShiTu<br/>(vehicle-attribute PULC cargado, apagado)"]
+  AW["alpr-worker · OpenALPR SDK (CPU)<br/>placa + marca/modelo/color/tipo/año"]
+  QD["Qdrant vehicle_embeddings"]
   RTSP --> PGIE
   TEE --> MQTT --> AD --> EE --> FR
+  EE --> PG --> API --> GR
   AD --> PR --> GR
+  TEE -->|"snapshots + bundles bbox"| EE
   TEE --> FS --> AR
-  AR -->|"person-attribute PULC"| TR
-  AR -->|"vehicle-attribute PULC"| TR
+  AR -->|"person → PULC"| TR
+  AR -->|"car → crop RGB HTTP"| AW
   AR -->|"PP-ShiTu"| TR
   AR --> QD
-  AR -->|"classification / embedding"| EE
+  AR -->|"classification · embedding · plate"| EE
+  AG["openalpr agente + alpr-bridge<br/>perfil alpr-agent, APAGADO 7 sep"]:::off
+  classDef off stroke-dasharray: 5 5,color:#888
 ```
 
 Dos ramas después del tracker:
@@ -55,7 +63,8 @@ Dos ramas después del tracker:
 | Rama | Qué lleva | Quién consume |
 |---|---|---|
 | MQTT `deepfrigate/detections` | bbox, track, label, score | adapter → event-engine → Frigate / Grafana |
-| SHM FrameRef (crops RGB) | píxeles del objeto | ai-router → Triton (PULC, ShiTu) |
+| SHM FrameRef (crops RGB) | píxeles del objeto | ai-router → Triton (PULC persona, ShiTu) y alpr-worker (coches: placa + marca/modelo) |
+| Snapshots `data/ds-snapshots` + bundles con bbox | mejor thumb del track | event-engine → Frigate (crop/clean/thumb) |
 
 ---
 
