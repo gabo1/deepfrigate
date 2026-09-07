@@ -1,0 +1,942 @@
+{
+  "title": "Vehículos (flota y placas)",
+  "uid": "vehiculos",
+  "description": "Atributos de vehículo y placas desde `event.data` del Frigate smoke. `make`, `make_model` y `year` existen desde el 7 sep 12:36; las placas solo en `user`. Base única `frigate_pgvector_smoke`: las tablas de DeepFrigate están en su schema `deepfrigate`.",
+  "tags": [
+    "deepfrigate",
+    "vehiculos",
+    "placas"
+  ],
+  "timezone": "browser",
+  "refresh": "1m",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Resumen",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Coches en el rango",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS \"coches\"\n  FROM event\n WHERE label = 'car' AND $__unixEpochFilter(start_time)\n   AND camera = '$camera'\n"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Con atributos de vehículo",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT round(100.0 * count(*) FILTER (WHERE data->'vehicle_attributes' IS NOT NULL)\n             / nullif(count(*), 0), 1) AS \"% con atributos\"\n  FROM event\n WHERE label = 'car' AND $__unixEpochFilter(start_time)\n   AND camera = '$camera'\n"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "percent",
+          "decimals": 1,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "description": "Los atributos los publica ai-router y descarta score < 0.3. De noche (IR) el color sale 0 y no se publica, así que este porcentaje baja de madrugada sin que falle nada."
+    },
+    {
+      "type": "stat",
+      "title": "Placas leídas",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS \"placas\"\n  FROM event\n WHERE data ? 'recognized_license_plate'\n   AND $__unixEpochFilter(start_time)\n   AND camera = '$camera'\n"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "description": "Solo `user` lee placas. En el resto la placa mide 12-15 px y no hay nada que leer: cero aquí no es un fallo."
+    },
+    {
+      "type": "stat",
+      "title": "Cobertura del lector",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT round(100.0 * count(*) FILTER (WHERE data ? 'recognized_license_plate')\n             / nullif(count(*) FILTER (WHERE label = 'car'), 0), 1)\n         AS \"% coches con placa\"\n  FROM event\n WHERE $__unixEpochFilter(start_time)\n   AND camera = '$camera'\n"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "percent",
+          "decimals": 1,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "description": "Placas leídas sobre coches vistos. En el lab rondaba el 47 %."
+    },
+    {
+      "type": "row",
+      "title": "Flota",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Coches por hora",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT date_trunc('hour', to_timestamp(start_time)) AS time,\n       count(*) AS \"coches\"\n  FROM event\n WHERE label = 'car' AND $__unixEpochFilter(start_time)\n   AND camera = '$camera'\n GROUP BY 1 ORDER BY 1"
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "axisBorderShow": false
+          },
+          "min": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "barchart",
+      "title": "Colores",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 6,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT data->'vehicle_attributes'->'color'->>'value' AS \"color\",\n       count(*) AS \"coches\"\n  FROM event\n WHERE label = 'car' AND data->'vehicle_attributes' ? 'color'\n   AND $__unixEpochFilter(start_time)\n   AND camera = '$camera'\n GROUP BY 1 ORDER BY 2 DESC"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "auto",
+        "xTickLabelRotation": 0,
+        "barWidth": 0.75,
+        "legend": {
+          "showLegend": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 0,
+            "fillOpacity": 85
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "white"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#D9DBE0"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "black"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#26282D"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "gray"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8B8F98"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "silver-gray"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#B6BAC2"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "red"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#C6362F"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "golden"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#D9A73E"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "gold-beige"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#C9B27A"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "blue"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#2C6FD1"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "yellow"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#D9B310"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "brown"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#7A5136"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "green"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3B9C4B"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "orange"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#E8862B"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "pink"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#D96BA0"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "purple"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8B5FBF"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "description": "Cada barra va del color que nombra. `gray`/`silver-gray` y `golden`/`gold-beige` vienen de vocabularios distintos (PULC y OpenALPR) y se dejan separados a propósito: no son sinónimos exactos."
+    },
+    {
+      "type": "barchart",
+      "title": "Marcas",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 8,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT data->'vehicle_attributes'->'make'->>'value' AS \"marca\",\n       count(*) AS \"coches\"\n  FROM event\n WHERE label = 'car' AND data->'vehicle_attributes' ? 'make'\n   AND $__unixEpochFilter(start_time)\n   AND camera = '$camera'\n GROUP BY 1 ORDER BY 2 DESC LIMIT 15"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "auto",
+        "xTickLabelRotation": 0,
+        "barWidth": 0.75,
+        "legend": {
+          "showLegend": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 0,
+            "fillOpacity": 85
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "description": "`make`, `make_model` y `year` solo existen desde el 7 sep 12:36. Un rango de varios días enseña un salto de cero a algo que NO es un cambio de tráfico."
+    },
+    {
+      "type": "barchart",
+      "title": "Modelos",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 14,
+        "w": 8,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT data->'vehicle_attributes'->'make_model'->>'value' AS \"modelo\",\n       count(*) AS \"coches\"\n  FROM event\n WHERE label = 'car' AND data->'vehicle_attributes' ? 'make_model'\n   AND $__unixEpochFilter(start_time)\n   AND camera = '$camera'\n GROUP BY 1 ORDER BY 2 DESC LIMIT 15"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "auto",
+        "xTickLabelRotation": 0,
+        "barWidth": 0.75,
+        "legend": {
+          "showLegend": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 0,
+            "fillOpacity": 85
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "barchart",
+      "title": "Tipo de carrocería",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 14,
+        "w": 8,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT CASE\n         WHEN v LIKE 'sedan%%'  THEN 'sedan'\n         WHEN v LIKE 'suv%%'    THEN 'suv'\n         WHEN v LIKE 'truck%%' OR v = 'pickup' THEN 'pickup/truck'\n         WHEN v LIKE 'van%%'   OR v = 'mpv'    THEN 'van/mpv'\n         WHEN v LIKE 'bus%%'   OR v LIKE 'tractor%%' THEN 'bus/trailer'\n         ELSE v END AS \"tipo\", count(*) AS \"coches\"\n  FROM event, LATERAL (SELECT data->'vehicle_attributes'->'body_type'->>'value') t(v)\n WHERE label = 'car' AND v IS NOT NULL\n   AND $__unixEpochFilter(start_time)\n   AND camera = '$camera'\n GROUP BY 1 ORDER BY 2 DESC"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "auto",
+        "xTickLabelRotation": 0,
+        "barWidth": 0.75,
+        "legend": {
+          "showLegend": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 0,
+            "fillOpacity": 85
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "description": "Normalizado: PULC escribe `sedan` y OpenALPR `sedan-standard` / `sedan-compact` para lo mismo. Sin el CASE salen dos barras por tipo."
+    },
+    {
+      "type": "row",
+      "title": "Placas (solo `user`)",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 23,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Placas leídas vs coches vistos",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT date_trunc('hour', to_timestamp(start_time)) AS time,\n       count(*) FILTER (WHERE data ? 'recognized_license_plate')\n         AS \"placas\",\n       count(*) AS \"coches\"\n  FROM event\n WHERE label = 'car' AND $__unixEpochFilter(start_time)\n   AND camera = '$camera'\n GROUP BY 1 ORDER BY 1"
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "axisBorderShow": false
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "description": "La distancia entre las dos barras es lo que el lector se pierde."
+    },
+    {
+      "type": "table",
+      "title": "Últimas placas",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT to_timestamp(start_time) AS \"inicio\", camera AS \"cámara\",\n       data->>'recognized_license_plate' AS \"placa\",\n       round((data->>'recognized_license_plate_score')::numeric * 100)\n         AS \"confianza\",\n       data->'license_plate'->>'source' AS \"motor\",\n       data->'vehicle_attributes'->'color'->>'value' AS \"color\",\n       data->'vehicle_attributes'->'make_model'->>'value' AS \"modelo\",\n       'https://100.83.231.97:3005/explore?event_id=' || id AS \"explore\"\n  FROM event\n WHERE data ? 'recognized_license_plate'\n   AND $__unixEpochFilter(start_time)\n   AND camera = '$camera'\n ORDER BY start_time DESC LIMIT 50"
+        }
+      ],
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "filterable": true,
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "explore"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "link",
+                  "urlText": "abrir"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "confianza"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "max",
+                "value": 100
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge",
+                  "mode": "basic",
+                  "valueDisplayMode": "text"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "description": "Una placa por Event, la de mayor confianza: event-engine la sustituye si llega una lectura mejor. Para ver TODAS las lecturas y los desacuerdos entre motores hay que ir a `deepfrigate.events` con `event_type='plate_read'`. Tratarla como **lectura**, no como dato fiscal. Las filas anteriores al 7 sep 14:30 se leyeron con `PLATE_MIN_CONFIDENCE=50`."
+    },
+    {
+      "type": "table",
+      "title": "Buscar placa",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 42,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT to_timestamp(start_time) AS \"inicio\", camera AS \"cámara\",\n       data->>'recognized_license_plate' AS \"placa\",\n       round((data->>'recognized_license_plate_score')::numeric * 100)\n         AS \"confianza\",\n       'https://100.83.231.97:3005/explore?event_id=' || id AS \"explore\"\n  FROM event\n WHERE data->>'recognized_license_plate' ILIKE '%$plate%'\n   AND $__unixEpochFilter(start_time)\n ORDER BY start_time DESC LIMIT 100"
+        }
+      ],
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "filterable": true,
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "explore"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "link",
+                  "urlText": "abrir"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "description": "Sin filtro de cámara a propósito: si una placa aparece en dos cámaras, aquí se ve. Vacío el cuadro, lista todas."
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "camera",
+        "label": "Cámara",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "frigate-smoke-pg"
+        },
+        "query": "SELECT DISTINCT camera FROM event WHERE label = 'car' ORDER BY 1",
+        "refresh": 1,
+        "sort": 1,
+        "includeAll": false,
+        "multi": false,
+        "current": {
+          "text": "user",
+          "value": "user"
+        }
+      },
+      {
+        "name": "plate",
+        "label": "Placa contiene",
+        "type": "textbox",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        }
+      }
+    ]
+  },
+  "schemaVersion": 39,
+  "version": 1
+}
