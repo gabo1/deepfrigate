@@ -160,6 +160,10 @@ solo aporta el tamaño de frame. Ver `docs/OPERACION.md` §6a.
 
 ---
 
+**Mapa vivo (8 sep):** Settings → DeepFrigate → Workflow visual dibuja este
+mismo camino con Archify a partir del contrato activo y las zonas de Frigate
+(`platform-api /v1/pipelines/diagram.html`). Ver `docs/OPERACION.md` §6a-bis.
+
 ## 5. Frameworks (los que corren)
 
 | Pieza | Versión / dónde | Rol |

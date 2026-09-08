@@ -321,6 +321,39 @@ UI Frigate / PUT /api/config/set ──► YAML ──► restart Frigate
   `python3 -m unittest frigate.test.test_config` dentro de la imagen con
   `version.py` copiado del contenedor.
 
+## 6a-bis. Mapa del pipeline en Settings → DeepFrigate → Workflow visual (8 sep)
+
+La vista muestra arriba un diagrama interactivo del pipeline vivo y abajo el
+formulario del contrato de siempre. El diagrama lo genera **Archify**
+(github.com/tt-a1i/archify, MIT, Node sin dependencias, commit fijado en
+`services/platform-api/Dockerfile` con `ARCHIFY_REF`): platform-api construye
+un IR `workflow` (`app/diagram.py::build_workflow_ir`) desde
+`/v1/pipelines/active` + zonas/líneas/direcciones de Frigate + salud de
+`alpr-worker`, y ejecuta `node /opt/archify/bin/archify.mjs deliver workflow …
+--quality showcase`. Salida: HTML autónomo (~720 KB, SVG inline, animación
+"trace", preset `signal-flow`, vistas Cámara→evento / Enriquecimiento / Zonas).
+
+- `GET /v1/pipelines/diagram.html` (cabecera `X-DeepFrigate-Diagram` = digest
+  del IR; caché en memoria por digest: 1.4 s la primera vez, ~15 ms después);
+  `GET /v1/pipelines/diagram.json` devuelve el IR para depurar. Desde el
+  navegador: `https://100.83.231.97:3005/api/deepfrigate/v1/pipelines/diagram.html`
+  (nginx exige la sesión de Frigate).
+- Si `deliver --quality showcase` falla, reintenta en `standard`; si también
+  falla, 503 con los `diagnostics` de Archify (`code`, `subject`,
+  `supportedFixes`). Reglas que ya mordieron: máximo 6 columnas (`col` 0–5),
+  texto de nodo legible a 1440 px (viewBox ≤ ~1085 px con nodos de 132 px:
+  sublabels cortos), aristas que no compartan corredor vertical (cada bajada en
+  su propia columna). El IR tiene `IR_VERSION` para invalidar la caché al
+  cambiar la forma.
+- El diagrama es de solo lectura; el contrato se edita en el formulario. Las
+  zonas que muestra son las dibujadas en Frigate (§6a), no las del contrato.
+- Iframe en `DeepFrigateWorkflowSettingsView.tsx` (`PipelineDiagram`):
+  `?v=<source_sha256>` para que el navegador no reutilice el anterior tras
+  guardar; botón "Actualizar" y "Abrir en pestaña". Requiere hornear el web del
+  smoke (Receta A de `frigate-pg/docs/RECREAR-IMAGEN-3005.md`).
+- Tests: `tests/test_diagram.py` (IR y digest siempre; render real solo en la
+  imagen runtime, que trae `node` y `/opt/archify`).
+
 ## 6b. Transiciones entre cámaras (`camera_transitions`)
 
 Las dos cámaras de calle (`c4aac4f4eefe` DEMO05, `c4aac4f4ef0a` DEMO03)

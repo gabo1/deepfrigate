@@ -135,6 +135,19 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
   `frigate_zones.py`; heatmap con zonas/líneas/flechas de dirección desde
   `/api/config`; `/v1/pipelines/options` y `validate` igual. Tests 8.
   Verificado: `options` devuelve `user: ['calle']`; heatmap 200 con overlay.
+- **Mapa del pipeline con Archify (8 sep 01:30):** `services/platform-api/app/diagram.py`
+  (IR `workflow` v2 de Archify desde el contrato + zonas de Frigate + salud de
+  alpr-worker; `render_html` ejecuta `archify deliver` con caché por digest y
+  fallback a `standard`), endpoints `/v1/pipelines/diagram.html|.json`.
+  Dockerfile de platform-api: etapa `archify` (clone en commit
+  `920543baa1c6…`, MIT) + binario `node` 20 copiado de `node:20-bookworm-slim`.
+  Vista `DeepFrigateWorkflowSettingsView.tsx` con `PipelineDiagram` (iframe).
+  Aprendido de Archify: 6 columnas máximo, viewBox ≤ ~1085 px con nodos de
+  132 px o falla `composition/desktop-readability`, una bajada vertical por
+  columna o `composition/ambiguous-corridor`, pines explícitos (`fromSide`)
+  chocan (`explicit-pin-conflict`) → mejor mover nodos. Validación showcase
+  9/9, 725 KB, 1.4 s. Tests platform-api 12. Web del smoke: rebuild Receta A
+  en curso (ver entrada siguiente si existe).
 - **Fondo real del heatmap (8 sep 00:15):** `heatmap.latest_scene` toma el
   `{track}.jpg` más nuevo de `data/ds-snapshots/{cam}` (mount nuevo en
   platform-api, `DS_SNAPSHOT_DIR`, `HEATMAP_SCENE_MAX_AGE_SECONDS=3600`);

@@ -52,10 +52,12 @@ def test_render_without_archify_raises() -> None:
 
 
 @pytest.mark.skipif(not (Path("/opt/archify/bin/archify.mjs").is_file() and shutil.which("node")), reason="archify + node only in the runtime image")
-def test_render_with_archify_passes_showcase() -> None:
+def test_render_with_archify_passes_showcase(tmp_path) -> None:
     ir = build_workflow_ir(ACTIVE, zones=ZONES, alpr_health={"ok": True})
     html = render_html(ir, archify_dir=Path("/opt/archify"), node_bin="node")
     assert b"<svg" in html and len(html) > 100_000
     # showcase must pass on its own: deliver in showcase and expect ok
-    out = subprocess.run(["node", "/opt/archify/bin/archify.mjs", "validate", "workflow", "/dev/stdin", "--quality", "showcase", "--json"], input=json.dumps(ir), capture_output=True, text=True)
+    spec = tmp_path / "df.workflow.json"
+    spec.write_text(json.dumps(ir, ensure_ascii=False), encoding="utf-8")
+    out = subprocess.run(["node", "/opt/archify/bin/archify.mjs", "validate", "workflow", str(spec), "--quality", "showcase", "--json"], capture_output=True, text=True)
     assert out.returncode == 0, out.stdout[-800:]
