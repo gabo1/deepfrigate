@@ -37,6 +37,11 @@ import uuid
 logger = logging.getLogger("event-engine.transitions")
 
 FINAL_REF_SUFFIX = "-explore-thumb"
+# ai-router stores one ReID vector per track at END (NvDCF ReIdentificationNet,
+# app/reid.py). Both suffixes mark "final" embeddings; the collection decides
+# which model the matcher trusts.
+REID_FINAL_SUFFIX = "-reid-final"
+FINAL_SUFFIXES = (FINAL_REF_SUFFIX, REID_FINAL_SUFFIX)
 
 
 def parse_pairs(raw: str) -> set[frozenset[str]]:
@@ -55,9 +60,13 @@ def parse_pairs(raw: str) -> set[frozenset[str]]:
 class QdrantHttp:
     """Minimal Qdrant REST client (urllib, no extra dependency)."""
 
-    def __init__(self, url: str, collection: str, timeout: float = 5.0) -> None:
+    def __init__(
+        self, url: str, collection: str, timeout: float = 5.0, final_suffix: str = FINAL_REF_SUFFIX
+    ) -> None:
+        self.collection = collection
         self.base = f"{url.rstrip('/')}/collections/{collection}"
         self.timeout = timeout
+        self.final_suffix = final_suffix
 
     def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
         request = Request(
@@ -91,7 +100,7 @@ class QdrantHttp:
         must: list[dict[str, Any]] = [
             {"key": "label", "match": {"value": label}},
             {"key": "camera_id", "match": {"any": cameras}},
-            {"key": "frame_ref_id", "match": {"text": FINAL_REF_SUFFIX}},
+            {"key": "frame_ref_id", "match": {"text": self.final_suffix}},
         ]
         if restrict_object_ids:
             must.append({"key": "object_id", "match": {"any": restrict_object_ids}})
@@ -260,7 +269,12 @@ class TransitionMatcher:
         data = update.get("data") or {}
         ref_id = str(data.get("frame_ref_id") or "")
         vector_id = str(data.get("vector_id") or "")
-        if not ref_id.endswith(FINAL_REF_SUFFIX) or not vector_id:
+        if not ref_id.endswith(FINAL_SUFFIXES) or not vector_id:
+            return None
+        # Several models publish embeddings (PP-ShiTu thumbnails, tracker ReID);
+        # only the collection this matcher was configured with counts.
+        wanted = getattr(self.qdrant, "collection", None)
+        if wanted and data.get("collection") and data.get("collection") != wanted:
             return None
         object_id = str(update.get("object_id") or "")
         if self.mode == "embedding":
@@ -496,7 +510,8 @@ def matcher_from_env(
         repository,
         QdrantHttp(
             os.getenv("QDRANT_URL", "http://qdrant:6333"),
-            os.getenv("QDRANT_COLLECTION", "vehicle_embeddings"),
+            os.getenv("TRANSITION_QDRANT_COLLECTION", "reid_embeddings"),
+            final_suffix=os.getenv("TRANSITION_FINAL_REF_SUFFIX", REID_FINAL_SUFFIX),
         ),
         pairs=pairs,
         mode=os.getenv("TRANSITION_MODE", "cooccurrence"),

@@ -225,3 +225,24 @@ def test_arrival_starting_long_before_origin_left_is_not_a_transition() -> None:
     m.observe(_det(f"{B}-24", B, "END", 1170.0, last_seen=1165.0))
     row = m.observe(_embedding(f"{B}-24", B, "vec-B24", 1166.0))
     assert row is not None and row["gap_seconds"] == -10.0
+
+
+def test_matcher_only_trusts_embeddings_from_its_collection() -> None:
+    from app.transitions import REID_FINAL_SUFFIX
+
+    class CollectionQdrant(FakeQdrant):
+        collection = "reid_embeddings"
+
+    repo = FakeRepo()
+    qdrant = CollectionQdrant(points={"v-reid": {"vector": [1.0, 0.0], "payload": {"label": "person", "frame_timestamp": 100.0}}})
+    m = TransitionMatcher(repo, qdrant, pairs={frozenset({A, B})}, embed_wait_seconds=0, clock=Clock(101.0))
+    m.observe(_det(f"{A}-10", A, "START", 90.0))
+    m.observe(_det(f"{A}-10", A, "END", 100.0, x=200.0, last_seen=100.0))
+    # PP-ShiTu embedding for the same track: wrong collection, ignored.
+    shitu = _embedding(f"{A}-10", A, "v-shitu", 100.5)
+    assert m.observe(shitu) is None and m.tracks[f"{A}-10"].vector_id is None
+    # Tracker ReID final embedding: accepted.
+    reid = _embedding(f"{A}-10", A, "v-reid", 100.6, ref_suffix=REID_FINAL_SUFFIX)
+    reid["data"]["collection"] = "reid_embeddings"
+    m.observe(reid)
+    assert m.tracks[f"{A}-10"].vector_id == "v-reid"

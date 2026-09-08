@@ -465,6 +465,51 @@ Arreglo pendiente: descartar tracks con edad > N s (p. ej. 120) o con
 tracker re-identifica al mismo peatón con id nuevo. SQL y paneles propuestos
 en `docs/ANALITICAS-FUENTES.md` §15.
 
+## 6b-bis. ReID: re-asociación en el tracker y vectores entre cámaras (8 sep)
+
+Dos cosas con un solo modelo, **ReIdentificationNet** de NVIDIA (TAO,
+ResNet-50, Market-1501, 256-d l2), dentro de `nvtracker`:
+
+1. **Re-asociación en la misma cámara.** `config_tracker_NvDCF_reid.yml` =
+   perfil `perf` + `enableReAssoc: 1` con los parámetros del perfil `accuracy`
+   + sección `ReID` (`reidType: 2`, `reidExtractionInterval: 8`). Un track
+   perdido por oclusión se recupera por trayectoria + apariencia en vez de
+   nacer con id nuevo (menos Events duplicados, menos "ida y vuelta" falsas
+   en transiciones).
+2. **Vector ReID por objeto** (`outputReidTensor: 1`): el exporter lo lee de
+   `obj.obj_reid_items` (`exporter.reid_feature`) y lo manda en el FrameRef
+   (`ref["reid"] = {model, vector[256]}`; contrato `frame-ref.schema.json`).
+   ai-router (`app/reid.py`, `ReidGallery`) promedia los vectores de cada
+   track (todos los FrameRefs no vistos, sin leer píxeles) y al END guarda uno
+   normalizado en Qdrant **`reid_embeddings`** (payload `object_id`,
+   `camera_id`, `label`, `frame_timestamp`, `samples`) y publica
+   `update_type: embedding` con `collection: reid_embeddings`, `dimensions:
+   256`, `frame_ref_id: <cam>-<track>-reid-final`. El matcher de transiciones
+   solo acepta embeddings de `TRANSITION_QDRANT_COLLECTION` (default
+   `reid_embeddings`, sufijo `-reid-final`); PP-ShiTu sigue en
+   `vehicle_embeddings` para "Buscar similares".
+
+- Modelo: `models/tracker-reid/` (`download.sh` desde NGC, 96 MB, sin
+  cuenta); el engine TensorRT (`*_b100_gpu0_fp16.engine`, 48 MB) lo genera el
+  tracker al primer arranque (~2 min) en ese directorio, montado RW en
+  video-engine. Ambos binarios git-ignored.
+- Coste medido: +750 MB de VRAM (4.8 → 5.5 GB), video-engine ~45 % CPU (igual
+  que antes), ai-router +0.
+- Env ai-router: `REID_ENABLED=true`, `REID_COLLECTION=reid_embeddings`,
+  `REID_MIN_SAMPLES=1`. Env event-engine: `TRANSITION_QDRANT_COLLECTION`,
+  `TRANSITION_FINAL_REF_SUFFIX`. `TRANSITION_MODE` sigue en `cooccurrence`
+  (embedding solo desempata) hasta calibrar.
+- Calibrar antes de pasar a `TRANSITION_MODE=embedding`:
+  `python3 tools/reid_eval.py --hours 12 --label person` compara coseno de
+  pares verdaderos (transiciones por co-ocurrencia) contra impostores y
+  enseña qué umbral separa; con eso se fija `TRANSITION_MIN_SCORE`. Los
+  coches también reciben vector (el modelo es de personas): medir aparte con
+  `--label car` antes de confiar.
+- Log útil: ai-router `ReID stored (N samples) FrameRef user-4-reid-final`;
+  event-engine `Final embedding for … attached`.
+- Volver atrás: `tracker.config_path` al yml `perf` de DeepStream en
+  `pipeline.yaml` (reinicio) y `REID_ENABLED=false`.
+
 ## 6c. Placas y marca/modelo (OpenALPR SDK → alpr-worker)
 
 Motor comercial Rekor/OpenALPR (licencia de evaluación 2 semanas, después
@@ -558,3 +603,5 @@ pasadas coinciden, sin bajar el umbral de una lectura sola.
 | `ALPR_COUNTRY` / `ALPR_TOP_N` | alpr-worker | `mx` / 5 | país del SDK y candidatos por placa |
 | `ALPR_CAMERAS` / `ALPR_MIN_CONFIDENCE` / `ALPR_MATCH_WINDOW_SECONDS` | alpr-bridge (perfil `alpr-agent`) | `1:user` / 50 / 3 | alternativa A: mapeo cámara del agente → nuestra, umbral y ventana de casado |
 | `TRANSITION_PAIRS` / `_MODE` / `_WINDOW_SECONDS` / `_OVERLAP_SECONDS` / `_MIN_MOVE` / `_DIRECTION` / `_MIN_SCORE` / `_EMBED_WAIT_SECONDS` / `_LABELS` | event-engine | `c4aac4f4eefe:c4aac4f4ef0a` / `cooccurrence` / 60 / 15 / 0.1 / `ignore` / 0.3 / 6 / `car,person` | transiciones entre cámaras; pares vacíos desactiva |
+| `TRANSITION_QDRANT_COLLECTION` / `TRANSITION_FINAL_REF_SUFFIX` | event-engine | `reid_embeddings` / `-reid-final` | qué embeddings finales usa el matcher (tracker ReID); `vehicle_embeddings` / `-explore-thumb` vuelve a PP-ShiTu |
+| `REID_ENABLED` / `REID_COLLECTION` / `REID_MIN_SAMPLES` | ai-router | true / `reid_embeddings` / 1 | vector ReID por track (media de los FrameRefs) guardado al END |

@@ -57,6 +57,7 @@ def _consumer() -> FrameRefConsumer:
     consumer.plate_max_attempts = 6
     consumer.plate_sample_seconds = 1.0
     consumer.vehicle_provider = "openalpr"
+    consumer.reid = None
     consumer.lock = Lock()
     return consumer
 

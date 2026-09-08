@@ -158,6 +158,11 @@ services:
       PLATE_VOTE_MIN_CONFIDENCE: ${PLATE_VOTE_MIN_CONFIDENCE:-50}
       PLATE_MIN_VOTES: ${PLATE_MIN_VOTES:-2}
       PLATE_STOP_VOTES: ${PLATE_STOP_VOTES:-3}
+      # Tracker ReID vectors (FrameRef.reid) averaged per track and stored in
+      # Qdrant at END for cross-camera re-identification.
+      REID_ENABLED: ${REID_ENABLED:-true}
+      REID_COLLECTION: ${REID_COLLECTION:-reid_embeddings}
+      REID_MIN_SAMPLES: ${REID_MIN_SAMPLES:-1}
       PLATE_MIN_CROP_WIDTH: ${PLATE_MIN_CROP_WIDTH:-120}
       PLATE_MAX_ATTEMPTS: ${PLATE_MAX_ATTEMPTS:-6}
       PLATE_SAMPLE_SECONDS: ${PLATE_SAMPLE_SECONDS:-1.0}
@@ -329,6 +334,10 @@ services:
       TRANSITION_OVERLAP_SECONDS: ${TRANSITION_OVERLAP_SECONDS:-15}
       TRANSITION_MIN_MOVE: ${TRANSITION_MIN_MOVE:-0.1}
       TRANSITION_LABELS: ${TRANSITION_LABELS:-car,person}
+      # Which final embeddings the matcher trusts: tracker ReID (default) or
+      # PP-ShiTu thumbnails (vehicle_embeddings / -explore-thumb).
+      TRANSITION_QDRANT_COLLECTION: ${TRANSITION_QDRANT_COLLECTION:-reid_embeddings}
+      TRANSITION_FINAL_REF_SUFFIX: ${TRANSITION_FINAL_REF_SUFFIX:--reid-final}
       QDRANT_URL: http://qdrant:6333
       QDRANT_COLLECTION: ${QDRANT_COLLECTION:-vehicle_embeddings}
     volumes:
@@ -491,6 +500,8 @@ services:
       - ./contracts:/opt/contracts:ro
       - ./config/zones.json:/opt/config/zones.json:ro
       - ./models:/opt/models:ro
+      # RW: the tracker writes the ReID TensorRT engine next to the model.
+      - ./models/tracker-reid:/opt/models/tracker-reid
 
 volumes:
   openalpr-data:

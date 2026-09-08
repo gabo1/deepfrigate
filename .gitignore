@@ -40,3 +40,6 @@ skills-lock.json
 
 # OpenALPR / Rekor trial key (never commit)
 config/openalpr/license.conf
+# ReIdentificationNet (96 MB from NGC) and its TensorRT engine: see models/tracker-reid/README.md
+models/tracker-reid/*.etlt
+models/tracker-reid/*.engine

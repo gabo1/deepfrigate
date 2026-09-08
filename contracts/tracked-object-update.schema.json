@@ -2,52 +2,142 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "TrackedObjectUpdate",
   "type": "object",
-  "required": ["type", "object_id", "camera_id", "track_id", "timestamp", "update_type", "data"],
+  "required": [
+    "type",
+    "object_id",
+    "camera_id",
+    "track_id",
+    "timestamp",
+    "update_type",
+    "data"
+  ],
   "properties": {
-    "type": {"const": "tracked_object_update"},
-    "object_id": {"type": "string", "minLength": 1},
-    "camera_id": {"type": "string", "minLength": 1},
-    "track_id": {"type": "integer", "minimum": 0},
-    "timestamp": {"type": "number"},
-    "update_type": {
-      "enum": ["detection", "zone", "stationary", "line", "overcrowding", "direction", "plate", "face", "classification", "visual_match", "ocr", "embedding", "vlm", "custom"]
+    "type": {
+      "const": "tracked_object_update"
     },
-    "data": {"type": "object"}
+    "object_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "camera_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "track_id": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "timestamp": {
+      "type": "number"
+    },
+    "update_type": {
+      "enum": [
+        "detection",
+        "zone",
+        "stationary",
+        "line",
+        "overcrowding",
+        "direction",
+        "plate",
+        "face",
+        "classification",
+        "visual_match",
+        "ocr",
+        "embedding",
+        "vlm",
+        "custom"
+      ]
+    },
+    "data": {
+      "type": "object"
+    }
   },
   "allOf": [
     {
       "if": {
-        "properties": {"update_type": {"const": "zone"}},
-        "required": ["update_type"]
+        "properties": {
+          "update_type": {
+            "const": "zone"
+          }
+        },
+        "required": [
+          "update_type"
+        ]
       },
       "then": {
         "properties": {
           "data": {
             "type": "object",
-            "required": ["event", "zone", "current_zones", "entered_zones", "dwell_time", "label", "bbox"],
+            "required": [
+              "event",
+              "zone",
+              "current_zones",
+              "entered_zones",
+              "dwell_time",
+              "label",
+              "bbox"
+            ],
             "properties": {
-              "event": {"enum": ["zone_enter", "zone_exit", "dwell_time"]},
-              "zone": {"type": "string", "minLength": 1},
+              "event": {
+                "enum": [
+                  "zone_enter",
+                  "zone_exit",
+                  "dwell_time"
+                ]
+              },
+              "zone": {
+                "type": "string",
+                "minLength": 1
+              },
               "current_zones": {
                 "type": "array",
-                "items": {"type": "string", "minLength": 1},
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
                 "uniqueItems": true
               },
               "entered_zones": {
                 "type": "array",
-                "items": {"type": "string", "minLength": 1},
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
                 "uniqueItems": true
               },
-              "dwell_time": {"type": "number", "minimum": 0},
-              "label": {"type": "string", "minLength": 1},
+              "dwell_time": {
+                "type": "number",
+                "minimum": 0
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1
+              },
               "bbox": {
                 "type": "object",
-                "required": ["x", "y", "width", "height"],
+                "required": [
+                  "x",
+                  "y",
+                  "width",
+                  "height"
+                ],
                 "properties": {
-                  "x": {"type": "number", "minimum": 0},
-                  "y": {"type": "number", "minimum": 0},
-                  "width": {"type": "number", "exclusiveMinimum": 0},
-                  "height": {"type": "number", "exclusiveMinimum": 0}
+                  "x": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "y": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "width": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "height": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
                 },
                 "additionalProperties": false
               }
@@ -59,26 +149,65 @@
     },
     {
       "if": {
-        "properties": {"update_type": {"const": "line"}},
-        "required": ["update_type"]
+        "properties": {
+          "update_type": {
+            "const": "line"
+          }
+        },
+        "required": [
+          "update_type"
+        ]
       },
       "then": {
         "properties": {
           "data": {
             "type": "object",
-            "required": ["event", "line", "label", "bbox"],
+            "required": [
+              "event",
+              "line",
+              "label",
+              "bbox"
+            ],
             "properties": {
-              "event": {"enum": ["line_in", "line_out"]},
-              "line": {"type": "string", "minLength": 1},
-              "label": {"type": "string", "minLength": 1},
+              "event": {
+                "enum": [
+                  "line_in",
+                  "line_out"
+                ]
+              },
+              "line": {
+                "type": "string",
+                "minLength": 1
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1
+              },
               "bbox": {
                 "type": "object",
-                "required": ["x", "y", "width", "height"],
+                "required": [
+                  "x",
+                  "y",
+                  "width",
+                  "height"
+                ],
                 "properties": {
-                  "x": {"type": "number", "minimum": 0},
-                  "y": {"type": "number", "minimum": 0},
-                  "width": {"type": "number", "exclusiveMinimum": 0},
-                  "height": {"type": "number", "exclusiveMinimum": 0}
+                  "x": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "y": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "width": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "height": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
                 },
                 "additionalProperties": false
               }
@@ -90,28 +219,75 @@
     },
     {
       "if": {
-        "properties": {"update_type": {"const": "overcrowding"}},
-        "required": ["update_type"]
+        "properties": {
+          "update_type": {
+            "const": "overcrowding"
+          }
+        },
+        "required": [
+          "update_type"
+        ]
       },
       "then": {
         "properties": {
           "data": {
             "type": "object",
-            "required": ["event", "zone", "count", "threshold", "label", "bbox"],
+            "required": [
+              "event",
+              "zone",
+              "count",
+              "threshold",
+              "label",
+              "bbox"
+            ],
             "properties": {
-              "event": {"enum": ["overcrowding", "overcrowding_clear"]},
-              "zone": {"type": "string", "minLength": 1},
-              "count": {"type": "integer", "minimum": 0},
-              "threshold": {"type": "integer", "minimum": 1},
-              "label": {"type": "string", "minLength": 1},
+              "event": {
+                "enum": [
+                  "overcrowding",
+                  "overcrowding_clear"
+                ]
+              },
+              "zone": {
+                "type": "string",
+                "minLength": 1
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "threshold": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1
+              },
               "bbox": {
                 "type": "object",
-                "required": ["x", "y", "width", "height"],
+                "required": [
+                  "x",
+                  "y",
+                  "width",
+                  "height"
+                ],
                 "properties": {
-                  "x": {"type": "number", "minimum": 0},
-                  "y": {"type": "number", "minimum": 0},
-                  "width": {"type": "number", "exclusiveMinimum": 0},
-                  "height": {"type": "number", "exclusiveMinimum": 0}
+                  "x": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "y": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "width": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "height": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
                 },
                 "additionalProperties": false
               }
@@ -123,27 +299,70 @@
     },
     {
       "if": {
-        "properties": {"update_type": {"const": "direction"}},
-        "required": ["update_type"]
+        "properties": {
+          "update_type": {
+            "const": "direction"
+          }
+        },
+        "required": [
+          "update_type"
+        ]
       },
       "then": {
         "properties": {
           "data": {
             "type": "object",
-            "required": ["event", "direction", "angle_deg", "label", "bbox"],
+            "required": [
+              "event",
+              "direction",
+              "angle_deg",
+              "label",
+              "bbox"
+            ],
             "properties": {
-              "event": {"enum": ["direction_match"]},
-              "direction": {"type": "string", "minLength": 1},
-              "angle_deg": {"type": "number", "minimum": 0, "maximum": 180},
-              "label": {"type": "string", "minLength": 1},
+              "event": {
+                "enum": [
+                  "direction_match"
+                ]
+              },
+              "direction": {
+                "type": "string",
+                "minLength": 1
+              },
+              "angle_deg": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 180
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1
+              },
               "bbox": {
                 "type": "object",
-                "required": ["x", "y", "width", "height"],
+                "required": [
+                  "x",
+                  "y",
+                  "width",
+                  "height"
+                ],
                 "properties": {
-                  "x": {"type": "number", "minimum": 0},
-                  "y": {"type": "number", "minimum": 0},
-                  "width": {"type": "number", "exclusiveMinimum": 0},
-                  "height": {"type": "number", "exclusiveMinimum": 0}
+                  "x": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "y": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "width": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "height": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
                 },
                 "additionalProperties": false
               }
@@ -155,8 +374,14 @@
     },
     {
       "if": {
-        "properties": {"update_type": {"const": "embedding"}},
-        "required": ["update_type"]
+        "properties": {
+          "update_type": {
+            "const": "embedding"
+          }
+        },
+        "required": [
+          "update_type"
+        ]
       },
       "then": {
         "properties": {
@@ -174,15 +399,50 @@
               "end_to_end_ms"
             ],
             "properties": {
-              "model": {"type": "string", "minLength": 1},
-              "model_version": {"type": "string", "minLength": 1},
-              "vector_id": {"type": "string", "format": "uuid"},
-              "collection": {"type": "string", "minLength": 1},
-              "dimensions": {"const": 512},
-              "distance": {"const": "Cosine"},
-              "frame_ref_id": {"type": "string", "minLength": 1},
-              "inference_ms": {"type": "number", "minimum": 0},
-              "end_to_end_ms": {"type": "number", "minimum": 0}
+              "model": {
+                "type": "string",
+                "minLength": 1
+              },
+              "model_version": {
+                "type": "string",
+                "minLength": 1
+              },
+              "vector_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "collection": {
+                "type": "string",
+                "minLength": 1
+              },
+              "dimensions": {
+                "type": "integer",
+                "enum": [
+                  256,
+                  512
+                ],
+                "description": "512 = PP-ShiTu (vehicle_embeddings); 256 = ReIdentificationNet del tracker (reid_embeddings)."
+              },
+              "distance": {
+                "const": "Cosine"
+              },
+              "frame_ref_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "inference_ms": {
+                "type": "number",
+                "minimum": 0
+              },
+              "end_to_end_ms": {
+                "type": "number",
+                "minimum": 0
+              },
+              "samples": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "ReID: cuantos vectores del tracker se promediaron para este track."
+              }
             },
             "additionalProperties": false
           }
@@ -191,8 +451,14 @@
     },
     {
       "if": {
-        "properties": {"update_type": {"const": "classification"}},
-        "required": ["update_type"]
+        "properties": {
+          "update_type": {
+            "const": "classification"
+          }
+        },
+        "required": [
+          "update_type"
+        ]
       },
       "then": {
         "properties": {
@@ -208,26 +474,58 @@
               "end_to_end_ms"
             ],
             "properties": {
-              "model": {"type": "string", "minLength": 1},
-              "model_version": {"type": "string", "minLength": 1},
-              "label": {"type": "string", "minLength": 1},
+              "model": {
+                "type": "string",
+                "minLength": 1
+              },
+              "model_version": {
+                "type": "string",
+                "minLength": 1
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1
+              },
               "attributes": {
                 "type": "array",
                 "minItems": 1,
                 "items": {
                   "type": "object",
-                  "required": ["name", "value", "score"],
+                  "required": [
+                    "name",
+                    "value",
+                    "score"
+                  ],
                   "additionalProperties": false,
                   "properties": {
-                    "name": {"type": "string", "minLength": 1},
-                    "value": {"type": "string", "minLength": 1},
-                    "score": {"type": "number", "minimum": 0, "maximum": 1}
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "value": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "score": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    }
                   }
                 }
               },
-              "frame_ref_id": {"type": "string", "minLength": 1},
-              "inference_ms": {"type": "number", "minimum": 0},
-              "end_to_end_ms": {"type": "number", "minimum": 0}
+              "frame_ref_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "inference_ms": {
+                "type": "number",
+                "minimum": 0
+              },
+              "end_to_end_ms": {
+                "type": "number",
+                "minimum": 0
+              }
             },
             "additionalProperties": false
           }

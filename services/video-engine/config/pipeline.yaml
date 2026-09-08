@@ -22,7 +22,7 @@ pipeline:
     gpu: 0
   tracker:
     type: nvtracker
-    config_path: /opt/nvidia/deepstream/deepstream/samples/configs/deepstream-app/config_tracker_NvDCF_perf.yml
+    config_path: /opt/deepfrigate/config/config_tracker_NvDCF_reid.yml
     width: 640
     height: 384
     gpu: 0

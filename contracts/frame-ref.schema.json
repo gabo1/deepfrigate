@@ -18,34 +18,116 @@
     "locator"
   ],
   "properties": {
-    "version": {"const": 1},
-    "id": {"type": "string", "minLength": 1},
-    "kind": {"enum": ["cuda", "shm"]},
-    "owner": {"type": "string", "minLength": 1},
-    "camera_id": {"type": "string", "minLength": 1},
-    "track_id": {"type": "integer", "minimum": 0},
-    "timestamp": {"type": "number"},
-    "expires_at": {"type": "number"},
-    "width": {"type": "integer", "minimum": 1},
-    "height": {"type": "integer", "minimum": 1},
-    "format": {"enum": ["rgb", "bgr", "rgba", "bgra", "nv12", "jpeg"]},
-    "size_bytes": {"type": "integer", "minimum": 1},
-    "locator": {"type": "object"}
+    "version": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "kind": {
+      "enum": [
+        "cuda",
+        "shm"
+      ]
+    },
+    "owner": {
+      "type": "string",
+      "minLength": 1
+    },
+    "camera_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "track_id": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "timestamp": {
+      "type": "number"
+    },
+    "expires_at": {
+      "type": "number"
+    },
+    "width": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "height": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "format": {
+      "enum": [
+        "rgb",
+        "bgr",
+        "rgba",
+        "bgra",
+        "nv12",
+        "jpeg"
+      ]
+    },
+    "size_bytes": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "locator": {
+      "type": "object"
+    },
+    "reid": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "vector"
+      ],
+      "description": "Vector de re-identificación que el tracker (NvDCF ReID, outputReidTensor) calculó para este objeto; l2-normalizado. Opcional.",
+      "properties": {
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "vector": {
+          "type": "array",
+          "minItems": 16,
+          "maxItems": 2048,
+          "items": {
+            "type": "number"
+          }
+        }
+      }
+    }
   },
   "allOf": [
     {
       "if": {
-        "properties": {"kind": {"const": "shm"}},
-        "required": ["kind"]
+        "properties": {
+          "kind": {
+            "const": "shm"
+          }
+        },
+        "required": [
+          "kind"
+        ]
       },
       "then": {
         "properties": {
           "locator": {
             "type": "object",
-            "required": ["name", "offset"],
+            "required": [
+              "name",
+              "offset"
+            ],
             "properties": {
-              "name": {"type": "string", "pattern": "^deepfrigate_[A-Za-z0-9_.-]+$"},
-              "offset": {"type": "integer", "minimum": 0}
+              "name": {
+                "type": "string",
+                "pattern": "^deepfrigate_[A-Za-z0-9_.-]+$"
+              },
+              "offset": {
+                "type": "integer",
+                "minimum": 0
+              }
             },
             "additionalProperties": false
           }
@@ -54,18 +136,40 @@
     },
     {
       "if": {
-        "properties": {"kind": {"const": "cuda"}},
-        "required": ["kind"]
+        "properties": {
+          "kind": {
+            "const": "cuda"
+          }
+        },
+        "required": [
+          "kind"
+        ]
       },
       "then": {
         "properties": {
           "locator": {
             "type": "object",
-            "required": ["device_id", "ipc_handle", "scope"],
+            "required": [
+              "device_id",
+              "ipc_handle",
+              "scope"
+            ],
             "properties": {
-              "device_id": {"type": "integer", "minimum": 0},
-              "ipc_handle": {"type": "string", "minLength": 1},
-              "scope": {"enum": ["process", "container", "host"]}
+              "device_id": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "ipc_handle": {
+                "type": "string",
+                "minLength": 1
+              },
+              "scope": {
+                "enum": [
+                  "process",
+                  "container",
+                  "host"
+                ]
+              }
             },
             "additionalProperties": false
           }

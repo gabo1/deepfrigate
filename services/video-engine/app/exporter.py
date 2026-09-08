@@ -45,6 +45,28 @@ class ObjectSpec:
     top: float
     width: float
     height: float
+    # NvDCF ReID feature (outputReidTensor: 1), l2-normalized, 256 floats.
+    # None when the tracker has no feature for this object yet.
+    reid: tuple[float, ...] | None = None
+
+
+def reid_feature(obj: Any) -> tuple[float, ...] | None:
+    """Read the tracker's ReID vector attached to an object, if any."""
+    items = getattr(obj, "obj_reid_items", None)
+    if items is None:
+        return None
+    try:
+        for item in items:
+            meta = item.as_obj_reid() if hasattr(item, "as_obj_reid") else item
+            vector = getattr(meta, "feature_vector", None)
+            if vector is None:
+                continue
+            values = tuple(float(v) for v in vector)
+            if values and any(values):
+                return values
+    except Exception:  # noqa: BLE001 - metadata quirks must not drop the frame
+        return None
+    return None
 
 
 @dataclass(frozen=True)
@@ -106,6 +128,7 @@ class ExportMetadataCollector(BatchMetadataOperator):
                         top=float(rect.top),
                         width=float(rect.width),
                         height=float(rect.height),
+                        reid=reid_feature(obj),
                     )
                 )
             frames.append(
@@ -476,6 +499,11 @@ class FrameExporter(BufferRetriever):
             "size_bytes": size_bytes,
             "locator": {"name": name, "offset": 0},
         }
+        if obj.reid:
+            ref["reid"] = {
+                "model": "reidentificationnet",
+                "vector": [round(v, 6) for v in obj.reid],
+            }
         try:
             self._request("POST", "/v1/frame-refs", ref)
             return ref_id

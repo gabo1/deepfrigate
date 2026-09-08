@@ -186,6 +186,25 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
   `frigate_zones.py`; heatmap con zonas/líneas/flechas de dirección desde
   `/api/config`; `/v1/pipelines/options` y `validate` igual. Tests 8.
   Verificado: `options` devuelve `user: ['calle']`; heatmap 200 con overlay.
+- **ReID en el tracker y entre cámaras (8 sep 11:30):** `nvtracker` pasa a
+  `services/video-engine/config/config_tracker_NvDCF_reid.yml` (perf +
+  re-asociación del perfil accuracy + `ReID` con ReIdentificationNet TAO,
+  `outputReidTensor: 1`); modelo en `models/tracker-reid/` (download.sh desde
+  NGC sin cuenta, 96 MB; engine 48 MB generado en 2 min; ambos ignorados;
+  montaje RW nuevo en compose). Exporter: `reid_feature(obj)` lee
+  `obj.obj_reid_items[].feature_vector` y lo manda en el FrameRef
+  (`frame-ref.schema.json` + campo `reid`). ai-router `app/reid.py`
+  (`ReidGallery`: media por track de todos los FrameRefs no vistos, al END
+  upsert en Qdrant `reid_embeddings` 256-d + `embedding` update con
+  `-reid-final`). event-engine: matcher acepta ambos sufijos y **solo** la
+  colección `TRANSITION_QDRANT_COLLECTION` (default `reid_embeddings`);
+  contrato `embedding.dimensions` ∈ {256, 512} + `samples`. Verificado en
+  vivo: engine construido, 4 fuentes, `ReID stored (N samples)`, 16 puntos en
+  `reid_embeddings`, `Final embedding … attached`. VRAM 4.8 → 5.5 GB, CPU
+  igual. `tools/reid_eval.py` mide coseno verdaderos vs impostores sobre las
+  transiciones por co-ocurrencia: correr con ≥ 12 h de datos antes de
+  `TRANSITION_MODE=embedding`. Tests: video-engine 42, ai-router 48,
+  event-engine 74.
 - **Canvas React Flow en Workflow visual (8 sep 03:20):**
   `services/frigate/web/DeepFrigateWorkflowCanvas.tsx` (nuevo; `@xyflow/react`
   12.11.6 lo instala `Dockerfile.web-onto-local` con `npm install --no-save`

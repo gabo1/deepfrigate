@@ -52,8 +52,16 @@ Campos requeridos en el esquema. El ancla geométrica es el **pie** del bbox
 ### `update_type: embedding` / `visual_match` (ai-router)
 
 `embedding`: `model`, `model_version`, `vector_id`, `collection`,
-`dimensions`, `distance`, `frame_ref_id`, `inference_ms`, `end_to_end_ms`.
+`dimensions` (512 = PP-ShiTu en `vehicle_embeddings`; 256 =
+ReIdentificationNet del tracker en `reid_embeddings`), `distance`,
+`frame_ref_id` (`…-explore-thumb` para el thumbnail final de PP-ShiTu,
+`…-reid-final` para la media ReID del track), `samples` (ReID: vectores
+promediados), `inference_ms`, `end_to_end_ms`.
 `visual_match`: vecinos devueltos por Qdrant para ese vector.
+
+`frame-ref.schema.json`: campo opcional `reid` `{model, vector[]}` con el
+vector ReID que el tracker calculó para ese objeto (l2-normalizado). Lo
+escribe video-engine, lo consume ai-router; frame-store solo lo valida.
 
 ### `update_type: plate` (ai-router vía alpr-worker; alternativa alpr-bridge)
 

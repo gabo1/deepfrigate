@@ -243,3 +243,21 @@ def test_aspect_scale_undoes_mux_stretch_for_4_3_sources() -> None:
     assert box == [240, 100, 480, 400]
     assert box[0] / 960 == 320 / 1280
     assert restore_aspect(rgb, 1.0) is rgb
+
+
+def test_reid_feature_reads_tracker_vector_or_none() -> None:
+    from types import SimpleNamespace
+
+    from app.exporter import reid_feature
+
+    class Item:
+        def __init__(self, vec):
+            self._vec = vec
+
+        def as_obj_reid(self):
+            return SimpleNamespace(feature_vector=self._vec, feature_size=len(self._vec))
+
+    assert reid_feature(SimpleNamespace(obj_reid_items=[Item([0.1, 0.2, 0.3])])) == (0.1, 0.2, 0.3)
+    assert reid_feature(SimpleNamespace(obj_reid_items=[Item([0.0, 0.0])])) is None  # empty feature
+    assert reid_feature(SimpleNamespace(obj_reid_items=[])) is None
+    assert reid_feature(SimpleNamespace()) is None

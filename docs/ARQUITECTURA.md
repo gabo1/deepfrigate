@@ -212,6 +212,14 @@ como desempate) y escribe `camera_transitions` en el PG de producto;
 `platform-api /v1/camera-transitions` lo agrega por par. Detalle y límites:
 `docs/OPERACION.md` §6b.
 
+**ReID (8 sep).** El tracker NvDCF corre ReIdentificationNet (TAO, 256-d) con
+re-asociación encendida y deja el vector en cada objeto
+(`outputReidTensor`). El exporter lo manda en el FrameRef, ai-router promedia
+por track y guarda uno al END en Qdrant `reid_embeddings`; el matcher usa
+esa colección (no PP-ShiTu) para desempatar y, cuando esté calibrado, para
+`TRANSITION_MODE=embedding`. Sin segundo modelo ni segunda inferencia.
+`docs/OPERACION.md` §6b-bis.
+
 ## 5c. Operación: dónde se rompe y qué lo sujeta
 
 - `video-engine` tiene watchdog: `FRAME_STALL_RESTART_SECONDS=120` sin

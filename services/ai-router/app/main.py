@@ -34,6 +34,7 @@ from .embedding import VehicleEmbeddingService
 from .explore_thumb import load_explore_thumb
 from .openalpr import MODEL_VERSION as OPENALPR_MODEL_VERSION, OpenALPRService, plate_update
 from .plate_vote import PlateBallot
+from .reid import ReidGallery
 from .vehicle_attribute import (
     MODEL_VERSION as VEHICLE_MODEL_VERSION,
     VehicleAttributeService,
@@ -160,6 +161,17 @@ class FrameRefConsumer:
         # Reads of every pass, voted; `plates_found` = vote settled, stop.
         self.plate_votes: dict[tuple[str, int], PlateBallot] = {}
         self.plates_found: set[tuple[str, int]] = set()
+        # Tracker ReID vectors (FrameRef["reid"]) averaged per track and stored
+        # at END for cross-camera re-identification. REID_ENABLED=false skips it.
+        self.reid: ReidGallery | None = (
+            ReidGallery(
+                os.getenv("QDRANT_URL", "http://qdrant:6333"),
+                collection=os.getenv("REID_COLLECTION", "reid_embeddings"),
+                min_samples=int(os.getenv("REID_MIN_SAMPLES", "1")),
+            )
+            if os.getenv("REID_ENABLED", "true").lower() in {"1", "true", "yes"}
+            else None
+        )
         self.lock = Lock()
         self.embedding = VehicleEmbeddingService(
             triton_url=os.getenv("TRITON_URL", "triton:8001"),
@@ -371,6 +383,11 @@ class FrameRefConsumer:
                 if unseen:
                     ref = max(unseen, key=lambda item: item["timestamp"])
                     first_for_track = not self.seen.get(key)
+                    if self.reid is not None:
+                        # Every unseen ref feeds the ReID mean: no pixels are
+                        # read, only the tracker's vector shipped with the ref.
+                        for item in unseen:
+                            self.reid.observe(item, label)
                     enriched = self._consume(
                         ref,
                         label,
@@ -702,8 +719,24 @@ class FrameRefConsumer:
             logger.exception(
                 "Failed to embed Explore thumbnail for %s-%s", camera_id, track_id
             )
+        try:
+            self._publish_reid_final(camera_id, track_id)
+        except Exception:
+            logger.exception("Failed to store ReID vector for %s-%s", camera_id, track_id)
         finally:
             self._forget_track(key)
+
+    def _publish_reid_final(self, camera_id: str, track_id: int) -> None:
+        if self.reid is None:
+            return
+        samples = self.reid.samples((camera_id, int(track_id)))
+        update = self.reid.finalize(camera_id, int(track_id))
+        if update is None:
+            return
+        ref = {"camera_id": camera_id, "track_id": track_id, "width": 0, "height": 0}
+        self._publish_update(
+            update, f"ReID stored ({samples} samples)", ref, update["data"]["frame_ref_id"], "-", 0.0, True
+        )
 
     def _embed_final_thumbnail(
         self, camera_id: str, track_id: int, label: str
@@ -759,6 +792,8 @@ class FrameRefConsumer:
             self.last_plate_at.pop(key, None)
             self.plates_found.discard(key)
             self.finalize.discard(key)
+        if self.reid is not None:
+            self.reid.forget(key)
             self.pending.discard(key)
 
     def _publish_embedding(
