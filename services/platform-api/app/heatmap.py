@@ -293,3 +293,15 @@ def render(store_url: str, frigate_api_url: str, camera_config: dict[str, Any],
         _cache.clear()
     _cache[key] = (time.time() + CACHE_TTL_S, payload)
     return payload
+
+
+def placeholder(text: str, width: int = 640, height: int = 360) -> bytes:
+    """Cartel en vez de imagen rota cuando todavia no hay nada que enseñar."""
+    base = Image.new("RGB", (width, height), (18, 18, 22))
+    draw = ImageDraw.Draw(base)
+    text_width = int(draw.textlength(text))
+    draw.text(((width - text_width) // 2, height // 2 - 6), text,
+              fill=(190, 190, 195))
+    buf = BytesIO()
+    base.save(buf, format="JPEG", quality=80)
+    return buf.getvalue()

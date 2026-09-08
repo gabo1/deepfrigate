@@ -455,7 +455,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT created_at AS \"cuándo\", label AS \"etiqueta\",\n       from_camera AS \"desde\", to_camera AS \"hacia\",\n       round(gap_seconds::numeric, 1) AS \"desfase (s)\",\n       candidates AS \"candidatos\", method AS \"método\",\n       '/api/datasources/proxy/uid/deepfrigate-platform-api/v1/events/' || from_frigate_event_id\n         || '/thumbnail.jpg' AS \"foto desde\",\n       '/api/datasources/proxy/uid/deepfrigate-platform-api/v1/events/' || to_frigate_event_id\n         || '/thumbnail.jpg' AS \"foto hacia\",\n       'https://100.83.231.97:3005/explore?event_id=' || from_frigate_event_id AS \"ver desde\",\n       'https://100.83.231.97:3005/explore?event_id=' || to_frigate_event_id   AS \"ver hacia\"\n  FROM deepfrigate.camera_transitions\n WHERE $__timeFilter(created_at)\n   AND ('$label' = 'todas' OR label = '$label')\n ORDER BY created_at DESC LIMIT 100"
+          "rawSql": "SELECT created_at AS \"cuándo\", label AS \"etiqueta\",\n       from_camera AS \"desde\", to_camera AS \"hacia\",\n       round(gap_seconds::numeric, 1) AS \"desfase (s)\",\n       candidates AS \"candidatos\", method AS \"método\",\n       from_frigate_event_id AS \"id desde\",\n       to_frigate_event_id   AS \"id hacia\",\n       '/api/datasources/proxy/uid/deepfrigate-platform-api/v1/events/' || from_frigate_event_id\n         || '/thumbnail.jpg' AS \"foto desde\",\n       '/api/datasources/proxy/uid/deepfrigate-platform-api/v1/events/' || to_frigate_event_id\n         || '/thumbnail.jpg' AS \"foto hacia\",\n       'https://100.83.231.97:3005/explore?event_id=' || from_frigate_event_id AS \"ver desde\",\n       'https://100.83.231.97:3005/explore?event_id=' || to_frigate_event_id   AS \"ver hacia\"\n  FROM deepfrigate.camera_transitions\n WHERE $__timeFilter(created_at)\n   AND ('$label' = 'todas' OR label = '$label')\n ORDER BY created_at DESC LIMIT 100"
         }
       ],
       "options": {
@@ -469,9 +469,39 @@
           "custom": {
             "filterable": true,
             "align": "auto"
-          }
+          },
+          "links": [
+            {
+              "title": "Ver este par abajo",
+              "url": "/d/transiciones/transiciones-entre-camaras?${__url_time_range}&var-label=${label}&var-from_event=${__data.fields[\"id desde\"]}&var-to_event=${__data.fields[\"id hacia\"]}"
+            }
+          ]
         },
         "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "id desde"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "id hacia"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
           {
             "matcher": {
               "id": "byName",
@@ -552,7 +582,7 @@
     },
     {
       "type": "row",
-      "title": "Escenas emparejadas",
+      "title": "Par seleccionado (clic en una fila de arriba)",
       "collapsed": false,
       "panels": [],
       "gridPos": {
@@ -564,10 +594,52 @@
     },
     {
       "type": "text",
-      "title": "Escena · c4aac4f4eefe",
+      "title": "Desde",
       "gridPos": {
         "x": 0,
         "y": 39,
+        "w": 12,
+        "h": 12
+      },
+      "options": {
+        "mode": "html",
+        "content": "<img src=\"/api/datasources/proxy/uid/deepfrigate-platform-api/v1/events/${from_event}/snapshot.jpg\" style=\"width:100%;height:auto;display:block\">"
+      },
+      "description": "Snapshot completo del Event, no el recorte. Se llena al hacer clic en una fila de la tabla de arriba: el enlace vuelve a este mismo dashboard fijando `from_event` y `to_event`. Sin selección sale un cartel, no una imagen rota."
+    },
+    {
+      "type": "text",
+      "title": "Hacia",
+      "gridPos": {
+        "x": 12,
+        "y": 39,
+        "w": 12,
+        "h": 12
+      },
+      "options": {
+        "mode": "html",
+        "content": "<img src=\"/api/datasources/proxy/uid/deepfrigate-platform-api/v1/events/${to_event}/snapshot.jpg\" style=\"width:100%;height:auto;display:block\">"
+      },
+      "description": "Snapshot completo del Event, no el recorte. Se llena al hacer clic en una fila de la tabla de arriba: el enlace vuelve a este mismo dashboard fijando `from_event` y `to_event`. Sin selección sale un cartel, no una imagen rota."
+    },
+    {
+      "type": "row",
+      "title": "Escenas emparejadas",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 51,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "text",
+      "title": "Escena · c4aac4f4eefe",
+      "gridPos": {
+        "x": 0,
+        "y": 52,
         "w": 12,
         "h": 13
       },
@@ -582,7 +654,7 @@
       "title": "Escena · c4aac4f4ef0a",
       "gridPos": {
         "x": 12,
-        "y": 39,
+        "y": 52,
         "w": 12,
         "h": 13
       },
@@ -613,6 +685,28 @@
           "text": "Todas",
           "value": "todas"
         }
+      },
+      {
+        "name": "from_event",
+        "label": "Event desde",
+        "type": "textbox",
+        "query": "none",
+        "current": {
+          "text": "none",
+          "value": "none"
+        },
+        "hide": 2
+      },
+      {
+        "name": "to_event",
+        "label": "Event hacia",
+        "type": "textbox",
+        "query": "none",
+        "current": {
+          "text": "none",
+          "value": "none"
+        },
+        "hide": 2
       }
     ]
   },

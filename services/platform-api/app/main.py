@@ -593,6 +593,14 @@ def get_event_image(event_id: str, kind: str) -> Response:
     """
     if kind not in {"thumbnail", "snapshot"}:
         raise HTTPException(status_code=404, detail="unknown image kind")
+    # Los paneles de "par seleccionado" arrancan sin fila elegida. Devolver un
+    # 502 pintaria el icono de imagen rota, que parece una averia; un cartel
+    # dice lo que hay que hacer.
+    if event_id in {"none", "null", "-"}:
+        return Response(content=heatmap_render.placeholder(
+            "Haz clic en una fila de la tabla"),
+            media_type="image/jpeg",
+            headers={"Cache-Control": "max-age=3600"})
     key = (event_id, kind)
     hit = _thumbnail_cache.get(key)
     if hit and hit[0] > time.time():

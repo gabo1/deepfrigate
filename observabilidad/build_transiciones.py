@@ -175,6 +175,8 @@ panels += [
         "       from_camera AS \"desde\", to_camera AS \"hacia\",\n"
         "       round(gap_seconds::numeric, 1) AS \"desfase (s)\",\n"
         "       candidates AS \"candidatos\", method AS \"método\",\n"
+        "       from_frigate_event_id AS \"id desde\",\n"
+        "       to_frigate_event_id   AS \"id hacia\",\n"
         "       '" + THUMB + "/' || from_frigate_event_id\n"
         "         || '/thumbnail.jpg' AS \"foto desde\",\n"
         "       '" + THUMB + "/' || to_frigate_event_id\n"
@@ -192,7 +194,20 @@ panels += [
              "empate y se desempatara con embedding: no usar `avg(score)` "
              "como calidad.",
         options={"cellHeight": "lg", "footer": {"show": False}},
+        defaults={"links": [{
+            "title": "Ver este par abajo",
+            # Grafana no propaga clics entre paneles. Lo que sí hace es
+            # navegar al mismo dashboard fijando variables, y los paneles de
+            # imagen leen esas variables. `__url_time_range` conserva el rango.
+            "url": ("/d/transiciones/transiciones-entre-camaras"
+                    "?${__url_time_range}&var-label=${label}"
+                    "&var-from_event=${__data.fields[\"id desde\"]}"
+                    "&var-to_event=${__data.fields[\"id hacia\"]}"),
+        }]},
         overrides=[{"matcher": {"id": "byName", "options": n},
+                    "properties": [{"id": "custom.hidden", "value": True}]}
+                   for n in ("id desde", "id hacia")]
+        + [{"matcher": {"id": "byName", "options": n},
                     "properties": [
                         {"id": "custom.cellOptions", "value": {"type": "image"}},
                         {"id": "custom.width", "value": 150}]}
@@ -204,8 +219,27 @@ panels += [
            for n in ("ver desde", "ver hacia")]),
 ]
 
-panels.append(row("Escenas emparejadas", 38))
-panels += [escena("c4aac4f4eefe", 0, 39), escena("c4aac4f4ef0a", 12, 39)]
+def seleccionado(titulo, var, x, y):
+    return {
+        "type": "text", "title": titulo,
+        "gridPos": {"x": x, "y": y, "w": 12, "h": 12},
+        "options": {"mode": "html", "content":
+                    f'<img src="{THUMB}/${{{var}}}/snapshot.jpg" '
+                    'style="width:100%;height:auto;display:block">'},
+        "description": (
+            "Snapshot completo del Event, no el recorte. Se llena al hacer "
+            "clic en una fila de la tabla de arriba: el enlace vuelve a este "
+            "mismo dashboard fijando `from_event` y `to_event`. Sin selección "
+            "sale un cartel, no una imagen rota."),
+    }
+
+
+panels.append(row("Par seleccionado (clic en una fila de arriba)", 38))
+panels += [seleccionado("Desde", "from_event", 0, 39),
+           seleccionado("Hacia", "to_event", 12, 39)]
+
+panels.append(row("Escenas emparejadas", 51))
+panels += [escena("c4aac4f4eefe", 0, 52), escena("c4aac4f4ef0a", 12, 52)]
 
 dashboard = {
     "title": "Transiciones entre cámaras",
@@ -226,6 +260,16 @@ dashboard = {
         "query": f"SELECT DISTINCT label FROM {CT} ORDER BY 1",
         "refresh": 1, "sort": 1, "includeAll": True, "allValue": "todas",
         "multi": False, "current": {"text": "Todas", "value": "todas"},
+    }, {
+        # Textbox y no query: el valor lo pone el data link de la tabla, y una
+        # variable de consulta descartaría un id que no esté en sus opciones.
+        "name": "from_event", "label": "Event desde", "type": "textbox",
+        "query": "none", "current": {"text": "none", "value": "none"},
+        "hide": 2,
+    }, {
+        "name": "to_event", "label": "Event hacia", "type": "textbox",
+        "query": "none", "current": {"text": "none", "value": "none"},
+        "hide": 2,
     }]},
     "schemaVersion": 39, "version": 1,
 }

@@ -1793,6 +1793,25 @@ lleva la URL y el override pone `cellOptions.type = "image"`. Caché de 300 s en
 memoria: la tabla pide hasta 200 miniaturas de golpe y se repinta en cada
 refresco.
 
+**Clic en una fila → fila «Par seleccionado».** Grafana **no** propaga clics
+entre paneles: no hay evento de selección que otro panel pueda escuchar. Lo que
+sí hace es navegar por URL fijando variables, y eso basta:
+
+1. La tabla trae `from_frigate_event_id` y `to_frigate_event_id` como columnas
+   **ocultas** (`custom.hidden`), solo para que el enlace las pueda leer.
+2. Un data link en la fila apunta al **mismo** dashboard:
+   `?${__url_time_range}&var-label=${label}&var-from_event=${__data.fields["id desde"]}&var-to_event=${__data.fields["id hacia"]}`.
+   `__url_time_range` conserva el rango; sin él, al navegar se perdería.
+3. Los dos paneles de «Par seleccionado» piden
+   `/v1/events/$from_event/snapshot.jpg`. **Snapshot**, no miniatura: ahí se
+   compara la escena entera, no el recorte.
+
+`from_event` y `to_event` son **textbox** con defecto `none`, no variables de
+consulta: una query descartaría un id que no esté entre sus opciones. Y
+platform-api devuelve un **cartel** para `none` en vez de 502, para que sin
+selección salga «Haz clic en una fila de la tabla» y no el icono de imagen
+rota.
+
 La variable `$label` usa el centinela `todas` en `allValue`, no cadena vacía:
 dejar que Grafana interpole `All` o `$__all` ya dejó un heatmap en blanco una
 vez (§11 quater).
