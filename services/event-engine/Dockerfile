@@ -9,6 +9,7 @@ COPY services/event-engine/sql ./sql
 COPY contracts/tracked-object-update.schema.json ./contracts/
 COPY contracts/event.schema.json ./contracts/
 COPY config/zones.json ./config/zones.json
+COPY config/rules ./config/rules
 
 FROM base AS test
 COPY services/event-engine/requirements-dev.txt .

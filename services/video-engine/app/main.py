@@ -272,6 +272,8 @@ def build_pipeline() -> tuple[Pipeline, FrameExporter, SourceController, dict[st
         snapshot_dir=os.getenv("DS_SNAPSHOT_DIR") or None,
         snapshot_interval=_positive_float("DS_SNAPSHOT_INTERVAL", "0.4"),
         pipeline_size=(mux_width, mux_height),
+        snapshot_clean=os.getenv("DS_SNAPSHOT_CLEAN", "false").lower()
+        in {"1", "true", "yes"},
     )
     pipeline.attach(
         "export-sink",

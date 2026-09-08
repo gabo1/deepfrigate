@@ -1,0 +1,58 @@
+# Reglas declarativas de event-engine (docs/OPERACION.md §6d).
+# Se recarga sola al guardar (mtime, cada RULES_RELOAD_SECONDS=2 s). Un archivo
+# inválido se rechaza en el log y siguen las reglas anteriores.
+#
+# Cada regla: when (todas las claves opcionales, listas = "cualquiera de"),
+# cooldown (evita repetir), then (severity, sub_label Frigate, message).
+# Campos: event_type, camera, label, zone, line, direction, min_dwell_seconds,
+# min_count, min_confidence, stationary, schedule{days, between, timezone}.
+version: 1
+rules:
+  - name: merodeo_calle
+    enabled: true
+    when:
+      event_type: [dwell_time]
+      label: [person]
+      zone: [calle]
+      min_dwell_seconds: 30
+    cooldown: {seconds: 120, scope: object}
+    then:
+      severity: warning
+      sub_label: "Merodeo"
+      message: "{label} {dwell_time}s en {zone} ({camera})"
+
+  - name: persona_nocturna
+    enabled: true
+    when:
+      event_type: [object_entered_zone]
+      label: [person]
+      schedule:
+        between: ["22:00", "06:00"]
+        timezone: America/Mexico_City
+    cooldown: {seconds: 60, scope: object}
+    then:
+      severity: critical
+      sub_label: "Persona nocturna"
+      message: "{label} entró a {zone} de noche ({camera})"
+
+  - name: aforo_excedido
+    enabled: true
+    when:
+      event_type: [overcrowding]
+    cooldown: {seconds: 300, scope: camera}
+    then:
+      severity: critical
+      message: "{count} objetos en {zone}, umbral {threshold} ({camera})"
+
+  - name: vehiculo_contra_flujo
+    enabled: false
+    when:
+      event_type: [direction_match]
+      label: [car]
+      direction: [hacia_arriba]
+      camera: [user]
+    cooldown: {seconds: 30, scope: object}
+    then:
+      severity: warning
+      sub_label: "Contra flujo"
+      message: "{label} {direction} en {camera}"

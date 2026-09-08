@@ -7,7 +7,7 @@ productor valida su salida antes de publicar.
 |---|---|---|
 | `object-detection.schema.json` | DeepStream (`nvmsgconv`) → `deepfrigate/detections/#` | detection-adapter |
 | `tracked-object-update.schema.json` | detection-adapter, ai-router → `deepfrigate/tracked-objects/{camera_id}` | event-engine, ai-router, frame-store |
-| `event.schema.json` | event-engine → `deepfrigate/events/{camera_id}` y PG `events` | platform-api, Grafana |
+| `event.schema.json` | event-engine → `deepfrigate/events/{camera_id}` y PG `events` | platform-api, Grafana | `event_type` incluye `rule_matched` (motor de reglas, `data.rule`/`message`/`source_event_id`). |
 | `frame-ref.schema.json` | video-engine → frame-store | ai-router |
 | `pipeline.schema.json` | `services/video-engine/config/pipeline.yaml` | video-engine al arrancar, editor visual |
 

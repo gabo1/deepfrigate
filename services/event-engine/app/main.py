@@ -18,6 +18,7 @@ from .frigate_bridge import FrigateReviewBridge
 from .transitions import matcher_from_env
 from .frigate_store import FrigateEventStore
 from .normalizer import EventNormalizer
+from .rules import engine_from_env, rule_update
 from .repository import EventRepository
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -116,6 +117,11 @@ class EventEngine:
                 self.transitions.direction,
                 sorted(self.transitions.labels),
             )
+        # Declarative rules (config/rules/rules.yaml): every normalized event
+        # is matched on the MQTT thread; matches become `rule_matched` events.
+        self.rules = engine_from_env()
+        if self.rules is not None:
+            logger.info("Rules engine on: %s", self.rules.summary())
         self.worker = Thread(
             target=self._run_worker,
             name="event-persistence",
@@ -243,6 +249,14 @@ class EventEngine:
             self.queue.put_nowait(
                 (update, event, message.mid, message.qos)
             )
+            if event is not None and self.rules is not None:
+                for derived in self.rules.evaluate(event):
+                    self.event_validator.validate(derived)
+                    # qos 0: the source message is acknowledged once, by the
+                    # item above; derived events ride along unacknowledged.
+                    self.queue.put_nowait(
+                        (rule_update(update, derived), derived, 0, 0)
+                    )
         except Full:
             logger.error(
                 "Event queue full; message left unacknowledged for redelivery"
@@ -313,6 +327,7 @@ class EventEngine:
                                 "direction_match",
                                 "specific_plate",
                                 "visual_match",
+                                "rule_matched",
                             }
                             else logging.DEBUG,
                             "Persisted %s id=%s object=%s",

@@ -171,6 +171,7 @@ class FrameExporter(BufferRetriever):
         snapshot_dir: str | None = None,
         snapshot_interval: float = 0.4,
         pipeline_size: tuple[int, int] | None = None,
+        snapshot_clean: bool = False,
     ) -> None:
         super().__init__()
         self.metadata = metadata
@@ -188,6 +189,10 @@ class FrameExporter(BufferRetriever):
         self.crop_padding = crop_padding
         self.snapshot_dir = snapshot_dir
         self.snapshot_interval = snapshot_interval
+        # `{track}-clean.webp` is a second full-frame encode of the very same
+        # pixels as `{track}.jpg`. event-engine derives it from the jpg once
+        # per Frigate install, so the hot path skips it unless asked.
+        self.snapshot_clean = snapshot_clean
         self.work: Queue[tuple[Any, FrameSpec]] = Queue(maxsize=work_queue_size)
         self.stopped = Event()
         self.last_export: dict[tuple[str, int], tuple[float, float, str]] = {}
@@ -362,8 +367,12 @@ class FrameExporter(BufferRetriever):
                     encoded = write_track_jpeg(
                         self.snapshot_dir, frame.camera_id, obj.track_id, rgb
                     )
-                    clean = write_track_clean(
-                        self.snapshot_dir, frame.camera_id, obj.track_id, rgb
+                    clean = (
+                        write_track_clean(
+                            self.snapshot_dir, frame.camera_id, obj.track_id, rgb
+                        )
+                        if self.snapshot_clean
+                        else None
                     )
                 else:
                     dest = encoded.with_name(f"{int(obj.track_id)}.jpg")
@@ -442,6 +451,16 @@ class FrameExporter(BufferRetriever):
         ):
             current = None
             self.best_snapshot.pop(key, None)
+        if (
+            current is not None
+            and last_snapshot is not None
+            and now - last_snapshot < self.snapshot_interval
+        ):
+            # A growing track qualifies as "better" on nearly every frame.
+            # Each accepted candidate costs a full-frame JPEG encode plus a
+            # bundle publish, so accept at most one per interval; the next
+            # frame is judged against the same best again.
+            return False
         shape = (frame.pipeline_height, frame.pipeline_width)
         if current is None or is_better_thumbnail(current, candidate, shape):
             if current is None and self.snapshot_dir:

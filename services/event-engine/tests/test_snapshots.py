@@ -457,3 +457,40 @@ def test_end_repairs_frigate_files_written_in_the_same_instant(tmp_path: Path) -
     thumb = Image.open(thumbs / "evt-1.webp").convert("RGB")
     assert thumb.size[1] == 175
     assert min(thumb.getpixel((thumb.size[0] // 2, thumb.size[1] // 2))) > 150
+
+
+def test_replace_frigate_snapshot_derives_clean_when_bundle_has_none(tmp_path: Path) -> None:
+    from PIL import Image
+
+    source = tmp_path / "ds" / "user" / ".bundles" / "42" / "generationone"
+    source.mkdir(parents=True)
+    Image.new("RGB", (64, 48), (200, 10, 10)).save(source / "scene.jpg", format="JPEG")
+    (source / "thumb.webp").write_bytes(b"bundle-thumb")
+    (source.parent / "current.json").write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "generation": "generationone",
+                "scene": "scene.jpg",
+                "clean": None,
+                "thumb": "thumb.webp",
+                "bbox": {"x": 4, "y": 4, "width": 20, "height": 30},
+                "frame_width": 64,
+                "frame_height": 48,
+            }
+        )
+    )
+    clips = tmp_path / "clips"
+    copied = replace_frigate_snapshot(
+        snapshot_dir=tmp_path / "ds",
+        clips_dir=clips,
+        camera_id="user",
+        object_id="user-42",
+        frigate_event_id="evt-1",
+        attempts=1,
+        delay=0,
+    )
+    assert copied and copied.geometry is not None
+    clean = Image.open(clips / "user-evt-1-clean.webp").convert("RGB")
+    assert clean.size == (64, 48) and clean.getpixel((0, 0))[0] > 150
+    assert (clips / "thumbs" / "user" / "evt-1.webp").read_bytes() == b"bundle-thumb"

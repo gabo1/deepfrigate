@@ -317,6 +317,11 @@ services:
       # over FRIGATE_DB_PATH when the bridge targets PostgreSQL-backed Frigate.
       FRIGATE_EVENT_STORE_URL: ${FRIGATE_EVENT_STORE_URL:-postgresql://frigate_pgvector:${FRIGATE_PG_PASSWORD:-frigate_pgvector_smoke}@${POSTGRES_HOST:-pgvector-smoke-db}:5432/${POSTGRES_DB:-frigate_pgvector_smoke}}
       ZONES_CONFIG: /app/config/zones.json
+      # Declarative rules -> `rule_matched` events (docs/OPERACION.md §6d).
+      RULES_ENABLED: ${RULES_ENABLED:-true}
+      RULES_CONFIG: /app/config/rules/rules.yaml
+      RULES_RELOAD_SECONDS: ${RULES_RELOAD_SECONDS:-2}
+      RULES_TIMEZONE: ${RULES_TIMEZONE:-America/Mexico_City}
       DS_SNAPSHOT_DIR: /opt/ds-snapshots
       FRIGATE_CLIPS_DIR: /media/frigate/clips
       # Cross-camera transitions from PP-ShiTu embeddings: undirected camera
@@ -343,6 +348,9 @@ services:
     volumes:
       - ./config/frigate:/frigate
       - ./config/zones.json:/app/config/zones.json:ro
+      # Directory, not file: editors replace the inode and a single-file bind
+      # mount would keep showing the old rules.
+      - ./config/rules:/app/config/rules:ro
       - ./data/ds-snapshots:/opt/ds-snapshots:ro
       - frigate-bridge-media:/media/frigate
     depends_on:
@@ -480,6 +488,8 @@ services:
       FRAME_CROP_PADDING: ${FRAME_CROP_PADDING:-0.1}
       DS_SNAPSHOT_DIR: /opt/snapshots
       DS_SNAPSHOT_INTERVAL: ${DS_SNAPSHOT_INTERVAL:-0.4}
+      # Second full-frame WebP per snapshot; off, event-engine derives it.
+      DS_SNAPSHOT_CLEAN: ${DS_SNAPSHOT_CLEAN:-false}
       # Exit (and restart) when the GStreamer graph stops delivering buffers
       # for this long. 0 disables. A camera outage on every source also
       # trips it; the restart is cheap and the log says why.

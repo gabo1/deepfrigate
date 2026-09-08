@@ -53,6 +53,23 @@ Zonas, líneas y direcciones: en Frigate (§6a).
 - Mitigación estructural: `broker-queue` y `export-queue` son `leaky: 2`.
   Un sink atascado descarta, no bloquea el `tee`.
 
+### CPU de video-engine > 100 % con 4 cámaras (visto 8 sep)
+
+- Señal: `docker stats` video-engine ~109 %, load > 6 en 4 cores. `top -H -p
+  $(docker inspect -f '{{.State.Pid}}' deepfrigate-video-engine-1)` muestra
+  al hilo `frame-exporter` (Python) arriba; `py-spy record` lo pone en
+  `PIL WebPImagePlugin._save` (63 %) desde `write_track_clean`.
+- Causa: cada "mejor thumbnail" (casi cada frame mientras el track crece)
+  escribía la escena 1280×720 dos veces (JPEG + WebP clean) y publicaba un
+  bundle. Sin límite de cadencia por track.
+- Fix: `DS_SNAPSHOT_INTERVAL` (0.4 s) ahora sí limita escrituras por track y
+  `DS_SNAPSHOT_CLEAN=false` deja de escribir `{track}-clean.webp`; el bundle
+  publica `clean: null` y event-engine deriva el clean del `scene.jpg` una vez
+  por instalación en Frigate (`write_clean_from_scene`, mismo frame). Hilo
+  `frame-exporter` 34 % → 13 %; proceso 109 % → ~46 %.
+- Cómo medir otra vez: `sudo ~/.local/bin/py-spy record --pid <PID>
+  --duration 30 --rate 200 --format raw --output ve.raw` y sumar por función.
+
 ### nvinferserver no arranca: `Failed to register CUDA shared memory`
 
 - `config_infer_yolo26.pbtxt` usa `enable_cuda_buffer_sharing: true` (sin él
@@ -586,6 +603,69 @@ acuerdo 37 de 53 (70 %), pero cobertura SDK 65 tracks frente a 104 del agente.
 Por eso el voto entre pasadas (16:00): recupera lecturas de 50–80 % cuando dos
 pasadas coinciden, sin bajar el umbral de una lectura sola.
 
+## 6d. Reglas declarativas (`config/rules/rules.yaml`, 8 sep)
+
+event-engine evalúa cada evento normalizado contra un YAML de reglas y emite
+`rule_matched` (persistido en `events`, publicado en
+`deepfrigate/events/{camera}`, y `sub_label` en el Event de Frigate cuando la
+regla lo pide). Sin código: "persona > 30 s en `calle`", "persona entra a una
+zona entre 22:00 y 06:00", "aforo excedido".
+
+```yaml
+version: 1
+rules:
+  - name: merodeo_calle              # único, [A-Za-z0-9_-]
+    enabled: true
+    when:                            # todas opcionales; listas = "cualquiera"
+      event_type: [dwell_time]       # object_entered_zone, line_crossed_in, …
+      camera: [user]
+      label: [person]
+      zone: [calle]                  # también line: / direction:
+      min_dwell_seconds: 30          # data.dwell_time >=  (min_count, min_confidence)
+      stationary: true               # data.stationary ==
+      schedule:
+        days: [mon, tue, wed, thu, fri]
+        between: ["22:00", "06:00"]  # cruza medianoche
+        timezone: America/Mexico_City
+    cooldown: {seconds: 120, scope: object}   # object | camera | rule
+    then:
+      severity: warning              # info | warning | critical
+      sub_label: "Merodeo"           # opcional: etiqueta el Event en Frigate
+      message: "{label} {dwell_time}s en {zone} ({camera})"
+```
+
+- **Recarga en caliente**: el archivo se relee al cambiar su mtime
+  (`RULES_RELOAD_SECONDS=2`). Se monta el **directorio** `config/rules`
+  (un bind de archivo suelto se queda con el inode viejo al guardar desde un
+  editor). Archivo inválido → `Rules file ... rejected, keeping N previous
+  rule(s): <motivo>` y siguen las reglas anteriores. Archivo ausente → cero
+  reglas, aviso en log.
+- **Qué evalúa**: los `event_type` del normalizer (§ANALITICAS): lifecycle,
+  zonas (`dwell_time` trae `data.dwell_time`), líneas, direcciones,
+  overcrowding (`data.count`, `data.threshold`), `object_stationary`,
+  `plate_read`/`specific_plate`, `visual_match`.
+- **Salida**: `event_type=rule_matched`, `severity` de la regla, `data.rule`,
+  `data.message`, `data.source_event_type`, `data.source_event_id` y el
+  contexto del origen (`label`, `zone`, `line`, `direction`, `dwell_time`,
+  `count`, `bbox`). El id es `uuid5(regla, evento origen)`: reintentos no
+  duplican filas.
+- **Cooldown** por `object` (mismo track), `camera` o `rule` (global). Se
+  mide con el timestamp del evento, no con el reloj del host.
+- **Frigate**: con `then.sub_label` el bridge hace `store.merge(sub_label=…)`
+  sobre el Event activo del track (y `data.rule`/`data.rule_message`). Una
+  placa leída después puede pisar el `sub_label`; la fila `rule_matched`
+  queda igual.
+- **Ver**: `SELECT occurred_at, camera_id, severity, data->>'rule',
+  data->>'message' FROM deepfrigate.events WHERE event_type='rule_matched'
+  ORDER BY 1 DESC LIMIT 20;` — o `docker logs deepfrigate-event-engine-1 |
+  grep "Persisted rule_matched"`. Estado al arrancar: `Rules engine on:
+  {'rules': N, 'enabled': [...], 'digest': …}`.
+- **Tests**: `services/event-engine/tests/test_rules.py` (parseo, horarios
+  con cambio de día, cooldown, recarga, archivo versionado) y el caso de
+  encolado en `test_main.py`.
+- Apagar todo: `RULES_ENABLED=false`. Pendiente: editor en Settings →
+  DeepFrigate y métricas Prometheus por regla.
+
 ## 7. Variables que importan
 
 | Variable | Servicio | Default | Qué hace |
@@ -593,6 +673,8 @@ pasadas coinciden, sin bajar el umbral de una lectura sola.
 | `FRAME_STALL_RESTART_SECONDS` | video-engine | 120 | watchdog; 0 desactiva |
 | `DS_SNAPSHOT_RETENTION_HOURS` | video-engine | 24 | borrado de `ds-snapshots`; 0 desactiva |
 | `FRAME_REFRESH_SECONDS` | video-engine | 5 | olvida el mejor thumb si el id no escribe en 5 s (ids reciclados) |
+| `DS_SNAPSHOT_INTERVAL` / `DS_SNAPSHOT_CLEAN` | video-engine | 0.4 / false | mínimo entre escrituras de snapshot por track; escribir también `-clean.webp` (2× encode; hoy lo deriva event-engine) |
+| `RULES_ENABLED` / `RULES_CONFIG` / `RULES_RELOAD_SECONDS` / `RULES_TIMEZONE` | event-engine | true / `/app/config/rules/rules.yaml` / 2 / `America/Mexico_City` | reglas declarativas → `rule_matched` (§6d) |
 | `LOST_AFTER_SECONDS` / `END_AFTER_SECONDS` | adapter | 5 / 5 | gracia antes de LOST/END; Frigate cierra con `last_seen_at` |
 | `FRIGATE_BRIDGE_UPDATE_SECONDS` | event-engine | 1 | coalescing de UPDATE hacia Frigate |
 | `FRIGATE_EMBED_THUMBNAILS` | event-engine | false | ya no hace falta: Frigate embebe al END |

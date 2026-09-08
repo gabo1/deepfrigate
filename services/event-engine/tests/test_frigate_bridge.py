@@ -1442,3 +1442,34 @@ def test_plate_before_creation_is_persisted_once_the_event_exists(monkeypatch):
     assert "frigate-event-1" not in store.rows
     bridge.observe(_detection("UPDATE", 101.6, **_quality()))
     assert store.rows["frigate-event-1"]["sub_label"] == "JD6085B"
+
+
+def _rule(ts: float = 100.5, sub_label: str = "Merodeo") -> dict:
+    return {
+        "type": "tracked_object_update",
+        "object_id": "tienda-42",
+        "camera_id": "tienda",
+        "track_id": 42,
+        "timestamp": ts,
+        "update_type": "custom",
+        "data": {"kind": "rule", "rule": "merodeo_calle", "message": "person 31s en calle", "sub_label": sub_label},
+    }
+
+
+def test_rule_sub_label_waits_for_the_frigate_event(monkeypatch):
+    repository = FakeRepository()
+    store = FakeStore()
+    bridge = FrigateReviewBridge("http://frigate:5000/api", repository, store=store, camera_sizes={"tienda": (1280, 720)})
+    monkeypatch.setattr(bridge, "_request", lambda method, path, payload=None: ([] if method == "GET" else {"event_id": "frigate-event-1"}))
+    bridge.observe(_detection("START", 100.0, false_positive=True, position_changes=0), detected_event())
+    bridge.observe(_rule(ts=100.5))
+    assert "frigate-event-1" not in store.rows
+    bridge.observe(_detection("UPDATE", 101.6, **_quality()))
+    assert store.rows["frigate-event-1"]["sub_label"] == "Merodeo"
+    assert store.rows["frigate-event-1"]["data"]["rule"] == "merodeo_calle"
+    # Once the event exists a later rule writes straight through.
+    bridge.observe(_rule(ts=130.0, sub_label="Persona nocturna"))
+    assert store.rows["frigate-event-1"]["sub_label"] == "Persona nocturna"
+    # A rule without sub_label never touches Frigate.
+    bridge.observe(_rule(ts=131.0, sub_label=""))
+    assert store.rows["frigate-event-1"]["sub_label"] == "Persona nocturna"

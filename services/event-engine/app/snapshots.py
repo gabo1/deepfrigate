@@ -178,8 +178,13 @@ def manifest_geometry(manifest: dict[str, Any] | None) -> SnapshotGeometry | Non
 
 def _bundle_sources(
     source_dir: Path, track_id: str
-) -> tuple[Path, Path, Path, dict[str, Any]] | None:
-    """Return one complete immutable DeepStream snapshot generation."""
+) -> tuple[Path, Path | None, Path, dict[str, Any]] | None:
+    """Return one complete immutable DeepStream snapshot generation.
+
+    The clean is optional: video-engine writes `clean: null` when it skips the
+    second full-frame encode (DS_SNAPSHOT_CLEAN=false). The caller then derives
+    the clean from the scene jpg, which is the same frame by construction.
+    """
     current = source_dir / ".bundles" / track_id / "current.json"
     try:
         manifest = json.loads(current.read_text())
@@ -188,11 +193,13 @@ def _bundle_sources(
             return None
         bundle = current.parent / generation
         scene = bundle / str(manifest["scene"])
-        clean = bundle / str(manifest["clean"])
+        clean_name = manifest.get("clean")
+        clean = bundle / str(clean_name) if clean_name else None
         thumb = bundle / str(manifest["thumb"])
-        if any(path.parent != bundle for path in (scene, clean, thumb)):
+        required = [scene, thumb] + ([clean] if clean is not None else [])
+        if any(path.parent != bundle for path in required):
             return None
-        if not all(path.is_file() and path.stat().st_size > 0 for path in (scene, clean, thumb)):
+        if not all(path.is_file() and path.stat().st_size > 0 for path in required):
             return None
         return scene, clean, thumb, manifest
     except (OSError, ValueError, KeyError, TypeError):

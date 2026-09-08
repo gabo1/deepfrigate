@@ -261,3 +261,44 @@ def test_reid_feature_reads_tracker_vector_or_none() -> None:
     assert reid_feature(SimpleNamespace(obj_reid_items=[Item([0.0, 0.0])])) is None  # empty feature
     assert reid_feature(SimpleNamespace(obj_reid_items=[])) is None
     assert reid_feature(SimpleNamespace()) is None
+
+
+def test_snapshot_bundle_without_clean_publishes_null_clean(tmp_path: Path) -> None:
+    import json
+
+    rgb = np.zeros((64, 64, 3), dtype=np.uint8)
+    write_track_jpeg(tmp_path, "user", 9, rgb)
+    write_track_thumb(tmp_path, "user", 9, rgb, [8, 8, 40, 48])
+    bundle = publish_track_snapshot_bundle(tmp_path, "user", 9)
+    manifest = json.loads((bundle / "manifest.json").read_text())
+    assert manifest["clean"] is None
+    assert (bundle / "scene.jpg").exists() and (bundle / "thumb.webp").exists()
+    assert not list(bundle.glob("clean*"))
+
+
+def test_exporter_rate_limits_snapshot_writes_per_track() -> None:
+    from app.exporter import FrameExporter, FrameSpec, ObjectSpec
+
+    exporter = FrameExporter.__new__(FrameExporter)
+    exporter.snapshot_dir = None
+    exporter.snapshot_interval = 0.4
+    exporter.refresh_seconds = 5
+    exporter.last_snapshot = {}
+    exporter.best_snapshot = {}
+    frame = FrameSpec(
+        camera_id="user", batch_id=0, frame_number=1,
+        pipeline_width=1280, pipeline_height=720, objects=(),
+    )
+
+    def obj(width: float) -> ObjectSpec:
+        return ObjectSpec(
+            track_id=3, label="person", confidence=0.9,
+            left=100, top=100, width=width, height=width,
+        )
+
+    assert exporter._should_keep_snapshot(frame, obj(100), 10.0)
+    exporter.last_snapshot[("user", 3)] = 10.0
+    # 20% bigger 0.1 s later: better, but inside the interval.
+    assert not exporter._should_keep_snapshot(frame, obj(120), 10.1)
+    # Same candidate once the interval elapsed.
+    assert exporter._should_keep_snapshot(frame, obj(120), 10.5)

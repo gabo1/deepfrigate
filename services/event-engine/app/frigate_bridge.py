@@ -117,6 +117,9 @@ class _PendingTrack:
     # Last license plate read for this track (alpr-bridge), persisted to
     # Frigate as sub_label + recognized_license_plate once the event exists.
     last_plate: dict[str, Any] | None = None
+    # Last matched rule with a `sub_label` (rules.yaml); a rule usually fires
+    # on START/zone_enter, before Frigate has the event, so it waits here.
+    last_rule: dict[str, Any] | None = None
 
 
 class FrigateReviewBridge:
@@ -232,6 +235,8 @@ class FrigateReviewBridge:
             self._classification_update(update)
         elif update_type == "plate":
             self._plate_update(update)
+        elif update_type == "custom" and (update.get("data") or {}).get("kind") == "rule":
+            self._rule_update(update)
         elif update_type in {"line", "overcrowding", "direction"} and event is not None:
             self._queue_or_write_analytics(update, event)
         elif update_type == "zone" and event is not None:
@@ -269,6 +274,8 @@ class FrigateReviewBridge:
             )
         if pending.created and pending.last_plate is not None:
             self._persist_plate(object_id, pending.last_plate)
+        if pending.created and pending.last_rule is not None:
+            self._persist_rule(object_id, pending.last_rule)
 
     def _event_from_pending(self, pending: _PendingTrack) -> dict[str, Any]:
         data = pending.last_update.get("data") or {}
@@ -887,6 +894,43 @@ class FrigateReviewBridge:
             pending.last_plate = update
         if pending.created:
             self._persist_plate(object_id, pending.last_plate or update)
+
+    def _rule_update(self, update: dict[str, Any]) -> None:
+        """A matched rule with `then.sub_label` names the Frigate event.
+
+        Rules fire on the first zone/line event, typically ~0.5 s before the
+        Frigate event exists; like plates, the label waits on the pending
+        track and is written by `_maybe_publish`. Later plate/vehicle
+        classifications may replace the sub_label; the `rule_matched` row in
+        PG `events` stays regardless.
+        """
+        data = update.get("data") or {}
+        object_id = str(update.get("object_id") or "")
+        if not object_id or not str(data.get("sub_label") or "").strip():
+            return
+        pending = self._pending.get(object_id)
+        if pending is None:
+            self._persist_rule(object_id, update)
+            return
+        pending.last_rule = update
+        if pending.created:
+            self._persist_rule(object_id, update)
+
+    def _persist_rule(self, object_id: str, update: dict[str, Any]) -> None:
+        if self.store is None:
+            return
+        link = self.repository.get_active_frigate_link(object_id)
+        if link is None or not link.get("frigate_event_id"):
+            return
+        data = update.get("data") or {}
+        sub_label = str(data.get("sub_label") or "").strip()
+        if not sub_label:
+            return
+        self.store.merge(
+            str(link["frigate_event_id"]),
+            data_update={"rule": data.get("rule"), "rule_message": data.get("message")},
+            sub_label=sub_label[:100],
+        )
 
     def _persist_plate(self, object_id: str, update: dict[str, Any]) -> None:
         if self.store is None:

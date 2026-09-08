@@ -444,6 +444,7 @@ afectado.
 | Ruta | Qué |
 |---|---|
 | `services/event-engine/app/normalizer.py` | MQTT → `event_type` (abajo) |
+| `services/event-engine/app/rules.py` | reglas YAML → `rule_matched` (cooldown, horario, recarga por mtime) |
 | `services/event-engine/app/frigate_bridge.py` | Review + Timeline; cola `pending_analytics` si el Event aún no existe |
 | `services/event-engine/app/frigate_store.py` | 1 conexión PG reutilizada + lock (no 1 connect/poll) |
 | `services/event-engine/app/snapshots.py` | Copia crop DS → `clips/thumbs/{cam}/{event}.webp` |
@@ -461,6 +462,19 @@ line_crossed_in, line_crossed_out
 overcrowding, overcrowding_clear
 direction_match
 visual_match, specific_plate
+rule_matched            (derivado: config/rules/rules.yaml, OPERACION §6d)
+```
+
+`rule_matched` sale del motor de reglas, no del adapter: `data.rule`,
+`data.message`, `data.source_event_type`, `severity` de la regla. Para un
+panel de alertas:
+
+```sql
+SELECT occurred_at, camera_id, severity, data->>'rule' AS regla,
+       data->>'message' AS mensaje, data->>'label' AS label
+FROM deepfrigate.events
+WHERE event_type = 'rule_matched' AND $__timeFilter(occurred_at)
+ORDER BY occurred_at DESC;
 ```
 
 `dwell_time` (adapter/zone) = segundos **en el polígono** (como Grafana

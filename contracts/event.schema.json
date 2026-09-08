@@ -38,7 +38,8 @@
         "line_crossed_out",
         "overcrowding",
         "overcrowding_clear",
-        "direction_match"
+        "direction_match",
+        "rule_matched"
       ]
     },
     "object_id": {

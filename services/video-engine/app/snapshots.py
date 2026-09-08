@@ -242,8 +242,8 @@ def publish_track_snapshot_bundle(
 ) -> Path:
     """Publish a completed track snapshot as one immutable generation.
 
-    The flat files remain the compatibility working area. Once all three have
-    been written, they are hard-linked into a generation directory and the
+    The flat files remain the compatibility working area. Once the scene and
+    thumb (and the clean when enabled) have been written, they are hard-linked into a generation directory and the
     current pointer is atomically replaced last. Consumers can then read one
     scene/clean/thumb set without a cross-frame race.
 
@@ -280,7 +280,6 @@ def publish_track_snapshot_bundle(
     if (
         not source_scene.exists()
         or source_scene.stat().st_size <= 0
-        or source_clean is None
         or source_thumb is None
     ):
         raise FileNotFoundError(f"incomplete snapshot files for {camera_id}-{stem}")
@@ -296,9 +295,12 @@ def publish_track_snapshot_bundle(
         os.link(source, bundle / name)
 
     link(source_scene, "scene.jpg")
-    clean_name = f"clean{source_clean.suffix}"
+    # The clean is optional (DS_SNAPSHOT_CLEAN): without it the manifest says
+    # `clean: null` and event-engine derives the clean from `scene.jpg`.
+    clean_name = f"clean{source_clean.suffix}" if source_clean is not None else None
     thumb_name = f"thumb{source_thumb.suffix}"
-    link(source_clean, clean_name)
+    if source_clean is not None:
+        link(source_clean, clean_name)
     link(source_thumb, thumb_name)
     manifest: dict[str, Any] = {
         "version": 2,

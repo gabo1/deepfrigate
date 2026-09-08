@@ -1,6 +1,6 @@
 # Handoff — DeepFrigate
 
-## Estado actual (8 sep 2026, ~03:30 UTC)
+## Estado actual (8 sep 2026, ~17:00 UTC)
 
 Resumen de lo vivo hoy; el detalle está en las entradas fechadas de abajo
 y en los runbooks. Lo que sigue en el bloque del 4 sep sigue siendo válido
@@ -38,6 +38,17 @@ salvo donde se indica.
   `transiciones`, `analitica` legado). Datasource único `frigate-smoke-pg`.
 - **Heatmap** con fondo de la escena DeepStream y overlay de zonas/líneas/
   direcciones desde Frigate.
+- **Reglas declarativas** (8 sep, tarde): `config/rules/rules.yaml` →
+  `rule_matched` en `events` + MQTT + `sub_label` en Frigate; recarga por
+  mtime; cooldown por objeto/cámara; horarios locales. Activas:
+  `merodeo_calle`, `persona_nocturna`, `aforo_excedido`. OPERACION §6d.
+- **CPU video-engine** 109 % → ~46 %: `DS_SNAPSHOT_INTERVAL` ya limita
+  escrituras por track y el WebP "clean" lo deriva event-engine del jpg
+  (`DS_SNAPSHOT_CLEAN=false`). Perfil con py-spy en OPERACION §2.
+- **ReID** (8 sep, madrugada): NvDCF con re-asociación + ReIdentificationNet
+  (`config_tracker_NvDCF_reid.yml`); vector 256-d por track en Qdrant
+  `reid_embeddings`, matcher de transiciones lo usa para desempatar.
+  Calibrar con `tools/reid_eval.py` antes de `TRANSITION_MODE=embedding`. §6b-bis.
 - **Imagen `:3005`**: `deepfrigate-frigate-pg:pgvector-smoke` horneada el 8 sep
   (Receta A) con los modelos del fork y el canvas; ya no hay `docker cp`.
 - **Repos**: `deepfrigate` main y `frigate-pg` `deepfrigate/pgsql`
@@ -46,7 +57,8 @@ salvo donde se indica.
   de versionar en `tools/fakecam/`), checkout upstream `frigate/`
   (`a745070b`).
 
-Pendientes acordados: ai-router lea `enrichments[].enabled` (patrón zonas);
+Pendientes acordados: editor de reglas en Settings → DeepFrigate y métricas
+por regla; ai-router lea `enrichments[].enabled` (patrón zonas);
 espejo de `cameras[].enabled` a Frigate para dejar de grabar; fase 3 editor
 visual de líneas/direcciones; filtro de edad de track en transiciones;
 renombrar el "smoke" (es la base de producto); versionar `/opt/fakecam`.
