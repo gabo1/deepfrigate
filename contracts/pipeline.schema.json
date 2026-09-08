@@ -60,6 +60,16 @@
                 "type": "integer",
                 "default": -1,
                 "description": "-1 = reintentar sin limite."
+              },
+              "enabled": {
+                "type": "boolean",
+                "default": true,
+                "description": "Camara en el pipeline. false la quita de nvmultiurisrcbin en caliente (sin reiniciar) y conserva su slot."
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 80,
+                "description": "Nombre legible para msgconv (sensor.description / place.name). Por defecto el id."
               }
             }
           }

@@ -145,6 +145,40 @@ porque `depends_on frigate` apunta al NVR de producto, que no existe.
 Comprobar que `RTSP_TIENDA`/`RTSP_USER` del contenedor coinciden con
 `.env.example`.
 
+#### Cámaras en caliente (8 sep, `nvmultiurisrcbin`)
+
+Las fuentes ya no son N `nvurisrcbin` + `nvstreammux` fijos: es un solo
+`nvmultiurisrcbin` (fuentes + mux + servidor REST en `127.0.0.1:9000`, solo
+dentro del contenedor). Cada cámara del contrato tiene un **slot** fijo = su
+posición en `pipeline.yaml`, pinchado con `sensorID-padID-mapping` y sensor
+ids `"<slot>:<camera>"` (el plugin toma la primera cifra del id como pad).
+Así `frame_meta.source_id`, las secciones `[sensorN]` de msgconv y el mapa
+del exporter no se desalinean cuando una cámara entra o sale.
+
+- **Apagar/encender una cámara sin reiniciar**: `enabled: false|true` en su
+  entrada de `pipeline.yaml`. `ConfigWatcher` (`app/sources.py`) mira el mtime
+  cada `PIPELINE_RELOAD_SECONDS=2`, revalida el YAML y hace `POST
+  /api/v1/stream/remove|add` al REST interno. Medido: 2 s, sin tocar las demás
+  cámaras, mismo slot al volver. Log: `Fuente quitada slot=3 camera=…`,
+  `pipeline.yaml aplicado en caliente: encendidas=… apagadas=…`.
+- **Cambio estructural** (cámara nueva o borrada, orden, URI, detector,
+  tracker, `frame_export.labels`): el watcher lo detecta, avisa `Cambio
+  estructural…` y sale con código 3; `restart: unless-stopped` levanta el
+  pipeline con el contrato nuevo (~30 s). `PIPELINE_RESTART_ON_CHANGE=false`
+  deja solo el aviso.
+- YAML inválido al guardar: `pipeline.yaml inválido, sigo con el anterior`.
+  Nada se aplica.
+- msgconv: `config/msgconv_multicamera.txt` ya solo aporta el bloque
+  `[analytics0]`; `[sensorN]`/`[placeN]` se generan por slot al arrancar en
+  `/tmp/msgconv_generated.txt` (`description` opcional de la cámara). Las
+  cámaras apagadas conservan su sección.
+- Con todas las cámaras apagadas no hay buffers: el watchdog de stall no
+  cuenta ese tiempo (`active_count() == 0`).
+- Ver qué corre: `docker exec deepfrigate-video-engine-1 python3 -c "import
+  urllib.request,json; print(json.load(urllib.request.urlopen('http://127.0.0.1:9000/api/v1/stream/get-stream-info')))"`.
+- Pendiente: que apagar una cámara también ponga `enabled: false` en Frigate
+  (grabación) y el toggle en el canvas de Workflow visual.
+
 ### event-engine (imagen, hay que reconstruir)
 
 Desde el 7 sep los valores del smoke son los **defaults** de `compose.yaml`

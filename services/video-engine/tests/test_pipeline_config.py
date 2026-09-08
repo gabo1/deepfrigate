@@ -36,6 +36,16 @@ def test_checked_in_pipeline_compiles_deterministically() -> None:
     assert first["tracker"]["type"] == "nvtracker"
     assert first["export_labels"] == ["car", "person"]
     assert len(first["source_sha256"]) == 64
+    assert all(camera["enabled"] is True for camera in first["cameras"])
+
+
+def test_camera_enabled_flag_is_carried(tmp_path: Path) -> None:
+    document = _document()
+    document["pipeline"]["cameras"][1]["enabled"] = False
+    document["pipeline"]["cameras"][1]["description"] = "Cámara externa"
+    config = load_pipeline(_write(tmp_path, document), schema_path=SCHEMA, environment=ENVIRONMENT)
+    assert [c["enabled"] for c in config["cameras"]] == [True, False, True, True]
+    assert config["cameras"][1]["description"] == "Cámara externa"
 
 
 def _document() -> dict:

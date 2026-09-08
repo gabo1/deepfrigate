@@ -24,7 +24,7 @@ Lab / recreate: `HANDOFF.md`.
 flowchart LR
   RTSP["MediaMTX / RTSP<br/>tienda · user · c4aac4f4eefe · c4aac4f4ef0a"]
   subgraph DS["video-engine · DeepStream 9 (T4)"]
-    PGIE["NVDEC → mux 1280×720 sin padding<br/>nvinferserver → Triton YOLO26<br/>(CUDA buffer sharing, pid/ipc host)"]
+    PGIE["nvmultiurisrcbin: NVDEC → mux 1280×720 sin padding<br/>cámaras on/off en caliente (REST interno)<br/>nvinferserver → Triton YOLO26 (CUDA buffer sharing)"]
     TRK["NvDCF"]
     TEE["tee"]
     WD["watchdog · retención snapshots 24 h"]
@@ -75,11 +75,18 @@ Dos ramas después del tracker:
 Un solo `nvinferserver`. **No hay SGIE.**
 
 ```text
-nvurisrcbin → nvstreammux → nvinferserver (unique-id 1, YOLO26)
+nvmultiurisrcbin (N nvurisrcbin + nvstreammux + REST 127.0.0.1:9000)
+           → nvinferserver (unique-id 1, YOLO26)
            → nvtracker (NvDCF) → tee
                 |-> nvmsgconv → nvmsgbroker (MQTT)
                 `-> queue leaky → nvvideoconvert → crops → frame-store
 ```
+
+Desde el 8 sep las cámaras son dinámicas: slot fijo por posición en el
+contrato (`sensorID-padID-mapping`), `cameras[].enabled` entra y sale en
+caliente vía el REST interno (`app/sources.py`); cámara nueva, URI, detector o
+tracker siguen exigiendo reinicio (el propio video-engine sale con código 3
+y compose lo levanta). Ver `docs/OPERACION.md` §4 "Cámaras en caliente".
 
 Código: `services/video-engine/app/main.py`. Declaración:
 `services/video-engine/config/pipeline.yaml`.

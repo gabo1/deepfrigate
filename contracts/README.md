@@ -113,3 +113,13 @@ cámara pareja: `from_camera`, `to_camera`, `from_object_id`, `to_object_id`
 (`cooccurrence` | `embedding`), `candidates`, `from_vector_id`,
 `to_vector_id`. La escribe `app/transitions.py`; la lee `platform-api
 /v1/camera-transitions`.
+
+## `pipeline.yaml` (deepfrigate/v1): campos de cámara
+
+`cameras[]`: `id`, `source_env` (variable con la URI RTSP), `gpu`,
+`rtsp_reconnect_interval`, `rtsp_reconnect_attempts`, **`enabled`** (default
+`true`; `false` quita la cámara de `nvmultiurisrcbin` en caliente y conserva su
+slot) y **`description`** (nombre legible para `sensor.description` /
+`place.name` en los mensajes MQTT; default el id). La posición en la lista es
+el slot del mux y por tanto el `source_id` de DeepStream: reordenar o añadir
+cámaras es un cambio estructural (reinicio de video-engine).

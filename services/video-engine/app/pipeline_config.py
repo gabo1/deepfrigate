@@ -150,6 +150,8 @@ def compile_pipeline(
                 "gpu": camera.get("gpu", 0),
                 "rtsp_reconnect_interval": reconnect,
                 "rtsp_reconnect_attempts": attempts,
+                "enabled": bool(camera.get("enabled", True)),
+                "description": camera.get("description") or "",
             }
         )
 

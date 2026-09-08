@@ -11,10 +11,15 @@ if not os.isatty(0):
     os.dup2(_stdin_pipe_read, 0)
 os.close(_stdin_pipe_read)
 
-from pyservicemaker import Pipeline, Probe, Receiver
+from pathlib import Path
+import time
+from typing import Any
+
+from pyservicemaker import DynamicSourceMessage, Pipeline, Probe, Receiver
 
 from .exporter import ExportMetadataCollector, FrameExporter
 from .retention import SnapshotRetention
+from .sources import ConfigWatcher, SourceController, render_msgconv_config
 from .watchdog import StallWatchdog
 from .pipeline_config import load_pipeline
 
@@ -39,8 +44,8 @@ def _nonnegative_float(name: str, default: str) -> float:
     return value
 
 
-def build_pipeline() -> tuple[Pipeline, FrameExporter]:
-    config = load_pipeline(
+def load_config() -> dict[str, Any]:
+    return load_pipeline(
         os.getenv(
             "PIPELINE_CONFIG",
             "/opt/deepfrigate/config/pipeline.yaml",
@@ -54,54 +59,66 @@ def build_pipeline() -> tuple[Pipeline, FrameExporter]:
             "TRITON_MODEL_REPOSITORY", "/opt/models"
         ),
     )
-    cameras = {
-        source_id: camera
-        for source_id, camera in enumerate(config["cameras"])
-    }
+
+
+def build_pipeline() -> tuple[Pipeline, FrameExporter, SourceController, dict[str, Any]]:
+    config = load_config()
+    cameras = config["cameras"]
     pipeline_gpu = config["detection"]["gpu"]
     pipeline = Pipeline(config["name"])
-    for source_id, camera in cameras.items():
-        properties = {
-            "uri": camera["uri"],
-            "gpu-id": camera["gpu"],
-            "drop-on-latency": True,
-            "latency": 100,
-        }
-        if camera["uri"].startswith("rtsp://"):
-            # Sin esto un EOS de la fuente es DEFINITIVO: DeepStream la suelta,
-            # el pipeline sigue con las demás cámaras y nadie se entera. El
-            # defecto de nvurisrcbin es 0 = desactivado.
-            interval = camera["rtsp_reconnect_interval"]
-            if interval:
-                properties["rtsp-reconnect-interval"] = interval
-                # El de arriba cuenta desde el último dato recibido; éste actúa
-                # cuando la fuente devuelve un error explícito. Hacen falta los
-                # dos: el fallo real fue "Could not read from resource".
-                properties["init-rtsp-reconnect-interval"] = interval
-            properties["rtsp-reconnect-attempts"] = camera[
-                "rtsp_reconnect_attempts"
-            ]
-        pipeline.add("nvurisrcbin", f"source{source_id}", properties)
 
+    # One bin for every camera: nvurisrcbin x N + nvstreammux + REST server
+    # (127.0.0.1:SOURCES_REST_PORT, in-container only). Cameras are pinned to
+    # a mux pad by position in the contract (see sources.py), so a camera can
+    # go off and on without moving anyone else's source_id.
+    rest_port = int(os.getenv("SOURCES_REST_PORT", "9000"))
+    controller = SourceController(f"http://127.0.0.1:{rest_port}", cameras)
+    uri_list, sensor_ids, sensor_names = controller.initial_lists()
+    reconnect = max((c["rtsp_reconnect_interval"] for c in cameras), default=10)
+    attempts = min((c["rtsp_reconnect_attempts"] for c in cameras), default=-1)
     mux_width, mux_height = 1280, 720
-    pipeline.add(
-        "nvstreammux",
-        "streammux",
-        {
-            "gpu-id": pipeline_gpu,
-            "live-source": True,
-            "batch-size": len(cameras),
-            "batched-push-timeout": 40000,
-            "width": mux_width,
-            "height": mux_height,
-            # Off: a 4:3 camera is stretched to the mux size instead of
-            # letterboxed, so normalized boxes match the camera's own frame
-            # (and Frigate's recording). The exporter undoes the stretch
-            # when it writes pixels.
-            "enable-padding": False,
-            "nvbuf-memory-type": 0,
-        },
+    source_props: dict[str, Any] = {
+        "gpu-id": pipeline_gpu,
+        "max-batch-size": len(cameras),
+        "live-source": True,
+        "batched-push-timeout": 40000,
+        "width": mux_width,
+        "height": mux_height,
+        # Off: a 4:3 camera is stretched to the mux size instead of
+        # letterboxed, so normalized boxes match the camera's own frame
+        # (and Frigate's recording). The exporter undoes the stretch
+        # when it writes pixels.
+        "enable-padding": False,
+        "nvbuf-memory-type": 0,
+        "drop-on-latency": True,
+        "latency": 100,
+        # Sin esto un EOS de la fuente es DEFINITIVO: DeepStream la suelta,
+        # el pipeline sigue con las demás cámaras y nadie se entera.
+        "rtsp-reconnect-interval": reconnect,
+        "init-rtsp-reconnect-interval": reconnect,
+        "rtsp-reconnect-attempts": attempts,
+        # Dynamic sources: keep running with zero streams, async state changes.
+        "drop-pipeline-eos": True,
+        "async-handling": True,
+        "sensorID-padID-mapping": True,
+        "ip-address": os.getenv("SOURCES_REST_ADDRESS", "127.0.0.1"),
+        "port": str(rest_port),
+    }
+    if uri_list:
+        source_props.update(
+            {"uri-list": uri_list, "sensor-id-list": sensor_ids, "sensor-name-list": sensor_names}
+        )
+    pipeline.add("nvmultiurisrcbin", "streammux", source_props)
+
+    # msgconv keys [sensorN]/[placeN] by mux pad id: generate them from the
+    # contract so the sections and the slots can never disagree.
+    template_path = Path(
+        os.getenv("MSGCONV_TEMPLATE", "/opt/deepfrigate/config/msgconv_multicamera.txt")
     )
+    msgconv_path = Path(os.getenv("MSGCONV_CONFIG", "/tmp/msgconv_generated.txt"))
+    template = template_path.read_text(encoding="utf-8") if template_path.is_file() else ""
+    msgconv_path.write_text(render_msgconv_config(cameras, template), encoding="utf-8")
+
     pipeline.add(
         "nvinferserver",
         "primary-inference",
@@ -148,7 +165,7 @@ def build_pipeline() -> tuple[Pipeline, FrameExporter]:
         "nvmsgconv",
         "message-converter",
         {
-            "config": "/opt/deepfrigate/config/msgconv_multicamera.txt",
+            "config": str(msgconv_path),
             "payload-type": 0,
             "msg2p-newapi": True,
             "frame-interval": 1,
@@ -213,11 +230,6 @@ def build_pipeline() -> tuple[Pipeline, FrameExporter]:
         },
     )
 
-    for source_id in cameras:
-        pipeline.link(
-            (f"source{source_id}", "streammux"),
-            ("", "sink_%u"),
-        )
     pipeline.link(
         "streammux", "primary-inference", "tracker", "output-tee"
     )
@@ -246,10 +258,7 @@ def build_pipeline() -> tuple[Pipeline, FrameExporter]:
         }
     if not export_labels:
         raise ValueError("FRAME_EXPORT_LABELS must contain at least one label")
-    metadata = ExportMetadataCollector(
-        {source_id: camera["id"] for source_id, camera in cameras.items()},
-        export_labels,
-    )
+    metadata = ExportMetadataCollector(controller.camera_ids(), export_labels)
     exporter = FrameExporter(
         metadata,
         os.getenv("FRAME_STORE_URL", "http://frame-store:8080"),
@@ -278,21 +287,48 @@ def build_pipeline() -> tuple[Pipeline, FrameExporter]:
         "Compiled pipeline name=%s cameras=%s detector=%s:%s "
         "tracker=%s enrichments=%s config_sha256=%s",
         config["name"],
-        ",".join(camera["id"] for camera in cameras.values()),
+        ",".join(
+            f"{c['id']}{'' if c.get('enabled', True) else '(off)'}" for c in cameras
+        ),
         config["detection"]["model"],
         config["detection"]["version"],
         config["tracker"]["type"],
         ",".join(item["model"] for item in config["enrichments"]) or "none",
         config["source_sha256"],
     )
-    return pipeline, exporter
+    return pipeline, exporter, controller, config
 
 
 def main() -> None:
-    pipeline, exporter = build_pipeline()
+    pipeline, exporter, controller, config = build_pipeline()
+
+    def on_message(message: Any) -> None:
+        if isinstance(message, DynamicSourceMessage):
+            camera = controller.on_source_event(
+                int(message.source_id), str(message.sensor_id or ""), bool(message.source_added)
+            )
+            if message.source_added:
+                exporter.metadata.camera_ids[int(message.source_id)] = camera
+
+    # With every camera off there are no buffers by design; the stall
+    # watchdog must not read that as a frozen pipeline.
+    def buffers_clock() -> float:
+        if controller.active_count() == 0:
+            return time.monotonic()
+        return exporter.last_buffer_at
+
     watchdog = StallWatchdog(
-        lambda: exporter.last_buffer_at,
+        buffers_clock,
         _nonnegative_float("FRAME_STALL_RESTART_SECONDS", "120"),
+    )
+    watcher = ConfigWatcher(
+        Path(os.getenv("PIPELINE_CONFIG", "/opt/deepfrigate/config/pipeline.yaml")),
+        load_config,
+        config,
+        controller,
+        interval=_positive_float("PIPELINE_RELOAD_SECONDS", "2"),
+        restart_on_change=os.getenv("PIPELINE_RESTART_ON_CHANGE", "true").lower()
+        in {"1", "true", "yes"},
     )
     retention = SnapshotRetention(
         os.getenv("DS_SNAPSHOT_DIR") or "",
@@ -307,8 +343,11 @@ def main() -> None:
     try:
         watchdog.start()
         retention.start()
-        pipeline.start().wait()
+        watcher.start()
+        pipeline.prepare(on_message).activate()
+        pipeline.wait()
     finally:
+        watcher.stop()
         watchdog.stop()
         retention.stop()
         exporter.close()

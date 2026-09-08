@@ -135,6 +135,24 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
   `frigate_zones.py`; heatmap con zonas/líneas/flechas de dirección desde
   `/api/config`; `/v1/pipelines/options` y `validate` igual. Tests 8.
   Verificado: `options` devuelve `user: ['calle']`; heatmap 200 con overlay.
+- **Cámaras en caliente con `nvmultiurisrcbin` (8 sep 03:05):** video-engine
+  reemplaza N `nvurisrcbin` + `nvstreammux` por un `nvmultiurisrcbin`
+  (`main.py`), con slot fijo por posición del contrato
+  (`sensorID-padID-mapping` + sensor id `"<slot>:<camera>"`; el plugin extrae
+  la primera cifra del id como pad, `s_get_source_id` en
+  `gst-nvmultiurisrcbincreator.cpp`). `app/sources.py`: `SourceController`
+  (REST interno 127.0.0.1:9000 add/remove/get-stream-info, mapa vivo desde
+  `DynamicSourceMessage`), `render_msgconv_config` (secciones `[sensorN]`
+  por slot, generadas a `/tmp/msgconv_generated.txt`), `ConfigWatcher`
+  (mtime de `pipeline.yaml` cada 2 s; `enabled` en caliente; cambio
+  estructural → exit 3 → restart policy). Schema: `cameras[].enabled`,
+  `description`. Watchdog ignora el stall con 0 cámaras activas. Probado en
+  vivo: `c4aac4f4ef0a` off/on en 2 s, mismo slot 3, MQTT con `sensor.id`
+  correcto, las otras 3 sin cortes; arranque con una cámara `(off)` OK. Ojo
+  REST: la respuesta anida `stream-info.stream-info` y el éxito viene en
+  `reason` (`STREAM_ADD_SUCCESS`), no en `status`. Tests video-engine 41.
+  Pendiente: `enabled` en el formulario/canvas de Workflow visual y espejo a
+  Frigate (`cameras.X.enabled`) para dejar de grabar.
 - **Grafana/Prometheus corren desde el repo (8 sep 02:01):** `observabilidad/`
   ya era la fuente de verdad pero el despliegue leía `/opt/observabilidad`.
   Añadido `name: observabilidad` al compose versionado (mismo proyecto → mismos

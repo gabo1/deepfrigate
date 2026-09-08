@@ -475,6 +475,13 @@ services:
       # Delete DeepStream snapshot files (flat + bundles) older than this.
       # Frigate keeps its own copies; nothing reads these after END. 0 disables.
       DS_SNAPSHOT_RETENTION_HOURS: ${DS_SNAPSHOT_RETENTION_HOURS:-24}
+      # nvmultiurisrcbin: cameras[].enabled applies without a restart. The
+      # watcher re-reads pipeline.yaml every PIPELINE_RELOAD_SECONDS; a
+      # structural change (camera list, URI, detector, tracker) exits with
+      # code 3 so the restart policy applies it. REST server is in-container.
+      PIPELINE_RELOAD_SECONDS: ${PIPELINE_RELOAD_SECONDS:-2}
+      PIPELINE_RESTART_ON_CHANGE: ${PIPELINE_RESTART_ON_CHANGE:-true}
+      SOURCES_REST_PORT: ${SOURCES_REST_PORT:-9000}
     volumes:
       - ./services/video-engine:/opt/deepfrigate:ro
       - ./data/ds-snapshots:/opt/snapshots
