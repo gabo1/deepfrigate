@@ -135,6 +135,17 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
   `frigate_zones.py`; heatmap con zonas/líneas/flechas de dirección desde
   `/api/config`; `/v1/pipelines/options` y `validate` igual. Tests 8.
   Verificado: `options` devuelve `user: ['calle']`; heatmap 200 con overlay.
+- **Web del smoke horneado (8 sep 01:38):** Receta A completa:
+  `deepfrigate-frigate:local-vite-src` (Vite 2m10s, chunk
+  `Settings-cWljMhBF.js` con "Mapa del pipeline") →
+  `deepfrigate-frigate-pg:pgvector-smoke-vite-src` (Dockerfile.postgres-smoke,
+  `APPLY_EXPLORE_MINIFY_PATCH=0`) → retag `:pgvector-smoke` → recreate sin
+  `-v` con `FRIGATE_CAMERA_TIENDA_URL`, `FRIGATE_PGVECTOR_SMOKE_BIND_ADDRESS=
+  100.83.231.97`, `FRIGATE_PGVECTOR_SMOKE_WEB_PORT=3005`. La imagen ya trae los
+  modelos de zonas/líneas/direcciones del fork (adiós `docker cp`); `/api/config`
+  sigue devolviendo `lines: cruce`, `directions: hacia_arriba`; el adapter
+  recargó al `online`. Arriba 30 s después. Navegador: recarga dura (chunks
+  nuevos).
 - **Mapa del pipeline con Archify (8 sep 01:30):** `services/platform-api/app/diagram.py`
   (IR `workflow` v2 de Archify desde el contrato + zonas de Frigate + salud de
   alpr-worker; `render_html` ejecuta `archify deliver` con caché por digest y
