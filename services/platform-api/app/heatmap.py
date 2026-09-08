@@ -113,14 +113,53 @@ def _cells(store_url: str, camera: str, start_s: float, end_s: float,
     return out
 
 
+SNAPSHOT_DIR = Path(os.getenv("DS_SNAPSHOT_DIR", "/opt/ds-snapshots"))
+# A scene older than this is not "the camera now"; fall back to Frigate.
+SNAPSHOT_MAX_AGE_S = float(os.getenv("HEATMAP_SCENE_MAX_AGE_SECONDS", "3600"))
+
+
+def latest_scene(snapshot_dir: Path, camera: str, max_age_s: float = SNAPSHOT_MAX_AGE_S,
+                 now: float | None = None) -> Path | None:
+    """Newest full-frame `{track}.jpg` DeepStream wrote for the camera, or None.
+
+    The exporter keeps one scene per live track next to the crops
+    (`{track}-clean.webp`, `{track}-thumb.webp`); `.bundles/` holds the
+    manifests. Frigate itself has no frames (detect disabled), so its
+    `latest.jpg` is a placeholder: this is the only real picture of the scene.
+    """
+    camera_dir = snapshot_dir / camera
+    try:
+        candidates = [p for p in camera_dir.iterdir() if p.is_file() and p.suffix == ".jpg"]
+    except OSError:
+        return None
+    if not candidates:
+        return None
+    newest = max(candidates, key=lambda p: p.stat().st_mtime)
+    age = (time.time() if now is None else now) - newest.stat().st_mtime
+    return newest if age <= max_age_s else None
+
+
+def _dim(snap: Image.Image, size: tuple[int, int]) -> Image.Image:
+    # Atenuado: el calor tiene que destacar sin perder la escena, que es
+    # justo lo que hace util a un heatmap frente a una tabla. Se estira al
+    # frame del mux (las 4:3 vuelven a 1280x720) para que coincida con las
+    # coordenadas de deteccion que alimentan la rejilla.
+    snap = snap.convert("RGB").resize(size)
+    return Image.blend(Image.new("RGB", size, (18, 18, 22)), snap, 0.55)
+
+
 def _background(frigate_api_url: str, camera: str) -> Image.Image:
     size = (FRAME_WIDTH, FRAME_HEIGHT)
+    scene = latest_scene(SNAPSHOT_DIR, camera)
+    if scene is not None:
+        try:
+            with Image.open(scene) as snap:
+                return _dim(snap, size)
+        except (OSError, ValueError):
+            pass
     try:
         with urlopen(f"{frigate_api_url}/{camera}/latest.jpg", timeout=10) as r:
-            snap = Image.open(BytesIO(r.read())).convert("RGB").resize(size)
-        # Atenuado: el calor tiene que destacar sin perder la escena, que es
-        # justo lo que hace util a un heatmap frente a una tabla.
-        return Image.blend(Image.new("RGB", size, (18, 18, 22)), snap, 0.55)
+            return _dim(Image.open(BytesIO(r.read())), size)
     except Exception:
         return Image.new("RGB", size, (18, 18, 22))
 

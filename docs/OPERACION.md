@@ -307,6 +307,12 @@ UI Frigate / PUT /api/config/set ──► YAML ──► restart Frigate
   en blanco, líneas en cian y direcciones como flecha ámbar; `/v1/pipelines/
   options` y `validate` usan las mismas zonas. event-engine sigue leyendo
   `zones.json` solo para el tamaño 1280×720.
+- Fondo del heatmap (8 sep): la escena más reciente de DeepStream
+  (`data/ds-snapshots/{cam}/{track}.jpg`, montado en platform-api como
+  `/opt/ds-snapshots`), estirada al frame del mux 1280×720 para coincidir con
+  la rejilla; si la más nueva tiene más de `HEATMAP_SCENE_MAX_AGE_SECONDS`
+  (3600) o no hay, cae a `latest.jpg` de Frigate (placeholder: Frigate no
+  decodifica) y luego a fondo liso.
 - Fase 3 pendiente: dibujar líneas y direcciones en la UI (hoy por YAML o
   `config/set`).
 - Fork: código en `frigate-pg` rama `deepfrigate/pgsql`, aplicado al contenedor

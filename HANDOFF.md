@@ -135,6 +135,11 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
   `frigate_zones.py`; heatmap con zonas/líneas/flechas de dirección desde
   `/api/config`; `/v1/pipelines/options` y `validate` igual. Tests 8.
   Verificado: `options` devuelve `user: ['calle']`; heatmap 200 con overlay.
+- **Fondo real del heatmap (8 sep 00:15):** `heatmap.latest_scene` toma el
+  `{track}.jpg` más nuevo de `data/ds-snapshots/{cam}` (mount nuevo en
+  platform-api, `DS_SNAPSHOT_DIR`, `HEATMAP_SCENE_MAX_AGE_SECONDS=3600`);
+  antes salía el placeholder "No frames have been received" de Frigate. Tests
+  platform-api 9.
 - **Un solo PostgreSQL (7 sep 23:05, sin histórico por decisión):** las
   tablas `events`, `frigate_event_links`, `camera_transitions` viven ahora en
   el esquema `deepfrigate` de `frigate_pgvector_smoke`

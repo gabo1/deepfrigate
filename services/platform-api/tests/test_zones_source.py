@@ -57,3 +57,24 @@ def test_file_source_and_heatmap_overlay(tmp_path) -> None:
     assert base.getpixel((30, 50)) == (0, 229, 255)  # line, cyan (the arrow covers x=100)
     assert base.getpixel((100, 10)) == (255, 191, 0)  # arrow shaft towards the top, amber
     _draw_zones(Image.new("RGB", (10, 10)), {})  # empty camera: no crash
+
+
+def test_latest_scene_prefers_newest_fresh_jpg(tmp_path) -> None:
+    import os
+    import time as _time
+
+    from app.heatmap import latest_scene
+
+    cam = tmp_path / "user"
+    (cam / ".bundles").mkdir(parents=True)
+    old = cam / "3.jpg"
+    new = cam / "7.jpg"
+    old.write_bytes(b"x")
+    new.write_bytes(b"y")
+    (cam / "7-clean.webp").write_bytes(b"z")
+    now = _time.time()
+    os.utime(old, (now - 100, now - 100))
+    os.utime(new, (now - 10, now - 10))
+    assert latest_scene(tmp_path, "user", max_age_s=60, now=now) == new
+    assert latest_scene(tmp_path, "user", max_age_s=5, now=now) is None  # stale
+    assert latest_scene(tmp_path, "nope") is None
