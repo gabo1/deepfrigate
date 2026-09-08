@@ -5,6 +5,12 @@ de DeepFrigate viven en el schema `deepfrigate` de la MISMA base, asi que el
 datasource `frigate-smoke-pg` llega a las dos y no hace falta uno nuevo.
 """
 import json
+from pathlib import Path
+
+# Los JSON se escriben en el directorio provisionado, que es el que
+# monta Grafana. Antes cada script apuntaba a un scratchpad, y en el
+# repositorio eso los dejaba de adorno.
+SALIDA = Path(__file__).resolve().parent / "grafana" / "dashboards"
 
 PG = {"type": "grafana-postgresql-datasource", "uid": "frigate-smoke-pg"}
 VA = "data->'vehicle_attributes'"
@@ -251,7 +257,7 @@ dashboard = {
     ]},
     "schemaVersion": 39, "version": 1,
 }
-with open("vehiculos.json", "w", encoding="utf-8") as fh:
+with open(SALIDA / "vehiculos.json", "w", encoding="utf-8") as fh:
     json.dump(dashboard, fh, indent=2, ensure_ascii=False)
     fh.write("\n")
 print("paneles:", len(panels))

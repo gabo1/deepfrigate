@@ -10,6 +10,12 @@ segunda camara antes de terminar en la primera. Medido el 8 sep sobre 19 filas:
 parados, es como funciona el emparejador.
 """
 import json
+from pathlib import Path
+
+# Los JSON se escriben en el directorio provisionado, que es el que
+# monta Grafana. Antes cada script apuntaba a un scratchpad, y en el
+# repositorio eso los dejaba de adorno.
+SALIDA = Path(__file__).resolve().parent / "grafana" / "dashboards"
 
 PG = {"type": "grafana-postgresql-datasource", "uid": "frigate-smoke-pg"}
 CT = "deepfrigate.camera_transitions"
@@ -273,7 +279,7 @@ dashboard = {
     }]},
     "schemaVersion": 39, "version": 1,
 }
-with open("transiciones.json", "w", encoding="utf-8") as fh:
+with open(SALIDA / "transiciones.json", "w", encoding="utf-8") as fh:
     json.dump(dashboard, fh, indent=2, ensure_ascii=False)
     fh.write("\n")
 print("paneles:", len(panels))

@@ -984,11 +984,35 @@ admite por zona. Duplicar dashboards solo duplica el mantenimiento.
 
 El eje correcto es **por cámara**, con variables de plantilla:
 
-| Dashboard | Variables | Notas |
-|---|---|---|
-| `analitica-deepfrigate` | `$camera`, `$label` | Todo. `$label` **solo afecta al heatmap**; el resto ya desglosa por etiqueta |
-| `camara-eventos` | `$camera`, `$label` | Solo lo que funciona **en cualquier cámara**: métricas de escena + SQL + heatmap, sin depender de `zones.json` |
-| `pulc-atributos` | `$camera` | Solo lista cámaras con `person_attributes`. Los coches van en `vehicle_attributes` → dashboard `vehiculos` pendiente (§15.4) |
+**Inventario completo (8 sep).** Los seis que sirve Grafana, los seis en git,
+cada uno con su generador. Regenerar los cinco scripts reproduce byte a byte lo
+desplegado — verificado con `diff -r`.
+
+| Dashboard | uid | Variables | Generador | Para qué |
+|---|---|---|---|---|
+| Analítica DeepFrigate (en vivo) | `analitica-deepfrigate` | `$camera`, `$label` | `build_dashboard.py` | Todo. `$label` **solo afecta al heatmap** |
+| Eventos y heatmap por cámara | `camara-eventos` | `$camera`, `$label` | `build_camara.py` | Lo que vale **en cualquier cámara**, sin `zones.json` |
+| Atributos de persona (PULC) | `pulc-atributos` | `$camera` | `build_pulc.py` | Solo cámaras con `person_attributes` |
+| Vehículos (flota y placas) | `vehiculos` | `$camera`, `$plate` | `build_vehiculos.py` | `vehicle_attributes` + placas |
+| Transiciones entre cámaras | `transiciones` | `$label`, `$from_event`, `$to_event` | `build_transiciones.py` | `deepfrigate.camera_transitions` |
+| Analítica de comportamiento | `analitica` | — | — | Legado. Archivo del histórico Savant, no tocar |
+
+`camara-eventos` es **derivado**: su generador lee
+`grafana/dashboards/analitica-deepfrigate.json`, así que hay que ejecutar
+`build_dashboard.py` **antes**.
+
+**Dónde vive todo.** Desde el 8 sep Grafana y Prometheus montan directamente
+del repositorio, no de `/opt/observabilidad`, que ya no existe:
+
+```
+observabilidad/grafana/dashboards/     -> /var/lib/grafana/dashboards
+observabilidad/grafana/provisioning/   -> /etc/grafana/provisioning
+observabilidad/prometheus/prometheus.yml
+```
+
+Se acabaron las dos copias: **una edición que no pase por git no existe**. Los
+generadores escriben en `grafana/dashboards/`, así que el ciclo es
+`python3 build_X.py` y commit.
 
 **Qué métrica de Prometheus vale sin geometría.** No es evidente y conviene
 tenerlo escrito:

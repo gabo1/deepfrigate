@@ -11,9 +11,15 @@ un dashboard mayormente vacío no se mira. Estas dos filas -- SQL sobre la tabla
 sin dibujar nada.
 """
 import json
+from pathlib import Path
 
-SRC = "analitica-deepfrigate.json"
-OUT = "camara-eventos.json"
+# Los JSON se escriben en el directorio provisionado, que es el que
+# monta Grafana. Antes cada script apuntaba a un scratchpad, y en el
+# repositorio eso los dejaba de adorno.
+SALIDA = Path(__file__).resolve().parent / "grafana" / "dashboards"
+
+SRC = SALIDA / "analitica-deepfrigate.json"
+OUT = SALIDA / "camara-eventos.json"
 # Los títulos de fila que se llevan enteras, en orden.
 FILAS = ["Events de Frigate (SQL, no Prometheus)",
          "Heatmap espacial (imagen de platform-api)"]
