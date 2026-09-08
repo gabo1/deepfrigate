@@ -13,10 +13,14 @@ ENV NODE_OPTIONS=--max-old-space-size=3072
 COPY frigate/web/package.json frigate/web/package-lock.json ./
 COPY frigate/web/patches ./patches
 RUN npm ci
+# DeepFrigate-only dependency (Workflow visual canvas). Installed here, not in
+# the upstream checkout's package.json, so frigate/ stays an untouched clone.
+RUN npm install --no-save --no-audit --no-fund @xyflow/react@12.11.6
 COPY frigate/web/ ./
 COPY services/frigate/web/DeepFrigate.tsx ./src/pages/DeepFrigate.tsx
 COPY services/frigate/web/DeepFrigateModelsSettingsView.tsx ./src/views/settings/DeepFrigateModelsSettingsView.tsx
 COPY services/frigate/web/DeepFrigateWorkflowSettingsView.tsx ./src/views/settings/DeepFrigateWorkflowSettingsView.tsx
+COPY services/frigate/web/DeepFrigateWorkflowCanvas.tsx ./src/views/settings/DeepFrigateWorkflowCanvas.tsx
 COPY services/frigate/web/DeepFrigateVisualSearch.tsx ./src/views/search/DeepFrigateVisualSearch.tsx
 COPY services/frigate/web/DeepFrigatePersonAttributes.tsx ./src/components/overlay/detail/DeepFrigatePersonAttributes.tsx
 COPY services/frigate/web/DeepFrigateClothingColor.tsx ./src/components/overlay/detail/DeepFrigateClothingColor.tsx

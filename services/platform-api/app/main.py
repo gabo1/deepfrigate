@@ -20,6 +20,7 @@ from jsonschema import Draft202012Validator
 from . import heatmap as heatmap_render
 from .zones_source import ZonesSource, ZonesUnavailable
 from . import diagram as diagram_render
+from .status import collect_status
 import psycopg
 from psycopg.rows import dict_row
 import yaml
@@ -34,6 +35,8 @@ frigate_api_url = os.getenv(
     "FRIGATE_API_URL", "http://frigate:5000/api"
 ).rstrip("/")
 openalpr_url = os.getenv("OPENALPR_URL", "http://alpr-worker:8080").rstrip("/")
+adapter_metrics_url = os.getenv("ADAPTER_METRICS_URL", "http://detection-adapter:9110/metrics")
+frame_store_url = os.getenv("FRAME_STORE_URL", "http://frame-store:8080").rstrip("/")
 triton_url = os.getenv("TRITON_HTTP_URL", "http://triton:8000").rstrip(
     "/"
 )
@@ -237,6 +240,24 @@ def get_pipeline_options() -> dict[str, Any]:
     }
 
 
+@app.get("/v1/pipelines/status", tags=["pipelines"])
+def get_pipeline_status() -> dict[str, Any]:
+    """Live facts for the Workflow canvas (adapter cameras, Triton models, services)."""
+    _, document = read_active_pipeline()
+    pipeline = document["pipeline"]
+    models = [pipeline["detection"]["model"], *(e["model"] for e in pipeline.get("enrichments", []))]
+    return collect_status(
+        cameras=pipeline.get("cameras", []),
+        models=models,
+        adapter_metrics_url=adapter_metrics_url,
+        triton_url=triton_url,
+        services={
+            "alpr_worker": f"{openalpr_url}/healthz",
+            "frame_store": f"{frame_store_url}/healthz",
+        },
+    )
+
+
 @app.get("/v1/pipelines/diagram.json", tags=["pipelines"])
 def get_pipeline_diagram_ir() -> dict[str, Any]:
     """Archify workflow IR for the active pipeline (what diagram.html renders)."""
@@ -308,6 +329,9 @@ def update_active_pipeline(
         allow_unicode=True,
     )
     try:
+        # The file is a bind mount edited from the host too: keep its owner and
+        # mode, otherwise every save leaves a root:root 600 file nobody else can read.
+        previous = pipeline_config_path.stat() if pipeline_config_path.exists() else None
         with NamedTemporaryFile(
             "w",
             encoding="utf-8",
@@ -320,6 +344,12 @@ def update_active_pipeline(
             temporary.flush()
             os.fsync(temporary.fileno())
             temporary_path = Path(temporary.name)
+        if previous is not None:
+            try:
+                os.chmod(temporary_path, previous.st_mode & 0o7777)
+                os.chown(temporary_path, previous.st_uid, previous.st_gid)
+            except OSError:
+                pass  # not root: keep the temp file's defaults
         os.replace(temporary_path, pipeline_config_path)
     except OSError as error:
         if "temporary_path" in locals():

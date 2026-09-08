@@ -123,3 +123,7 @@ slot) y **`description`** (nombre legible para `sensor.description` /
 `place.name` en los mensajes MQTT; default el id). La posición en la lista es
 el slot del mux y por tanto el `source_id` de DeepStream: reordenar o añadir
 cámaras es un cambio estructural (reinicio de video-engine).
+
+`enrichments[]`: `model`, `family`, `labels` y **`enabled`** (default `true`).
+Hoy `enabled: false` es declarativo (el canvas lo muestra apagado); ai-router
+sigue gobernado por sus variables de entorno hasta que lea el contrato.

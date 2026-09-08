@@ -99,6 +99,9 @@ services:
       # health shows up as a node fact.
       OPENALPR_URL: http://alpr-worker:8080
       DIAGRAM_RENDER_TIMEOUT_SECONDS: ${DIAGRAM_RENDER_TIMEOUT_SECONDS:-60}
+      # /v1/pipelines/status (canvas): adapter gauges + Triton readiness.
+      ADAPTER_METRICS_URL: http://detection-adapter:9110/metrics
+      FRAME_STORE_URL: http://frame-store:8080
       HEATMAP_SCENE_MAX_AGE_SECONDS: ${HEATMAP_SCENE_MAX_AGE_SECONDS:-3600}
       TRITON_MODEL_REPOSITORY: /app/models
       TRITON_HTTP_URL: http://triton:8000

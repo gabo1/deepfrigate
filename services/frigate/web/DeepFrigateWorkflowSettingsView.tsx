@@ -5,6 +5,9 @@ import Heading from "@/components/ui/heading";
 import { Input } from "@/components/ui/input";
 import { baseUrl } from "@/api/baseUrl";
 import { useIsAdmin } from "@/hooks/use-is-admin";
+import DeepFrigateWorkflowCanvas, {
+  type CanvasStatus,
+} from "@/views/settings/DeepFrigateWorkflowCanvas";
 import type { SettingsPageProps } from "@/views/settings/SingleSectionPage";
 import axios from "axios";
 import { useEffect, useMemo, useState } from "react";
@@ -16,6 +19,8 @@ type Camera = {
   id: string;
   source_env: string;
   gpu: number;
+  enabled?: boolean;
+  description?: string;
 };
 
 type Detection = {
@@ -37,6 +42,7 @@ type Enrichment = {
   model: string;
   family: string;
   labels: string[];
+  enabled?: boolean;
 };
 
 type Rule = {
@@ -74,63 +80,6 @@ type PipelineOptions = {
 };
 
 const DIAGRAM_PATH = "api/deepfrigate/v1/pipelines/diagram.html";
-
-/**
- * Interactive map of the running pipeline (Archify, rendered by platform-api
- * from the active contract + the zones drawn in Frigate). Read-only: the
- * form below is where the contract is edited. `sha` busts the browser cache
- * when the saved contract changes; the server itself caches by IR digest.
- */
-function PipelineDiagram({ sha }: { sha?: string }) {
-  const [nonce, setNonce] = useState(0);
-  const [failed, setFailed] = useState(false);
-  const src = `${baseUrl}${DIAGRAM_PATH}?v=${encodeURIComponent(sha ?? "")}&n=${nonce}`;
-  return (
-    <div className="overflow-hidden rounded-lg border bg-[#0a0f1a]">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2 text-sm">
-        <div>
-          <span className="font-medium">Mapa del pipeline</span>
-          <span className="ml-2 text-muted-foreground">
-            cámaras → DeepStream → Triton → enriquecimiento → eventos · zonas
-            leídas de Frigate
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            onClick={() => {
-              setFailed(false);
-              setNonce((n) => n + 1);
-            }}
-            size="sm"
-            variant="outline"
-          >
-            Actualizar
-          </Button>
-          <Button asChild size="sm" variant="outline">
-            <a href={src} rel="noreferrer" target="_blank">
-              Abrir en pestaña
-            </a>
-          </Button>
-        </div>
-      </div>
-      {failed ? (
-        <div className="p-4 text-sm text-destructive">
-          No se pudo generar el diagrama (platform-api). Revisa
-          <code className="ml-1">/v1/pipelines/diagram.json</code>.
-        </div>
-      ) : (
-        <iframe
-          className="h-[720px] w-full border-0"
-          key={src}
-          loading="lazy"
-          onError={() => setFailed(true)}
-          src={src}
-          title="Mapa del pipeline DeepFrigate"
-        />
-      )}
-    </div>
-  );
-}
 
 function labels(value: string) {
   return [...new Set(value.split(",").map((item) => item.trim()).filter(Boolean))];
@@ -197,6 +146,10 @@ export default function DeepFrigateWorkflowSettingsView(
   );
   const { data: options } = useSWR<PipelineOptions>(
     "deepfrigate/v1/pipelines/options",
+  );
+  const { data: status } = useSWR<CanvasStatus>(
+    "deepfrigate/v1/pipelines/status",
+    { refreshInterval: 5000 },
   );
   const [draft, setDraft] = useState<PipelineDocument>();
   const [pending, setPending] = useState<"validate" | "save">();
@@ -325,7 +278,41 @@ export default function DeepFrigateWorkflowSettingsView(
         necesario reiniciar Video Engine.
       </div>
 
-      <PipelineDiagram sha={data?.source_sha256} />
+      <DeepFrigateWorkflowCanvas
+        actions={{
+          disabled,
+          toggleCamera: (index) =>
+            updatePipeline((item) => {
+              item.cameras[index].enabled = item.cameras[index].enabled === false;
+            }),
+          setDetectorModel: (model) =>
+            updatePipeline((item) => {
+              item.detection.model = model;
+            }),
+          toggleEnrichment: (index) =>
+            updatePipeline((item) => {
+              const list = item.enrichments ?? [];
+              list[index].enabled = list[index].enabled === false;
+            }),
+        }}
+        options={options}
+        pipeline={pipeline}
+        status={status}
+      />
+
+      <div className="flex justify-end">
+        <Button asChild size="sm" variant="ghost">
+          <a href={`${baseUrl}${DIAGRAM_PATH}?v=${encodeURIComponent(data?.source_sha256 ?? "")}`} rel="noreferrer" target="_blank">
+            Diagrama de presentación (Archify) ↗
+          </a>
+        </Button>
+      </div>
+
+      <details className="rounded-lg border">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
+          Editor detallado del contrato (tracker, FrameRef, reglas, GPU)
+        </summary>
+        <div className="p-2">
 
       <div className="flex flex-col items-center">
         <WorkflowNode title="Pipeline" subtitle="Contrato deepfrigate/v1">
@@ -654,6 +641,8 @@ export default function DeepFrigateWorkflowSettingsView(
           Webhook · próximo tipo de salida
         </div>
       </div>
+        </div>
+      </details>
     </div>
   );
 }

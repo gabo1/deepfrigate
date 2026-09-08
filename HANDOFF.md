@@ -135,6 +135,23 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
   `frigate_zones.py`; heatmap con zonas/líneas/flechas de dirección desde
   `/api/config`; `/v1/pipelines/options` y `validate` igual. Tests 8.
   Verificado: `options` devuelve `user: ['calle']`; heatmap 200 con overlay.
+- **Canvas React Flow en Workflow visual (8 sep 03:20):**
+  `services/frigate/web/DeepFrigateWorkflowCanvas.tsx` (nuevo; `@xyflow/react`
+  12.11.6 lo instala `Dockerfile.web-onto-local` con `npm install --no-save`
+  tras `npm ci`; el checkout upstream `frigate/` queda intacto) y la vista lo monta
+  encima del formulario, ahora plegado en "Editor detallado". Toggles de
+  cámara (`cameras[].enabled`, en caliente) y de enriquecimiento
+  (`enrichments[].enabled`, nuevo en el schema, declarativo), select del
+  modelo del detector; estado vivo por `GET /v1/pipelines/status`
+  (`platform-api/app/status.py`: gauges del adapter, Triton ready, healthz).
+  Posiciones en `localStorage`. Web horneado (Receta A, Vite 1m33s →
+  `Settings-BjVE9LjL.js`), smoke recreado 03:20. Probado el camino completo
+  por API: PUT con cámara `enabled: false` → `Fuente quitada` a los 2 s.
+  Hallazgo: `PUT /v1/pipelines/active` dejaba `pipeline.yaml` como root:root
+  600 (bind mount): corregido conservando owner/mode del fichero previo.
+  `pipeline.yaml` quedó reformateado por `yaml.safe_dump` y con
+  `vehicle-attribute: enabled: false` (fiel a la realidad). Pendiente: ai-router
+  lea `enrichments[].enabled`; espejo `enabled` a Frigate; fase 3 de líneas.
 - **Cámaras en caliente con `nvmultiurisrcbin` (8 sep 03:05):** video-engine
   reemplaza N `nvurisrcbin` + `nvstreammux` por un `nvmultiurisrcbin`
   (`main.py`), con slot fijo por posición del contrato

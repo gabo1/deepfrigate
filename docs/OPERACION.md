@@ -355,10 +355,36 @@ UI Frigate / PUT /api/config/set ──► YAML ──► restart Frigate
   `python3 -m unittest frigate.test.test_config` dentro de la imagen con
   `version.py` copiado del contenedor.
 
-## 6a-bis. Mapa del pipeline en Settings → DeepFrigate → Workflow visual (8 sep)
+## 6a-bis. Workflow visual: canvas editable (8 sep 03:20) y mapa Archify
 
-La vista muestra arriba un diagrama interactivo del pipeline vivo y abajo el
-formulario del contrato de siempre. El diagrama lo genera **Archify**
+**Canvas (`DeepFrigateWorkflowCanvas.tsx`, React Flow `@xyflow/react` 12.11.6,
+instalado por `Dockerfile.web-onto-local` tras `npm ci`; el checkout upstream
+`frigate/` —blakeblackshear/frigate `a745070b`, v0.18.0-beta3— no se toca).**
+Settings → DeepFrigate → Workflow visual abre con un lienzo oscuro, nodos
+arrastrables (posiciones por navegador en `localStorage`
+`deepfrigate.workflow.positions.v1`; botón "Reordenar" las resetea) y las
+aristas del camino principal animadas. Se lee de izquierda a derecha:
+cámaras → DeepStream → Inferencia primaria → tee → rama de eventos
+(adapter → event-engine → Frigate) y rama de enriquecimiento (frame-store →
+ai-router → alpr-worker y los enrichments). Editable en el propio nodo:
+
+| Nodo | Control | Efecto al Guardar |
+|---|---|---|
+| Cámara | toggle on/off | `cameras[].enabled`; video-engine la quita/pone en caliente (§4) |
+| Inferencia primaria | select de modelo Triton | `detection.model`; cambio estructural → video-engine reinicia (~30 s) |
+| Enriquecimiento | toggle on/off | `enrichments[].enabled`; declarativo hasta que ai-router lea el contrato |
+
+Estado en vivo cada 5 s desde `GET /v1/pipelines/status` (`app/status.py`):
+puntos verde/ámbar/gris por cámara (`sv_objetos_activos` del adapter),
+modelo listo en Triton (`/v2/models/{m}/ready`), `alpr-worker` y
+`frame-store` (`/healthz`). Todo lo demás del contrato (tracker, FrameRef,
+reglas, GPU) sigue en el "Editor detallado" plegado debajo del canvas.
+Guardar/Validar/Descartar son los de siempre (schema, `If-Match`, rol admin).
+El mapa Archify quedó como enlace "Diagrama de presentación ↗" (misma URL).
+Probado: guardar con una cámara apagada desde la API → `Fuente quitada` en
+video-engine a los 2 s; volver a encender → `Fuente añadida`, mismo slot.
+
+**Mapa Archify.** El diagrama lo genera **Archify**
 (github.com/tt-a1i/archify, MIT, Node sin dependencias, commit fijado en
 `services/platform-api/Dockerfile` con `ARCHIFY_REF`): platform-api construye
 un IR `workflow` (`app/diagram.py::build_workflow_ir`) desde
@@ -381,10 +407,9 @@ un IR `workflow` (`app/diagram.py::build_workflow_ir`) desde
   cambiar la forma.
 - El diagrama es de solo lectura; el contrato se edita en el formulario. Las
   zonas que muestra son las dibujadas en Frigate (§6a), no las del contrato.
-- Iframe en `DeepFrigateWorkflowSettingsView.tsx` (`PipelineDiagram`):
-  `?v=<source_sha256>` para que el navegador no reutilice el anterior tras
-  guardar; botón "Actualizar" y "Abrir en pestaña". Requiere hornear el web del
-  smoke (Receta A de `frigate-pg/docs/RECREAR-IMAGEN-3005.md`).
+- Desde el canvas (8 sep 03:20) ya no va en iframe: enlace "Diagrama de
+  presentación ↗" con `?v=<source_sha256>`. Cualquier cambio de `.tsx` exige
+  hornear el web del smoke (Receta A de `frigate-pg/docs/RECREAR-IMAGEN-3005.md`).
 - Tests: `tests/test_diagram.py` (IR y digest siempre; render real solo en la
   imagen runtime, que trae `node` y `/opt/archify`).
 

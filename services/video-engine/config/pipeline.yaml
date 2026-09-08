@@ -1,51 +1,47 @@
 api_version: deepfrigate/v1
-
 pipeline:
   name: deepfrigate-multicamera
-
   cameras:
-    - id: tienda
-      source_env: RTSP_TIENDA
-      gpu: 0
-    - id: user
-      source_env: RTSP_USER
-      gpu: 0
-    - id: c4aac4f4eefe
-      source_env: RTSP_C4AAC4F4EEFE
-      gpu: 0
-    - id: c4aac4f4ef0a
-      source_env: RTSP_C4AAC4F4EF0A
-      gpu: 0
-
+  - id: tienda
+    source_env: RTSP_TIENDA
+    gpu: 0
+  - id: user
+    source_env: RTSP_USER
+    gpu: 0
+  - id: c4aac4f4eefe
+    source_env: RTSP_C4AAC4F4EEFE
+    gpu: 0
+  - id: c4aac4f4ef0a
+    source_env: RTSP_C4AAC4F4EF0A
+    gpu: 0
+    enabled: true
   detection:
     model: object-detector
     version: 1
     config_path: /opt/deepfrigate/config/config_infer_yolo26.pbtxt
     gpu: 0
-
   tracker:
     type: nvtracker
     config_path: /opt/nvidia/deepstream/deepstream/samples/configs/deepstream-app/config_tracker_NvDCF_perf.yml
     width: 640
     height: 384
     gpu: 0
-
   frame_export:
     labels:
-      - person
-      - car
-
+    - person
+    - car
   enrichments:
-    - model: vehicle-embedding
-      family: pp-shitu
-      labels:
-        - car
-        - person
-    - model: person-attribute
-      family: pulc-person
-      labels:
-        - person
-    - model: vehicle-attribute
-      family: pulc-vehicle
-      labels:
-        - car
+  - model: vehicle-embedding
+    family: pp-shitu
+    labels:
+    - car
+    - person
+  - model: person-attribute
+    family: pulc-person
+    labels:
+    - person
+  - model: vehicle-attribute
+    family: pulc-vehicle
+    labels:
+    - car
+    enabled: false
