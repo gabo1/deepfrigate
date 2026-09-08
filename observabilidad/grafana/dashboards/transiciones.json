@@ -1,0 +1,577 @@
+{
+  "title": "Transiciones entre cámaras",
+  "uid": "transiciones",
+  "description": "Mismo objeto visto por dos cámaras, tabla `deepfrigate.camera_transitions`. `gap_seconds` NO es tiempo de viaje: `cooccurrence` empareja por solape, así que sale negativo cuando el objeto se vio en las dos a la vez. La base se recreó el 7 sep 23:08 sin conservar histórico.",
+  "tags": [
+    "deepfrigate",
+    "transiciones"
+  ],
+  "timezone": "browser",
+  "refresh": "1m",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Resumen",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Transiciones",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT count(*) AS \"transiciones\"\n  FROM deepfrigate.camera_transitions\n WHERE $__timeFilter(created_at)\n   AND ('$label' = 'todas' OR label = '$label')\n"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Por hora",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT round(count(*) / nullif(extract(epoch from\n         (max(created_at) - min(created_at))) / 3600, 0)::numeric, 1)\n         AS \"por hora\"\n  FROM deepfrigate.camera_transitions\n WHERE $__timeFilter(created_at)\n   AND ('$label' = 'todas' OR label = '$label')\n"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "decimals": 1,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Solape (gap < 0)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT round(100.0 * count(*) FILTER (WHERE gap_seconds < 0)\n             / nullif(count(*), 0), 1) AS \"% solape\"\n  FROM deepfrigate.camera_transitions\n WHERE $__timeFilter(created_at)\n   AND ('$label' = 'todas' OR label = '$label')\n"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "percent",
+          "decimals": 1,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "description": "Porcentaje de emparejamientos en los que el objeto se vio en las DOS cámaras a la vez. No es un error: `cooccurrence` empareja por solape. Medido el 8 sep: 10 de 19."
+    },
+    {
+      "type": "stat",
+      "title": "Última hace",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT round(extract(epoch from now() - max(created_at)) / 60)\n         AS \"minutos\"\n  FROM deepfrigate.camera_transitions\n WHERE $__timeFilter(created_at)\n   AND ('$label' = 'todas' OR label = '$label')\n"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "m",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "description": "Minutos desde el último emparejamiento. Sirve para ver si el matcher sigue vivo: sin alerta de cámara caída, esto es lo único que lo delata."
+    },
+    {
+      "type": "row",
+      "title": "Matriz y ritmo",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "table",
+      "title": "Matriz origen → destino",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT from_camera AS \"desde\", to_camera AS \"hacia\",\n       label AS \"etiqueta\", count(*) AS \"n\",\n       round(percentile_cont(0.5) WITHIN GROUP\n             (ORDER BY gap_seconds)::numeric, 1) AS \"desfase p50 (s)\",\n       max(candidates) AS \"máx candidatos\"\n  FROM deepfrigate.camera_transitions\n WHERE $__timeFilter(created_at)\n   AND ('$label' = 'todas' OR label = '$label')\n GROUP BY 1, 2, 3 ORDER BY 4 DESC"
+        }
+      ],
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "filterable": true,
+            "align": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "description": "El sentido dominante difiere por etiqueta: los peatones cruzan en un sentido y los coches circulan en el otro."
+    },
+    {
+      "type": "timeseries",
+      "title": "Transiciones por hora",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 6,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT date_trunc('hour', created_at) AS time,\n       label AS metric, count(*) AS value\n  FROM deepfrigate.camera_transitions\n WHERE $__timeFilter(created_at)\n   AND ('$label' = 'todas' OR label = '$label')\n GROUP BY 1, 2 ORDER BY 1"
+        }
+      ],
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "axisBorderShow": false
+          },
+          "min": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "row",
+      "title": "Desfase entre cámaras (no es tiempo de viaje)",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "barchart",
+      "title": "Distribución del desfase",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 15,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT bucket AS \"desfase (s)\",\n       count(*) FILTER (WHERE gap_seconds <  0) AS \"solape\",\n       count(*) FILTER (WHERE gap_seconds >= 0) AS \"tránsito\"\n  FROM (SELECT gap_seconds,\n               (floor(gap_seconds / 5) * 5)::int AS bucket\n          FROM deepfrigate.camera_transitions\n         WHERE $__timeFilter(created_at)\n           AND ('$label' = 'todas' OR label = '$label')\n       ) b\n GROUP BY 1 ORDER BY 1"
+        }
+      ],
+      "options": {
+        "orientation": "auto",
+        "showValue": "auto",
+        "xTickLabelRotation": 0,
+        "barWidth": 0.8,
+        "stacking": "normal",
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 0,
+            "fillOpacity": 85
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "solape"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "tránsito"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "description": "Partido en el cero a propósito. **`gap_seconds` no es tiempo de viaje.** Negativo = el objeto apareció en la segunda cámara antes de terminar en la primera, o sea que se vio en las dos a la vez. Mezclarlos en una sola distribución esconde que son dos fenómenos distintos. Bucket de 5 s."
+    },
+    {
+      "type": "row",
+      "title": "Detalle",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 23,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "table",
+      "title": "Emparejamientos, con enlace a Explore",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "frigate-smoke-pg"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "frigate-smoke-pg"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT created_at AS \"cuándo\", label AS \"etiqueta\",\n       from_camera AS \"desde\", to_camera AS \"hacia\",\n       round(gap_seconds::numeric, 1) AS \"desfase (s)\",\n       candidates AS \"candidatos\", method AS \"método\",\n       'https://100.83.231.97:3005/explore?event_id=' || from_frigate_event_id AS \"ver desde\",\n       'https://100.83.231.97:3005/explore?event_id=' || to_frigate_event_id   AS \"ver hacia\"\n  FROM deepfrigate.camera_transitions\n WHERE $__timeFilter(created_at)\n   AND ('$label' = 'todas' OR label = '$label')\n ORDER BY created_at DESC LIMIT 100"
+        }
+      ],
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "filterable": true,
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ver desde"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "link",
+                  "urlText": "abrir"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ver hacia"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "link",
+                  "urlText": "abrir"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "description": "Abrir las dos pestañas y comparar es la única validación real de un emparejamiento. `score` va NULL salvo que hubiera empate y se desempatara con embedding: no usar `avg(score)` como calidad."
+    },
+    {
+      "type": "row",
+      "title": "Escenas emparejadas",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "x": 0,
+        "y": 34,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "type": "text",
+      "title": "Escena · c4aac4f4eefe",
+      "gridPos": {
+        "x": 0,
+        "y": 35,
+        "w": 12,
+        "h": 13
+      },
+      "options": {
+        "mode": "html",
+        "content": "<img src=\"/api/datasources/proxy/uid/deepfrigate-platform-api/v1/heatmap/c4aac4f4eefe.jpg?weight=count&label=$label&zones=true&start=$__from&end=$__to\" style=\"width:100%;height:auto;display:block\">"
+      },
+      "description": "Por dónde pasa lo que se empareja. Las dos cámaras miran la misma calle: el solape físico entre ellas es lo que produce los gaps negativos de la fila de arriba."
+    },
+    {
+      "type": "text",
+      "title": "Escena · c4aac4f4ef0a",
+      "gridPos": {
+        "x": 12,
+        "y": 35,
+        "w": 12,
+        "h": 13
+      },
+      "options": {
+        "mode": "html",
+        "content": "<img src=\"/api/datasources/proxy/uid/deepfrigate-platform-api/v1/heatmap/c4aac4f4ef0a.jpg?weight=count&label=$label&zones=true&start=$__from&end=$__to\" style=\"width:100%;height:auto;display:block\">"
+      },
+      "description": "Por dónde pasa lo que se empareja. Las dos cámaras miran la misma calle: el solape físico entre ellas es lo que produce los gaps negativos de la fila de arriba."
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "label",
+        "label": "Etiqueta",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "frigate-smoke-pg"
+        },
+        "query": "SELECT DISTINCT label FROM deepfrigate.camera_transitions ORDER BY 1",
+        "refresh": 1,
+        "sort": 1,
+        "includeAll": true,
+        "allValue": "todas",
+        "multi": false,
+        "current": {
+          "text": "Todas",
+          "value": "todas"
+        }
+      }
+    ]
+  },
+  "schemaVersion": 39,
+  "version": 1
+}

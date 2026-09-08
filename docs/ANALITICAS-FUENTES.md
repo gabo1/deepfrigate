@@ -1742,11 +1742,44 @@ salen vacíos **por construcción** (12–15 px de placa en `tienda` y calle).
 Mejor ocultarlos con una fila colapsada "Placas (solo user)" que mostrar
 ceros.
 
-**`transiciones`** (`$label`, datasource `frigate-smoke-pg`, schema
-`deepfrigate`) — ⬜ **pendiente por falta de datos, no de trabajo.** La base se
-recreó el 7 sep 23:08 sin conservar histórico, así que `camera_transitions`
-tenía **3 filas** al montar `vehiculos`: la matriz saldría con una celda.
-Esperar a que acumule horas.
+**`transiciones`** — ✅ **implementado el 8 sep.** uid `transiciones`, 15
+paneles, variable `$label`. Generador: `observabilidad/build_transiciones.py`.
+Filas: Resumen, Matriz y ritmo, Desfase, Detalle, Escenas.
+
+**Corrección importante a §15.5.** Ese apartado decía que las transiciones de
+`person` eran fiables y las de `car` traían falsos por coches estacionados. Con
+19 filas medidas el 8 sep eso no se sostiene:
+
+| Etiqueta | Filas | Con `gap_seconds` < 0 |
+|---|---|---|
+| `person` | 13 | **6** |
+| `car` | 6 | **4** |
+
+El gap negativo **no es cosa de coches parados**: es cómo funciona
+`method='cooccurrence'`, que empareja por solape temporal. Sale negativo cuando
+el objeto aparece en la segunda cámara antes de terminar en la primera. Las dos
+cámaras miran la misma calle y se solapan físicamente.
+
+Consecuencias en el dashboard:
+
+- **`gap_seconds` no se titula «tiempo de viaje»**, sino «desfase entre
+  cámaras». Un histograma de tiempo de tránsito con barras a la izquierda del
+  cero no significa nada.
+- **La distribución va partida en el cero**: `solape` (< 0) y `tránsito` (≥ 0)
+  como dos series. Mezclarlas esconde que son dos fenómenos.
+- **No se filtra `person` por defecto.** Era la recomendación anterior y ya no
+  sirve: `person` solapa casi igual (50 % frente a 67 %).
+- Panel «Última hace»: minutos desde el último emparejamiento. Sin alerta de
+  cámara caída (§11 quater), es lo único que delata un matcher parado.
+- Fila «Escenas»: los heatmaps de las dos cámaras, que es donde se ve el
+  solape físico que produce los gaps negativos.
+
+La variable `$label` usa el centinela `todas` en `allValue`, no cadena vacía:
+dejar que Grafana interpole `All` o `$__all` ya dejó un heatmap en blanco una
+vez (§11 quater).
+
+Validado ejecutando los 8 paneles SQL por el API de Grafana con `todas`,
+`person` y `car`.
 
 | Panel | Query | Tipo |
 |---|---|---|
