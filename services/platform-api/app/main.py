@@ -19,6 +19,7 @@ from fastapi.responses import Response
 from jsonschema import Draft202012Validator
 from . import heatmap as heatmap_render
 from .zones_source import ZonesSource, ZonesUnavailable
+from . import diagram as diagram_render
 import psycopg
 from psycopg.rows import dict_row
 import yaml
@@ -32,6 +33,7 @@ qdrant_collection = os.getenv(
 frigate_api_url = os.getenv(
     "FRIGATE_API_URL", "http://frigate:5000/api"
 ).rstrip("/")
+openalpr_url = os.getenv("OPENALPR_URL", "http://alpr-worker:8080").rstrip("/")
 triton_url = os.getenv("TRITON_HTTP_URL", "http://triton:8000").rstrip(
     "/"
 )
@@ -233,6 +235,46 @@ def get_pipeline_options() -> dict[str, Any]:
             for camera, config in zones.items()
         },
     }
+
+
+@app.get("/v1/pipelines/diagram.json", tags=["pipelines"])
+def get_pipeline_diagram_ir() -> dict[str, Any]:
+    """Archify workflow IR for the active pipeline (what diagram.html renders)."""
+    return _diagram_ir()
+
+
+@app.get("/v1/pipelines/diagram.html", tags=["pipelines"])
+def get_pipeline_diagram() -> Response:
+    """Interactive Archify diagram of the active pipeline (self-contained HTML).
+
+    Deterministic: same contract + same zones = same bytes, cached in memory.
+    Embedded by Settings → DeepFrigate → Workflow visual in an iframe.
+    """
+    ir = _diagram_ir()
+    try:
+        html = diagram_render.render_html(ir)
+    except diagram_render.RenderError as error:
+        raise HTTPException(
+            status_code=503,
+            detail={"message": str(error), "diagnostics": error.diagnostics},
+        ) from error
+    return Response(
+        content=html,
+        media_type="text/html; charset=utf-8",
+        headers={"Cache-Control": "no-store", "X-DeepFrigate-Diagram": diagram_render.ir_digest(ir)},
+    )
+
+
+def _diagram_ir() -> dict[str, Any]:
+    active = get_active_pipeline()
+    try:
+        zones = zones_source.cameras()
+    except ZonesUnavailable:
+        zones = {}
+    alpr_health = diagram_render._probe(f"{openalpr_url}/healthz") if openalpr_url else None
+    return diagram_render.build_workflow_ir(
+        active, zones=zones, alpr_health=alpr_health, frigate_url=frigate_api_url
+    )
 
 
 @app.post("/v1/pipelines/validate", tags=["pipelines"])
@@ -532,6 +574,43 @@ def model_ready(name: str) -> bool:
 def require_admin(remote_role: str | None) -> None:
     if remote_role != "admin":
         raise HTTPException(status_code=403, detail="admin role required")
+
+
+# Cache pequeno: la tabla de transiciones pide hasta 200 miniaturas de golpe
+# y la misma fila se repinta en cada refresco del dashboard.
+_thumbnail_cache: dict[tuple[str, str], tuple[float, bytes]] = {}
+
+
+@app.get("/v1/events/{event_id}/{kind}.jpg", tags=["analytics"])
+def get_event_image(event_id: str, kind: str) -> Response:
+    """Miniatura o snapshot de un Event de Frigate, con la auth de Grafana.
+
+    Frigate corre con `auth.enabled: true`, asi que el navegador recibe **401**
+    al pedir `/api/events/{id}/thumbnail.jpg` directamente. platform-api si lo
+    baja (esta dentro de la red), y Grafana lo sirve por su proxy de
+    datasource, que exige sesion. Asi las fotos se ven en una tabla sin abrir
+    Frigate al exterior.
+    """
+    if kind not in {"thumbnail", "snapshot"}:
+        raise HTTPException(status_code=404, detail="unknown image kind")
+    key = (event_id, kind)
+    hit = _thumbnail_cache.get(key)
+    if hit and hit[0] > time.time():
+        return Response(content=hit[1], media_type="image/jpeg",
+                        headers={"Cache-Control": "max-age=300"})
+    url = f"{frigate_api_url}/events/{quote(event_id, safe='')}/{kind}.jpg"
+    try:
+        with urlopen(url, timeout=10) as response:
+            payload = response.read()
+    except (HTTPError, URLError) as error:
+        raise HTTPException(
+            status_code=502, detail=f"frigate unavailable: {error}"
+        ) from error
+    if len(_thumbnail_cache) > 512:
+        _thumbnail_cache.clear()
+    _thumbnail_cache[key] = (time.time() + 300, payload)
+    return Response(content=payload, media_type="image/jpeg",
+                    headers={"Cache-Control": "max-age=300"})
 
 
 @app.get("/v1/heatmap/{camera}.jpg", tags=["analytics"])

@@ -444,7 +444,7 @@
         "x": 0,
         "y": 24,
         "w": 24,
-        "h": 10
+        "h": 14
       },
       "targets": [
         {
@@ -455,11 +455,11 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT created_at AS \"cuándo\", label AS \"etiqueta\",\n       from_camera AS \"desde\", to_camera AS \"hacia\",\n       round(gap_seconds::numeric, 1) AS \"desfase (s)\",\n       candidates AS \"candidatos\", method AS \"método\",\n       'https://100.83.231.97:3005/explore?event_id=' || from_frigate_event_id AS \"ver desde\",\n       'https://100.83.231.97:3005/explore?event_id=' || to_frigate_event_id   AS \"ver hacia\"\n  FROM deepfrigate.camera_transitions\n WHERE $__timeFilter(created_at)\n   AND ('$label' = 'todas' OR label = '$label')\n ORDER BY created_at DESC LIMIT 100"
+          "rawSql": "SELECT created_at AS \"cuándo\", label AS \"etiqueta\",\n       from_camera AS \"desde\", to_camera AS \"hacia\",\n       round(gap_seconds::numeric, 1) AS \"desfase (s)\",\n       candidates AS \"candidatos\", method AS \"método\",\n       '/api/datasources/proxy/uid/deepfrigate-platform-api/v1/events/' || from_frigate_event_id\n         || '/thumbnail.jpg' AS \"foto desde\",\n       '/api/datasources/proxy/uid/deepfrigate-platform-api/v1/events/' || to_frigate_event_id\n         || '/thumbnail.jpg' AS \"foto hacia\",\n       'https://100.83.231.97:3005/explore?event_id=' || from_frigate_event_id AS \"ver desde\",\n       'https://100.83.231.97:3005/explore?event_id=' || to_frigate_event_id   AS \"ver hacia\"\n  FROM deepfrigate.camera_transitions\n WHERE $__timeFilter(created_at)\n   AND ('$label' = 'todas' OR label = '$label')\n ORDER BY created_at DESC LIMIT 100"
         }
       ],
       "options": {
-        "cellHeight": "sm",
+        "cellHeight": "lg",
         "footer": {
           "show": false
         }
@@ -475,6 +475,42 @@
           {
             "matcher": {
               "id": "byName",
+              "options": "foto desde"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "image"
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 150
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "foto hacia"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "image"
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 150
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
               "options": "ver desde"
             },
             "properties": [
@@ -484,6 +520,10 @@
                   "type": "link",
                   "urlText": "abrir"
                 }
+              },
+              {
+                "id": "custom.width",
+                "value": 70
               }
             ]
           },
@@ -499,12 +539,16 @@
                   "type": "link",
                   "urlText": "abrir"
                 }
+              },
+              {
+                "id": "custom.width",
+                "value": 70
               }
             ]
           }
         ]
       },
-      "description": "Abrir las dos pestañas y comparar es la única validación real de un emparejamiento. `score` va NULL salvo que hubiera empate y se desempatara con embedding: no usar `avg(score)` como calidad."
+      "description": "Las dos fotos son las miniaturas de cada Event: si no son el mismo objeto, el emparejamiento es falso y se ve de un vistazo. Van por el proxy de Grafana porque Frigate corre con auth y devuelve 401 al navegador. Los enlaces abren Explore, que es donde se comprueba a fondo. `score` va NULL salvo que hubiera empate y se desempatara con embedding: no usar `avg(score)` como calidad."
     },
     {
       "type": "row",
@@ -513,7 +557,7 @@
       "panels": [],
       "gridPos": {
         "x": 0,
-        "y": 34,
+        "y": 38,
         "w": 24,
         "h": 1
       }
@@ -523,7 +567,7 @@
       "title": "Escena · c4aac4f4eefe",
       "gridPos": {
         "x": 0,
-        "y": 35,
+        "y": 39,
         "w": 12,
         "h": 13
       },
@@ -538,7 +582,7 @@
       "title": "Escena · c4aac4f4ef0a",
       "gridPos": {
         "x": 12,
-        "y": 35,
+        "y": 39,
         "w": 12,
         "h": 13
       },

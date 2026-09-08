@@ -14,7 +14,12 @@ import json
 PG = {"type": "grafana-postgresql-datasource", "uid": "frigate-smoke-pg"}
 CT = "deepfrigate.camera_transitions"
 EXPLORE = "https://100.83.231.97:3005/explore?event_id="
-PROXY = "/api/datasources/proxy/uid/deepfrigate-platform-api/v1/heatmap"
+DS = "/api/datasources/proxy/uid/deepfrigate-platform-api/v1"
+PROXY = f"{DS}/heatmap"
+# Frigate corre con auth: el navegador recibe 401 pidiendole la miniatura
+# directamente. platform-api la baja desde dentro y Grafana la sirve por su
+# proxy, que exige sesion. `event.thumbnail` en la base esta vacio.
+THUMB = f"{DS}/events"
 # Sentinela en vez de dejar que Grafana interpole `All` o `$__all`: ese fallo
 # ya dejo un heatmap en blanco una vez (§11 quater).
 LBL = "   AND ('$label' = 'todas' OR label = '$label')\n"
@@ -170,23 +175,37 @@ panels += [
         "       from_camera AS \"desde\", to_camera AS \"hacia\",\n"
         "       round(gap_seconds::numeric, 1) AS \"desfase (s)\",\n"
         "       candidates AS \"candidatos\", method AS \"método\",\n"
+        "       '" + THUMB + "/' || from_frigate_event_id\n"
+        "         || '/thumbnail.jpg' AS \"foto desde\",\n"
+        "       '" + THUMB + "/' || to_frigate_event_id\n"
+        "         || '/thumbnail.jpg' AS \"foto hacia\",\n"
         "       '" + EXPLORE + "' || from_frigate_event_id AS \"ver desde\",\n"
         "       '" + EXPLORE + "' || to_frigate_event_id   AS \"ver hacia\"\n"
         f"  FROM {CT}\n WHERE $__timeFilter(created_at)\n" + LBL +
         " ORDER BY created_at DESC LIMIT 100",
-        0, 24, 24, 10, "table",
-        desc="Abrir las dos pestañas y comparar es la única validación real de "
-             "un emparejamiento. `score` va NULL salvo que hubiera empate y se "
-             "desempatara con embedding: no usar `avg(score)` como calidad.",
-        options={"cellHeight": "sm", "footer": {"show": False}},
+        0, 24, 24, 14, "table",
+        desc="Las dos fotos son las miniaturas de cada Event: si no son el "
+             "mismo objeto, el emparejamiento es falso y se ve de un vistazo. "
+             "Van por el proxy de Grafana porque Frigate corre con auth y "
+             "devuelve 401 al navegador. Los enlaces abren Explore, que es "
+             "donde se comprueba a fondo. `score` va NULL salvo que hubiera "
+             "empate y se desempatara con embedding: no usar `avg(score)` "
+             "como calidad.",
+        options={"cellHeight": "lg", "footer": {"show": False}},
         overrides=[{"matcher": {"id": "byName", "options": n},
-                    "properties": [{"id": "custom.cellOptions", "value": {
-                        "type": "link", "urlText": "abrir"}}]}
-                   for n in ("ver desde", "ver hacia")]),
+                    "properties": [
+                        {"id": "custom.cellOptions", "value": {"type": "image"}},
+                        {"id": "custom.width", "value": 150}]}
+                   for n in ("foto desde", "foto hacia")]
+        + [{"matcher": {"id": "byName", "options": n},
+            "properties": [{"id": "custom.cellOptions", "value": {
+                "type": "link", "urlText": "abrir"}},
+                {"id": "custom.width", "value": 70}]}
+           for n in ("ver desde", "ver hacia")]),
 ]
 
-panels.append(row("Escenas emparejadas", 34))
-panels += [escena("c4aac4f4eefe", 0, 35), escena("c4aac4f4ef0a", 12, 35)]
+panels.append(row("Escenas emparejadas", 38))
+panels += [escena("c4aac4f4eefe", 0, 39), escena("c4aac4f4ef0a", 12, 39)]
 
 dashboard = {
     "title": "Transiciones entre cámaras",

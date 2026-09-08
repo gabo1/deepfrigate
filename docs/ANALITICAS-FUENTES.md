@@ -1773,6 +1773,25 @@ Consecuencias en el dashboard:
   cámara caída (§11 quater), es lo único que delata un matcher parado.
 - Fila «Escenas»: los heatmaps de las dos cámaras, que es donde se ve el
   solape físico que produce los gaps negativos.
+- **La tabla de detalle lleva las dos miniaturas del Event.** Si no son el
+  mismo objeto, el emparejamiento es falso y se ve de un vistazo, sin abrir
+  nada. Los enlaces a Explore siguen ahí para la comprobación a fondo.
+
+**Miniaturas: hay que proxearlas.** Frigate corre con `auth.enabled: true`, así
+que el navegador recibe **401** pidiendo
+`https://100.83.231.97:3005/api/events/{id}/thumbnail.jpg`. Y la columna
+`event.thumbnail` de la base **está vacía** (0 filas), así que tampoco hay
+base64 que servir desde SQL. Solución, mismo patrón que el heatmap:
+
+```
+GET /v1/events/{event_id}/{thumbnail|snapshot}.jpg   (platform-api)
+```
+
+platform-api sí la baja porque está dentro de la red, y Grafana la sirve por su
+proxy de datasource, que exige sesión (sin ella, 401). En la tabla, la columna
+lleva la URL y el override pone `cellOptions.type = "image"`. Caché de 300 s en
+memoria: la tabla pide hasta 200 miniaturas de golpe y se repinta en cada
+refresco.
 
 La variable `$label` usa el centinela `todas` en `allValue`, no cadena vacía:
 dejar que Grafana interpole `All` o `$__all` ya dejó un heatmap en blanco una
