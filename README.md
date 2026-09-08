@@ -5,10 +5,20 @@ Frigate-derived object lifecycle concepts.
 
 ## Current milestone
 
-DeepStream detection is on for `tienda`. Frigate `detect.enabled` is false so
-Explore is filled by the Event Engine bridge: YOLO26/NvTracker boxes and paths
-are written into native Frigate Events. Review/Explore popups use Frigate's
-own snapshot (with bbox) and tracking-details path overlay.
+DeepStream detection runs for four cameras (`tienda`, `user`, two street
+cameras). Frigate `detect.enabled` is false so Explore is filled by the Event
+Engine bridge: YOLO26/NvTracker boxes and paths are written into native
+Frigate Events. Review/Explore popups use Frigate's own snapshot (with bbox)
+and tracking-details path overlay.
+
+Since September 2026 the stack also has: one PostgreSQL (the Frigate fork's
+database, DeepFrigate tables in schema `deepfrigate`); zones, counting lines
+and direction arrows drawn in Frigate and read by the analytics from
+`/api/config`; OpenALPR (plate + make/model/colour per vehicle crop, voted
+across passes); cross-camera transitions; a React Flow canvas in
+`Settings → DeepFrigate → Visual Workflow`; and hot camera enable/disable
+through `nvmultiurisrcbin`. Spanish runbooks: `docs/OPERACION.md`,
+`docs/ARQUITECTURA.md`, `docs/ANALITICAS-FUENTES.md`, `HANDOFF.md`.
 
 ## Development setup
 
@@ -209,14 +219,25 @@ versions against the Triton repository, and enforces one GPU across the current
 batched pipeline. Invalid configuration fails before GStreamer is constructed.
 The compiled SHA-256, camera IDs and selected components are logged without
 exposing source URLs. The validated secret-free source contract is available
-from `GET /deepfrigate/v1/pipelines/active`; changes require a service restart.
+from `GET /deepfrigate/v1/pipelines/active`.
+
+Sources are a single `nvmultiurisrcbin`; every camera is pinned to a mux pad
+by its position in the contract. `cameras[].enabled` is applied live (the
+engine watches `pipeline.yaml` and calls the bin's in-container REST API);
+adding/removing cameras, changing a URI, the detector or the tracker is a
+structural change: the engine exits with code 3 and the Compose restart
+policy brings it back with the new contract (~30 s). `enrichments[].enabled`
+is declarative for now (ai-router still follows its environment).
 
 The Visual Workflow editor is available under
-`Settings → DeepFrigate → Visual Workflow`. It renders the active camera,
-detector, tracker, FrameRef, enrichment and zone-rule graph. Administrators can
-edit, validate and persist the contract; viewers have read-only access.
-Saving uses the active SHA-256 as an optimistic concurrency token and never
-restarts GPU services automatically.
+`Settings → DeepFrigate → Visual Workflow`. A React Flow canvas shows the
+pipeline left to right (cameras → DeepStream → Triton → events / enrichment
+branches) with live status from `GET /deepfrigate/v1/pipelines/status`;
+cameras and enrichments toggle on the node, the detector model is a select,
+the rest of the contract is in a collapsible form. Administrators can edit,
+validate and persist; viewers are read-only. Saving uses the active SHA-256
+as an optimistic concurrency token. An Archify presentation diagram is served
+at `GET /deepfrigate/v1/pipelines/diagram.html`.
 
 Runtime knobs of `video-engine` (Compose passes them through; defaults in
 parentheses): `FRAME_STALL_RESTART_SECONDS` (120) exits the process when no

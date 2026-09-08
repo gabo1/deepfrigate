@@ -1,6 +1,57 @@
 # Handoff — DeepFrigate
 
-## Estado actual (4 sep 2026, ~18:00 UTC)
+## Estado actual (8 sep 2026, ~03:30 UTC)
+
+Resumen de lo vivo hoy; el detalle está en las entradas fechadas de abajo
+y en los runbooks. Lo que sigue en el bloque del 4 sep sigue siendo válido
+salvo donde se indica.
+
+- **Cámaras en DeepStream**: `tienda`, `user`, `c4aac4f4eefe`, `c4aac4f4ef0a`
+  (mux 1280×720 sin padding). Fuentes por **`nvmultiurisrcbin`** con slot
+  fijo por posición del contrato; `cameras[].enabled` entra/sale en caliente
+  (2 s), cámara nueva/URI/detector/tracker reinician video-engine solo
+  (exit 3 + restart policy). `docs/OPERACION.md` §4 "Cámaras en caliente".
+- **Un solo PostgreSQL**: `frigate-pgvector-smoke-db` (alias
+  `pgvector-smoke-db`, base `frigate_pgvector_smoke`). Frigate en `public`,
+  DeepFrigate en el esquema `deepfrigate` (`events`, `frigate_event_links`,
+  `camera_transitions`). `deepfrigate-postgres-1` **ya no existe**. Compose
+  trae los defaults del smoke: recrear event-engine no exige exportar nada.
+- **Zonas, líneas y direcciones**: se dibujan/escriben en Frigate (fork con
+  `lines:`/`directions:` y overcrowding en zonas); el adapter y platform-api
+  las leen de `/api/config` y recargan con `frigate/available = online`.
+  `config/zones.json` solo aporta tamaño de frame. §6a.
+- **Coches**: OpenALPR SDK (`alpr-worker`, CPU) da placa + marca/modelo/color/
+  tipo desde el mismo crop; voto entre hasta 6 pasadas (`votes`/`reads`),
+  `PLATE_MIN_CONFIDENCE=80`. PULC vehículo apagado
+  (`VEHICLE_ATTRIBUTE_PROVIDER=openalpr`). Agente Rekor + alpr-bridge
+  **apagados** (perfil `alpr-agent`, tag `alpr-agent-v1`). §6c.
+- **Transiciones entre cámaras** eefe↔ef0a por co-ocurrencia en
+  `camera_transitions`; `GET /v1/camera-transitions`; dashboard
+  `transiciones`. Falsos con coches estacionados pendientes de filtro. §6b.
+- **Workflow visual**: canvas React Flow (toggles de cámara y
+  enriquecimiento, select de detector, estado vivo por
+  `/v1/pipelines/status`), editor detallado plegado, mapa Archify por enlace
+  (`/v1/pipelines/diagram.html`). §6a-bis.
+- **Grafana/Prometheus** corren desde `observabilidad/` del repo (proyecto
+  `observabilidad`, volúmenes conservados); 6 dashboards versionados
+  (`analitica-deepfrigate`, `camara-eventos`, `pulc-atributos`, `vehiculos`,
+  `transiciones`, `analitica` legado). Datasource único `frigate-smoke-pg`.
+- **Heatmap** con fondo de la escena DeepStream y overlay de zonas/líneas/
+  direcciones desde Frigate.
+- **Imagen `:3005`**: `deepfrigate-frigate-pg:pgvector-smoke` horneada el 8 sep
+  (Receta A) con los modelos del fork y el canvas; ya no hay `docker cp`.
+- **Repos**: `deepfrigate` main y `frigate-pg` `deepfrigate/pgsql`
+  (`gabo1/pgfrigate`) al día. Fuera de git a propósito: licencia OpenALPR,
+  `observabilidad/.env`, `grafana/gf_pw`, `/opt/fakecam` (MediaMTX; pendiente
+  de versionar en `tools/fakecam/`), checkout upstream `frigate/`
+  (`a745070b`).
+
+Pendientes acordados: ai-router lea `enrichments[].enabled` (patrón zonas);
+espejo de `cameras[].enabled` a Frigate para dejar de grabar; fase 3 editor
+visual de líneas/direcciones; filtro de edad de track en transiciones;
+renombrar el "smoke" (es la base de producto); versionar `/opt/fakecam`.
+
+## Estado del 4 sep 2026 (~18:00 UTC), sigue válido salvo lo de arriba
 
 Instancia de trabajo: **Frigate PostgreSQL + pgvector aislado**, no el NVR
 SQLite original. DeepStream está **arriba** y escribe Events en esta
@@ -1221,10 +1272,16 @@ curl http://localhost:8083/healthz
 
 ## Siguiente objetivo
 
-Inmediato producto: corte SQLite → PostgreSQL (`frigate-pg/docs/CUTOVER.md`)
-cuando lo pida el usuario; no empezar solo. `video-engine` ya está arriba
-(1 sep). `recording-sync` / MinIO y el backfill Jina del histórico están
-**deprecados**.
+(8 sep) El corte SQLite → PostgreSQL ya no aplica como tal: la base del fork
+es la única (esquema `deepfrigate` dentro). Lo inmediato está en la lista de
+pendientes de "Estado actual": `enrichments[].enabled` en ai-router, espejo
+de cámaras a Frigate, editor visual de líneas, filtro de transiciones,
+renombrar el smoke, versionar `/opt/fakecam`.
+
+(Histórico) Inmediato producto: corte SQLite → PostgreSQL
+(`frigate-pg/docs/CUTOVER.md`) cuando lo pida el usuario; no empezar solo.
+`video-engine` ya está arriba (1 sep). `recording-sync` / MinIO y el backfill
+Jina del histórico están **deprecados**.
 
 Inmediato analíticas: el dashboard **ya cubre** Prom + SQL + heatmap
 espacial (`path_data` en `platform-api`). Siguiente útil: informe PDF
