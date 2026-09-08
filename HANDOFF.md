@@ -135,6 +135,15 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
   `frigate_zones.py`; heatmap con zonas/líneas/flechas de dirección desde
   `/api/config`; `/v1/pipelines/options` y `validate` igual. Tests 8.
   Verificado: `options` devuelve `user: ['calle']`; heatmap 200 con overlay.
+- **Grafana/Prometheus corren desde el repo (8 sep 02:01):** `observabilidad/`
+  ya era la fuente de verdad pero el despliegue leía `/opt/observabilidad`.
+  Añadido `name: observabilidad` al compose versionado (mismo proyecto → mismos
+  volúmenes `observabilidad_prom_data`/`graf_data`, histórico intacto),
+  `observabilidad/.env` con `GRAFANA_RO_PASSWORD` y `grafana/gf_pw` copiados
+  (git-ignored), `docker compose up -d` recreó ambos contenedores (15 s).
+  Verificado: datasource `frigate-smoke-pg` "Database Connection OK", 6
+  dashboards, targets Prometheus iguales. `/opt/observabilidad` renombrado a
+  `/opt/observabilidad.migrated-20260908` (borrable). Ya no hay dos copias.
 - **Web del smoke horneado (8 sep 01:38):** Receta A completa:
   `deepfrigate-frigate:local-vite-src` (Vite 2m10s, chunk
   `Settings-cWljMhBF.js` con "Mapa del pipeline") →
@@ -591,7 +600,7 @@ Cámara viva `user` (cyberw.io, 3 sep): `docs/CAMARA-USER.md`.
 Arquitectura (PGIE único, atributos en ai-router, no SGIE):
 `docs/ARQUITECTURA.md`. Detalle y trampas: `docs/ANALITICAS-FUENTES.md`
 (§8 plan, §11 ter addon apagado, §12 OD, §13 Supervision, §14 heatmap).
-Dashboard provisionado en `/opt/observabilidad/grafana/dashboards/` —
+Dashboard provisionado en `observabilidad/grafana/dashboards/` (hasta el 8 sep, `/opt/observabilidad`) —
 **no** editar `analitica-deepfrigate` desde la UI.
 
 Vídeo y metadatos **siguen separados**: DeepStream no pinta zonas; el

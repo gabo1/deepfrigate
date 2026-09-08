@@ -140,14 +140,14 @@ nuevo **sí** los sirve, así que los dos paneles huérfanos vuelven a tener dat
 | Cosa | Valor |
 |---|---|
 | Datasource | `Frigate smoke (PG)`, uid `frigate-smoke-pg`, `editable: false` |
-| Provisioning | `/opt/observabilidad/grafana/provisioning/datasources/postgres-frigate.yml` (modo 640, root) |
+| Provisioning | `observabilidad/grafana/provisioning/datasources/postgres-frigate.yml` (contraseña vía `${GRAFANA_RO_PASSWORD}` en `observabilidad/.env`, git-ignored; hasta el 8 sep corría desde `/opt/observabilidad`) |
 | Base | `pgvector-smoke-db:5432/frigate_pgvector_smoke` |
 | Usuario | **`grafana_ro`**: `CONNECT` + `USAGE` + `SELECT`, nada más. No superuser, no createrole |
 | Red | `grafana` está conectada a **`deepfrigate_default`** además de a `observabilidad_default` |
 
 La base del smoke **no publica puerto al host**, así que `host.docker.internal`
 no vale: hay que compartir red. Está declarada como `external` en
-`/opt/observabilidad/docker-compose.yml` para que sobreviva a un recreate.
+`observabilidad/docker-compose.yml` para que sobreviva a un recreate.
 Deshacer: `docker network disconnect deepfrigate_default grafana`.
 
 ### La fuente viva de `tienda` es el Hik 210235C8NP3246000069
@@ -247,7 +247,7 @@ down  analitica_frigate      http://host.docker.internal:9108/metrics
 down  analitica_savant       http://host.docker.internal:9109/metrics
 ```
 
-Config: `/opt/observabilidad/prometheus/prometheus.yml` (backup
+Config: `observabilidad/prometheus/prometheus.yml` (backup
 `.bak-20260903`). Prometheus **no** lleva `--web.enable-lifecycle`: para
 recargar hay que `docker restart prometheus` (el TSDB está en volumen, no se
 pierde histórico).
@@ -711,7 +711,7 @@ que los paneles consultan por **nombre desnudo**. Valor nuevo: `motor=deepfrigat
 - Titular “Dwell” o “Permanencia” el panel de duración de Event: en esta base
   hay uno de **36.570 s (10 h)** de un track que nunca cerró
 - Editar el dashboard `analitica-deepfrigate` desde la UI: está provisionado
-  por fichero en `/opt/observabilidad/grafana/dashboards/`
+  por fichero en `observabilidad/grafana/dashboards/`
 - `compose down -v` / vaciar Qdrant / tocar PG producto `deepfrigate` Event Engine
 - Push del reporter a origin `kornyhiv`
 - Backfill masivo `POST /thumbnail/embed` (tumba `/auth`)
@@ -764,11 +764,11 @@ curl -s --data-urlencode \
 - Reporter: `/home/agent/frigatenvr-reporter-addon/README.md`
 - Contrato MQTT: `contracts/tracked-object-update.schema.json`
 - Dashboard vivo: `http://100.83.231.97:3001/d/analitica-deepfrigate`
-  (fuente: `/opt/observabilidad/grafana/dashboards/analitica-deepfrigate.json`)
+  (fuente: `observabilidad/grafana/dashboards/analitica-deepfrigate.json`)
 - Dashboard legado (archivo Savant): `http://100.83.231.97:3001/d/analitica`
 - Dashboard PULC: `http://100.83.231.97:3001/d/pulc-atributos`
-  (fuente: `/opt/observabilidad/grafana/dashboards/pulc-atributos.json`)
-- Datasource SQL Frigate smoke: `/opt/observabilidad/grafana/provisioning/datasources/postgres-frigate.yml`
+  (fuente: `observabilidad/grafana/dashboards/pulc-atributos.json`)
+- Datasource SQL Frigate smoke: `observabilidad/grafana/provisioning/datasources/postgres-frigate.yml`
 - Datasource SQL único: `frigate-smoke-pg` llega también al esquema `deepfrigate` (`events`, `camera_transitions`) vía `search_path`
 - Placas y marca/modelo (runbook): `docs/OPERACION.md` §6c; transiciones: §6b
 - API transiciones: `http://127.0.0.1:8082/v1/camera-transitions?hours=24[&detail=true]`
@@ -803,7 +803,7 @@ tailnet o levantar un nginx, se pasa por el **proxy de datasource de Grafana**:
 ```
 
 Datasource provisionado en
-`/opt/observabilidad/grafana/provisioning/datasources/platform-api.yml`, de
+`observabilidad/grafana/provisioning/datasources/platform-api.yml`, de
 tipo `prometheus` **pero usado solo como proxy** — no sirve métricas. Ventajas
 medidas: sin sesión devuelve **401** (el heatmap del addon estaba expuesto sin
 auth), y la URL del panel es **relativa**, así que funciona igual por loopback
@@ -940,7 +940,7 @@ cambia, se cambia aquí y en el sitio que dice la columna "dónde".
 
 | Parámetro | Valor | Dónde |
 |---|---|---|
-| `scrape_interval` | 10 s | `/opt/observabilidad/prometheus/prometheus.yml` |
+| `scrape_interval` | 10 s | `observabilidad/prometheus/prometheus.yml` |
 | Retención TSDB | 15 d / 2 GB | flags del contenedor `prometheus` |
 | `analitica-deepfrigate` | refresh 10 s, rango `now-1h` | dashboard provisionado |
 | `pulc-atributos` | refresh 1 m, rango `now-6h` | SQL, no necesita 10 s |

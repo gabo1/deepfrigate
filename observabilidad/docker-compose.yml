@@ -3,6 +3,10 @@
 # El despliegue vivo del lab corre desde /opt/observabilidad con las mismas
 # rutas. Este directorio es la FUENTE DE VERDAD; ver README.md para pasar el
 # despliegue a leer de aquí y dejar de mantener dos copias.
+# Mismo nombre de proyecto que el despliegue original de /opt: conserva los
+# volúmenes observabilidad_prom_data y observabilidad_graf_data (histórico TSDB).
+name: observabilidad
+
 services:
   prometheus:
     container_name: prometheus

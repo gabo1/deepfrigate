@@ -41,23 +41,16 @@ Grafana recoge los cambios de `grafana/dashboards/` solo, en ~10 s. Prometheus
 `prometheus.yml` necesita `docker restart prometheus`. El TSDB está en un
 volumen, no se pierde histórico.
 
-## ⚠️ Hoy corren dos copias
+## Despliegue: este directorio, desde el 8 sep 2026
 
-El despliegue vivo del lab arrancó desde `/opt/observabilidad`, con la misma
-estructura. **Este directorio es la fuente de verdad, pero el que corre es el
-de `/opt`**, así que van a divergir si alguien edita solo uno.
+Grafana y Prometheus corren desde aquí (`docker compose up -d` en
+`observabilidad/`). El compose lleva `name: observabilidad`, el mismo nombre
+de proyecto que tenía el despliegue original de `/opt/observabilidad`, así que
+los volúmenes `observabilidad_prom_data` (TSDB con el histórico Savant) y
+`observabilidad_graf_data` se reutilizaron sin migrar nada. La copia vieja
+quedó parada en `/opt/observabilidad.migrated-20260908` y se puede borrar.
 
-Para pasar el despliegue a leer de aquí:
-
-```bash
-cd /home/agent/deepfrigate/observabilidad
-cp /opt/observabilidad/grafana/gf_pw grafana/gf_pw
-cp .env.example .env      # y poner GRAFANA_RO_PASSWORD
-docker compose -f /opt/observabilidad/docker-compose.yml down
-docker compose up -d
-```
-
-Los volúmenes `prom_data` y `graf_data` **cambian de nombre de proyecto** al
-mover el compose (`observabilidad_*` → `deepfrigate_*` o el que corresponda),
-así que el histórico del TSDB no viaja solo. Si importa conservarlo, declarar
-los volúmenes como `external` apuntando a los actuales antes de levantar.
+Cambios de dashboard: editar el JSON aquí (o con `build_*.py`), commit;
+Grafana lo recoge solo. Prometheus: `docker restart prometheus` tras tocar
+`prometheus.yml`. Secretos locales (no versionados): `.env` con
+`GRAFANA_RO_PASSWORD` y `grafana/gf_pw` (propietario uid 472, modo 400).
