@@ -1084,6 +1084,20 @@ def get_similar_frigate_events(
             """,
             (frigate_event_id,),
         ).fetchone()
+        object_links = (
+            connection.execute(
+                """
+                SELECT object_id, frigate_event_id,
+                       extract(epoch FROM started_at) AS started_at,
+                       extract(epoch FROM ended_at) AS ended_at
+                FROM frigate_event_links
+                WHERE object_id = %s AND frigate_event_id IS NOT NULL
+                """,
+                (str(source_link["object_id"]),),
+            ).fetchall()
+            if source_link is not None
+            else []
+        )
     if source_link is None:
         raise HTTPException(
             status_code=404, detail="not a DeepFrigate tracked object"
@@ -1091,14 +1105,13 @@ def get_similar_frigate_events(
 
     object_id = str(source_link["object_id"])
     source_points = load_embedding_points(object_id, with_vector=True)
-    if not source_points:
+    # NvTracker reuses numeric ids and Qdrant keeps one point per
+    # object_id+frame_ref, so the stored vector is the latest occupant's. Use
+    # it only when its frame belongs to this very event; otherwise there is no
+    # vector for this object any more and guessing would show a stranger.
+    source = pick_point_for_event(source_points, object_links, frigate_event_id)
+    if source is None:
         return []
-    source = max(
-        source_points,
-        key=lambda point: float(
-            point.get("payload", {}).get("frame_timestamp", 0)
-        ),
-    )
     current_objects = current_frigate_object_ids(exclude=object_id)
     if not current_objects:
         return []
@@ -1138,15 +1151,100 @@ def get_similar_frigate_events(
     return hydrated[:limit]
 
 
+def link_for_frame(
+    links: list[dict[str, Any]], frame_timestamp: float
+) -> dict[str, Any] | None:
+    """The Frigate event a frame of this object_id belongs to.
+
+    A frame is always captured after its track started and before the next
+    occupant of the same NvTracker id starts, so the owner is the link with the
+    latest `started_at` not after the frame. `ended_at` is not used: the
+    Explore thumbnail is embedded ~5-7 s (up to 25 s) after Frigate's end_time,
+    always before any later track with the same id begins. A frame stamp of 0
+    (legacy point) resolves to the newest link.
+    """
+    chosen = None
+    for link in links:
+        started = link.get("started_at")
+        if started is None:
+            continue
+        if frame_timestamp and float(started) > frame_timestamp:
+            continue
+        if chosen is None or float(started) > float(chosen["started_at"]):
+            chosen = link
+    return chosen
+
+
+def pick_point_for_event(
+    points: list[dict[str, Any]],
+    links: list[dict[str, Any]],
+    frigate_event_id: str,
+) -> dict[str, Any] | None:
+    """Newest embedding point of the object if it belongs to this event."""
+    if not points:
+        return None
+
+    def stamp(point: dict[str, Any]) -> float:
+        return float(point.get("payload", {}).get("frame_timestamp", 0) or 0)
+
+    newest = max(points, key=stamp)
+    owner = link_for_frame(links, stamp(newest))
+    if owner is None:
+        return newest if len(links) <= 1 else None
+    return newest if str(owner["frigate_event_id"]) == str(frigate_event_id) else None
+
+
+def match_candidates_to_events(
+    candidates: list[dict[str, Any]],
+    links: list[dict[str, Any]],
+) -> list[tuple[str, str, float]]:
+    """Resolve each similar embedding to exactly one Frigate event.
+
+    `links` rows: object_id, frigate_event_id, started_at (epoch). Each
+    candidate maps to the event of its object_id whose track was running when
+    its frame was taken (`link_for_frame`). Candidates without any link are
+    dropped. Returns (event_id, object_id, score) in candidate order, one row
+    per event (best score kept).
+    """
+    by_object: dict[str, list[dict[str, Any]]] = {}
+    for link in links:
+        by_object.setdefault(str(link["object_id"]), []).append(link)
+    out: list[tuple[str, str, float]] = []
+    seen: dict[str, int] = {}
+    for candidate in candidates:
+        object_id = str(candidate.get("object_id") or "")
+        if not object_id or not candidate.get("has_events"):
+            continue
+        try:
+            stamp = float(candidate.get("frame_timestamp") or 0)
+        except (TypeError, ValueError):
+            stamp = 0.0
+        score = max(-1.0, min(1.0, float(candidate.get("score") or 0)))
+        chosen = link_for_frame(by_object.get(object_id, []), stamp)
+        if chosen is None:
+            continue
+        event_id = str(chosen["frigate_event_id"])
+        if event_id in seen:
+            index = seen[event_id]
+            if score > out[index][2]:
+                out[index] = (event_id, object_id, score)
+            continue
+        seen[event_id] = len(out)
+        out.append((event_id, object_id, score))
+    return out
+
+
 def hydrate_similar_frigate_events(
     candidates: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    scores = {
-        str(candidate["object_id"]): float(candidate["score"])
-        for candidate in candidates
-        if candidate.get("object_id") and candidate.get("has_events")
-    }
-    if not scores:
+    object_ids = sorted(
+        {
+            str(candidate["object_id"])
+            for candidate in candidates
+            if candidate.get("object_id") and candidate.get("has_events")
+        }
+    )
+    if not object_ids:
         return []
 
     with psycopg.connect(
@@ -1154,18 +1252,19 @@ def hydrate_similar_frigate_events(
     ) as connection:
         links = connection.execute(
             """
-            SELECT object_id, frigate_event_id
+            SELECT object_id, frigate_event_id,
+                   extract(epoch FROM started_at) AS started_at,
+                   extract(epoch FROM ended_at) AS ended_at
             FROM frigate_event_links
             WHERE object_id = ANY(%s)
               AND frigate_event_id IS NOT NULL
             ORDER BY object_id, started_at DESC
             """,
-            (list(scores),),
+            (object_ids,),
         ).fetchall()
-    event_to_object = {
-        str(link["frigate_event_id"]): str(link["object_id"])
-        for link in links
-    }
+    matched = match_candidates_to_events(candidates, links)
+    event_to_object = {event_id: object_id for event_id, object_id, _ in matched}
+    scores = {event_id: score for event_id, _, score in matched}
     if not event_to_object:
         return []
 
@@ -1185,7 +1284,7 @@ def hydrate_similar_frigate_events(
         object_id = event_to_object.get(event_id)
         if object_id is None:
             continue
-        score = max(-1.0, min(1.0, scores[object_id]))
+        score = scores[event_id]
         data = dict(event.get("data") or {})
         event_score = float(
             event.get("score") or data.get("score") or 0
@@ -1221,10 +1320,8 @@ def hydrate_similar_frigate_events(
                 "deepfrigate_similarity": score,
             }
         )
-    score_order = {object_id: index for index, object_id in enumerate(scores)}
+    score_order = {event_id: index for index, event_id in enumerate(scores)}
     return sorted(
         hydrated,
-        key=lambda event: score_order.get(
-            str(event["deepfrigate_object_id"]), len(scores)
-        ),
+        key=lambda event: score_order.get(str(event["id"]), len(scores)),
     )
