@@ -1,0 +1,92 @@
+/* Obsidiana Táctica — utilidades globales. Colores solo vía tokens de
+ * themes/theme-default.css. Este archivo se importa al inicio de src/index.css
+ * (patch_web.mjs). */
+
+/* Etiquetas de sección: 10px, 500, mayúsculas, tracking 0.16em, color lo. */
+.df-label {
+  font-size: 10px;
+  line-height: 1.2;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--df-lo);
+}
+
+/* Separación por hairline, nunca por sombra. */
+.df-hairline {
+  border: 1px solid var(--df-line1);
+}
+.df-hairline-strong {
+  border: 1px solid var(--df-line2);
+}
+
+/* Superficies por luminancia. */
+.df-bg0 { background-color: var(--df-bg0); }
+.df-bg1 { background-color: var(--df-bg1); }
+.df-bg2 { background-color: var(--df-bg2); }
+.df-bg3 { background-color: var(--df-bg3); }
+
+/* Semánticos: solo bordes y badges. */
+.df-edge-crit { border-color: var(--df-crit); }
+.df-edge-warn { border-color: var(--df-warn); }
+.df-edge-ok { border-color: var(--df-ok); }
+.df-edge-info { border-color: var(--df-info); }
+.df-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border: 1px solid var(--df-line2);
+  border-radius: var(--df-radius-sm);
+  font-size: 10px;
+  line-height: 1.2;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--df-mid);
+  background: var(--df-bg2);
+}
+.df-badge-crit { border-color: var(--df-crit); color: var(--df-crit); }
+.df-badge-warn { border-color: var(--df-warn); color: var(--df-warn); }
+.df-badge-ok { border-color: var(--df-ok); color: var(--df-ok); }
+.df-badge-info { border-color: var(--df-info); color: var(--df-info); }
+
+/* Punto "en vivo": único elemento animado permanente. */
+.df-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--df-ok);
+  animation: df-live var(--df-dur-live-dot) var(--df-ease-inst) infinite;
+}
+@keyframes df-live {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* Skeleton sin brillo: solo alterna dos fondos. */
+.df-skeleton {
+  background: var(--df-bg2);
+  animation: df-skeleton var(--df-dur-skeleton) var(--df-ease-inst) infinite;
+}
+@keyframes df-skeleton {
+  0%, 100% { background-color: var(--df-bg2); }
+  50% { background-color: var(--df-bg3); }
+}
+
+/* El vídeo siempre sobre negro puro. */
+video,
+.df-video {
+  background-color: var(--df-video);
+}
+
+/* Foco visible con el acento, sin glow. */
+:focus-visible {
+  outline: 1px solid var(--df-accent);
+  outline-offset: 1px;
+}
+
+/* Scrollbar en hairline. */
+* {
+  scrollbar-color: var(--df-line2) transparent;
+}

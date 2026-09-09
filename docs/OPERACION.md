@@ -666,6 +666,65 @@ rules:
 - Apagar todo: `RULES_ENABLED=false`. Pendiente: editor en Settings →
   DeepFrigate y métricas Prometheus por regla.
 
+## 6e. Tema "Obsidiana Táctica" en la UI de Frigate (9 sep)
+
+Sistema de diseño de la UI (`:3005`): fondos por luminancia (`bg0 < bg1 <
+bg2 < bg3`), separación por hairline (`line1..3`), **un solo acento**
+`#3867FC` (< 5 % de pantalla), semánticos `crit/warn/ok/info` solo en bordes
+y badges. Sin glow, sin gradientes, sin texturas. Fuentes Archivo (UI) y
+Geist Mono (mono), empaquetadas (fontsource), sin red.
+
+**Fuente única de color**: `services/frigate/web/themes/theme-default.css`
+(gabo1/deepfrigate). En el build sustituye al `theme-default.css` upstream,
+así el esquema "default" de Frigate *es* Obsidiana; los otros esquemas
+(`theme-blue`, …) siguen intactos. Nunca hex en componentes; la única
+excepción es `services/frigate/web/useChartColors.ts` (ApexCharts escribe
+atributos SVG donde `var()` no vale).
+
+| Pieza | Archivo | Cómo entra |
+|---|---|---|
+| Tokens `--df-*` (hex) + variables shadcn/Frigate (HSL) para `:root` y `.dark` | `services/frigate/web/themes/theme-default.css` | `COPY` sobre `themes/theme-default.css` |
+| Utilidades `.df-label`, `.df-badge[-crit…]`, `.df-hairline`, `.df-live-dot`, `.df-skeleton`, foco, scrollbar | `services/frigate/web/obsidiana.css` | `@import` al inicio de `src/index.css` (patch_web.mjs) |
+| Fuentes | `@fontsource-variable/archivo`, `@fontsource-variable/geist-mono` 5.3.0 | `npm install --no-save` en `Dockerfile.web-onto-local` |
+| Tailwind: `fontFamily`, `fontSize` (2xs 10 / xs 11 / sm 12.5 / base 14 / lg 18 / display 28), `borderRadius` (2/4 px, `full` se conserva), `boxShadow` (hairline u `overlay`), `danger/success/unsaved` → tokens | `tailwind.config.cjs` upstream | parches en `patch_web.mjs` |
+| Gráficas (System): ejes, series, umbrales, barras | `src/components/graph/*.tsx` upstream | parches en `patch_web.mjs` → `useChartColors()` |
+| Canvas Workflow | `DeepFrigateWorkflowCanvas.tsx` | `var(--df-*)`; MiniMap lee el token computado (`token()`) |
+
+Mapeo principal (dark): `background=bg0`, `background-alt=bg1`, `card/popover/
+secondary/muted=bg2`, `accent/secondary-highlight=bg3`, `border=line1`,
+`input=line2`, `primary/foreground=hi`, `primary-variant=mid`,
+`secondary-/muted-foreground=lo`, `selected/ring=accent`,
+`destructive/severity_alert=crit`, `severity_detection=warn`,
+`severity_significant_motion/audio_review=info`, `motion_review=line3`.
+`warning` (badge) = warn al 18 % sobre bg2 con texto warn.
+
+Decisiones: los `bg-gradient-to-*` upstream se conservan porque son scrims
+sobre vídeo (legibilidad de texto sobre miniaturas), no superficies de UI.
+`rounded-full` se conserva para puntos, avatares y toggles.
+
+Rehornear: Receta A completa (`frigate-pg/docs/RECREAR-IMAGEN-3005.md` §5):
+
+```bash
+cd /home/agent/deepfrigate
+docker build -f services/frigate/Dockerfile.web-onto-local -t deepfrigate-frigate:local-vite-src .
+cd frigate-pg
+docker build -f Dockerfile.postgres-smoke --build-arg BASE_IMAGE=deepfrigate-frigate:local-vite-src \
+  --build-arg APPLY_EXPLORE_MINIFY_PATCH=0 -t deepfrigate-frigate-pg:pgvector-smoke-vite-src .
+docker tag deepfrigate-frigate-pg:pgvector-smoke deepfrigate-frigate-pg:pgvector-smoke-pre-obsidiana   # rollback
+docker tag deepfrigate-frigate-pg:pgvector-smoke-vite-src deepfrigate-frigate-pg:pgvector-smoke
+docker compose -f docker-compose.pgvector-smoke.yml up -d --no-build frigate-pgvector-smoke
+```
+
+Verificar: `docker run --rm --entrypoint sh deepfrigate-frigate:local-vite-src -c
+'grep -l "Archivo Variable" /opt/frigate/web/assets/*.css'` y captura con
+`zenika/alpine-chrome` contra el puerto interno 5000 (sin auth):
+`docker run --rm --network container:frigate-pgvector-smoke -v $PWD:/out
+zenika/alpine-chrome --headless --no-sandbox --force-dark-mode --hide-scrollbars
+--window-size=1440,900 --screenshot=/out/ui.png http://127.0.0.1:5000/`.
+
+Volver atrás: `docker tag …:pgvector-smoke-pre-obsidiana …:pgvector-smoke` y
+`up -d --no-build`.
+
 ## 7. Variables que importan
 
 | Variable | Servicio | Default | Qué hace |

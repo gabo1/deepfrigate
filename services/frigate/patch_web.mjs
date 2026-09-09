@@ -12,6 +12,16 @@ function replaceOnce(path, oldValue, newValue) {
   writeFileSync(path, text.replace(oldValue, newValue));
 }
 
+
+function replaceAll(path, oldValue, newValue) {
+  const text = readFileSync(path, "utf8");
+  if (!text.includes(oldValue)) {
+    if (text.includes(newValue)) return;
+    throw new Error(`Unsupported upstream layout in ${path}`);
+  }
+  writeFileSync(path, text.split(oldValue).join(newValue));
+}
+
 replaceOnce(
   `${root}/App.tsx`,
   'const Events = lazy(() => import("@/pages/Events"));\n',
@@ -439,3 +449,145 @@ for (const [locale, groupLabel, itemLabel, workflowLabel] of [
   translations.menu.deepFrigateWorkflow = workflowLabel;
   writeFileSync(path, `${JSON.stringify(translations, null, 2)}\n`);
 }
+
+// ---------------------------------------------------------------------------
+// Obsidiana Táctica (design system). Tokens: themes/theme-default.css (copied
+// over upstream's), utilities: src/obsidiana.css, chart colors:
+// src/lib/hooks/useChartColors.ts. Fonts: Archivo + Geist Mono (fontsource,
+// bundled, offline).
+// ---------------------------------------------------------------------------
+replaceOnce(
+  `${root}/index.css`,
+  '@import "/themes/tailwind-base.css";\n',
+  '@import "@fontsource-variable/archivo";\n' +
+    '@import "@fontsource-variable/geist-mono";\n' +
+    '@import "./obsidiana.css";\n' +
+    '@import "/themes/tailwind-base.css";\n',
+);
+
+const tailwind = `${webRoot}/tailwind.config.cjs`;
+replaceOnce(
+  tailwind,
+  `    fontFamily: {
+      sans: ['"Inter"', "sans-serif"],
+      mono: [
+        "ui-monospace",
+        "SFMono-Regular",
+        "Menlo",
+        "Monaco",
+        "Consolas",
+        '"Liberation Mono"',
+        '"Courier New"',
+        "monospace",
+      ],
+    },
+`,
+  `    fontFamily: {
+      sans: ['"Archivo Variable"', "Archivo", "system-ui", "sans-serif"],
+      mono: ['"Geist Mono Variable"', '"Geist Mono"', "ui-monospace", "monospace"],
+    },
+    // Obsidiana: radios 2/4 px (full se conserva para puntos y avatares).
+    borderRadius: {
+      none: "0px",
+      sm: "2px",
+      DEFAULT: "2px",
+      md: "4px",
+      lg: "4px",
+      xl: "4px",
+      "2xl": "4px",
+      "3xl": "4px",
+      full: "9999px",
+    },
+    // Obsidiana: sin glow. Elevación baja = hairline; overlays = una sombra.
+    boxShadow: {
+      none: "none",
+      sm: "0 0 0 1px hsl(var(--border))",
+      DEFAULT: "0 0 0 1px hsl(var(--border))",
+      md: "0 0 0 1px hsl(var(--border))",
+      lg: "var(--df-shadow-overlay)",
+      xl: "var(--df-shadow-overlay)",
+      "2xl": "var(--df-shadow-overlay)",
+      inner: "none",
+      overlay: "var(--df-shadow-overlay)",
+      "search-console": "var(--df-shadow-search-console)",
+    },
+`,
+);
+replaceOnce(
+  tailwind,
+  `    extend: {
+      animation: {
+`,
+  `    extend: {
+      fontSize: {
+        "2xs": ["10px", { lineHeight: "1.2" }],
+        xs: ["11px", { lineHeight: "1.35" }],
+        sm: ["12.5px", { lineHeight: "1.4" }],
+        base: ["14px", { lineHeight: "1.45" }],
+        lg: ["18px", { lineHeight: "1.3" }],
+        display: ["28px", { lineHeight: "1" }],
+      },
+      transitionTimingFunction: {
+        inst: "var(--df-ease-inst)",
+      },
+      animation: {
+`,
+);
+replaceOnce(
+  tailwind,
+  `        danger: "#ef4444",
+        success: "#22c55e",
+        unsaved: "#f59e0b",
+`,
+  `        danger: "hsl(var(--crit))",
+        success: "hsl(var(--ok))",
+        unsaved: "hsl(var(--warn))",
+`,
+);
+
+// Charts: hex only inside useChartColors (SVG attributes).
+const graphs = `${root}/components/graph`;
+const hookImport = 'import { useChartColors } from "@/lib/hooks/useChartColors";\n';
+const useThemeLine = "  const { theme, systemTheme } = useTheme();\n";
+const withColors = useThemeLine + "  const chartColors = useChartColors();\n";
+
+replaceOnce(
+  `${graphs}/LineGraph.tsx`,
+  'const GRAPH_COLORS = ["#5C7CFA", "#ED5CFA", "#FAD75C"];\n',
+  hookImport,
+);
+replaceAll(`${graphs}/LineGraph.tsx`, useThemeLine, withColors);
+replaceAll(`${graphs}/LineGraph.tsx`, "      colors: GRAPH_COLORS,\n", "      colors: chartColors.series,\n");
+replaceAll(`${graphs}/LineGraph.tsx`, "GRAPH_COLORS[labelIdx]", "chartColors.series[labelIdx]");
+replaceAll(`${graphs}/LineGraph.tsx`, '            colors: "#6B6B6B",\n', "            colors: chartColors.axis,\n");
+
+replaceOnce(
+  `${graphs}/SystemGraph.tsx`,
+  'import { useTheme } from "@/context/theme-provider";\n',
+  'import { useTheme } from "@/context/theme-provider";\n' + hookImport,
+);
+replaceAll(`${graphs}/SystemGraph.tsx`, useThemeLine, withColors);
+replaceOnce(`${graphs}/SystemGraph.tsx`, '            return "#FA5252";\n', "            return chartColors.crit;\n");
+replaceOnce(`${graphs}/SystemGraph.tsx`, '            return "#FF9966";\n', "            return chartColors.warn;\n");
+replaceOnce(`${graphs}/SystemGraph.tsx`, '            return "#217930";\n', "            return chartColors.ok;\n");
+replaceAll(`${graphs}/SystemGraph.tsx`, '            colors: "#6B6B6B",\n', "            colors: chartColors.axis,\n");
+
+for (const file of ["StorageGraph.tsx", "CombinedStorageGraph.tsx"]) {
+  replaceOnce(
+    `${graphs}/${file}`,
+    'import { useTheme } from "@/context/theme-provider";\n',
+    'import { useTheme } from "@/context/theme-provider";\n' + hookImport,
+  );
+  replaceAll(`${graphs}/${file}`, useThemeLine, withColors);
+  replaceAll(
+    `${graphs}/${file}`,
+    '(systemTheme || theme) == "dark" ? "#404040" : "#E5E5E5"',
+    "chartColors.edge",
+  );
+}
+// Only the combined graph has the "Other" slice.
+replaceAll(
+  `${graphs}/CombinedStorageGraph.tsx`,
+  '(systemTheme || theme) == "dark" ? "#606060" : "#D5D5D5"',
+  "chartColors.bar",
+);

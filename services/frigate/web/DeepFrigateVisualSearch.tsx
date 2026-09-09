@@ -117,7 +117,7 @@ export default function DeepFrigateVisualSearch() {
       {isLoading && <ActivityIndicator className="m-8" />}
 
       {results && !results.threshold_validated && (
-        <p className="mb-3 text-xs text-amber-500">
+        <p className="mb-3 text-xs text-unsaved">
           Los porcentajes expresan similitud visual; todavía no representan una
           identidad confirmada.
         </p>

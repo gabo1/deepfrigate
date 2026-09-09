@@ -1,0 +1,175 @@
+/* Obsidiana Táctica — tema `theme-default` de DeepFrigate.
+ * Fuente única de color. Fondos por luminancia (bg0 < bg1 < bg2 < bg3),
+ * separación por hairline (line1..3), un solo acento (#3867FC, < 5 % de la
+ * pantalla), semánticos crit/warn/ok/info solo en bordes y badges.
+ * Sin glow, sin gradientes, sin texturas.
+ * Generado desde services/frigate/web/themes/theme-default.css en
+ * gabo1/deepfrigate; sustituye al theme-default.css upstream en el build.
+ * Cambiar un color = cambiarlo aquí, nunca en componentes (excepción:
+ * src/lib/hooks/useChartColors.ts por atributos SVG de ApexCharts).
+ */
+@layer base {
+  :root {
+    /* Obsidiana Táctica: tokens crudos (hex) */
+    --df-bg0: #F1F3F6;
+    --df-bg1: #FFFFFF;
+    --df-bg2: #F5F6F8;
+    --df-bg3: #EBEDF1;
+    --df-line1: #E3E6EB;
+    --df-line2: #D2D7DE;
+    --df-line3: #B9C0C9;
+    --df-hi: #171B20;
+    --df-mid: #454D57;
+    --df-lo: #6E7683;
+    --df-faint: #9AA2AD;
+    --df-accent: #335EEB;
+    --df-accentHi: #3867FC;
+    --df-accentDeep: #2444B0;
+    --df-accentInk: #FFFFFF;
+    --df-crit: #D02B31;
+    --df-warn: #B0741A;
+    --df-ok: #1A8A5C;
+    --df-info: #2C6FB0;
+    --df-video: #000000;
+    --df-chart-grid: #E3E6EB;
+    --df-chart-axis: #6E7683;
+    --df-chart-tooltipBg: #FFFFFF;
+    --df-chart-tooltipBorder: #D2D7DE;
+    --df-chart-tooltipLabel: #454D57;
+    --df-chart-bar: #B9C0C9;
+    --df-chart-cursor: #EBEDF1;
+    --df-chart-dots: #D2D7DE;
+    --df-chart-edge: #D2D7DE;
+
+    /* shadcn / Frigate (HSL sin hsl() para hsl(var(--x) / alpha)) */
+    --background: 216.0 21.7% 95.5%;
+    --background-alt: 0.0 0.0% 100.0%;
+    --foreground: 213.3 16.4% 10.8%;
+    --card: 0.0 0.0% 100.0%;
+    --card-foreground: 213.3 16.4% 10.8%;
+    --popover: 0.0 0.0% 100.0%;
+    --popover-foreground: 213.3 16.4% 10.8%;
+    --primary: 213.3 16.4% 10.8%;
+    --primary-variant: 213.3 11.5% 30.6%;
+    --primary-foreground: 0.0 0.0% 100.0%;
+    --secondary: 220.0 17.6% 96.7%;
+    --secondary-foreground: 217.1 8.7% 47.3%;
+    --secondary-highlight: 220.0 17.6% 93.3%;
+    --neutral: 217.1 8.7% 47.3%;
+    --neutral_variant: 214.7 10.4% 64.1%;
+    --muted: 220.0 17.6% 96.7%;
+    --muted-foreground: 217.1 8.7% 47.3%;
+    --accent: 220.0 17.6% 93.3%;
+    --accent-foreground: 213.3 16.4% 10.8%;
+    --destructive: 357.8 65.7% 49.2%;
+    --destructive-foreground: 0.0 0.0% 100.0%;
+    --warning: 35.5 47.8% 91.0%;
+    --warning-foreground: 36.0 74.3% 39.6%;
+    --border: 217.5 16.7% 90.6%;
+    --input: 215.0 15.4% 84.7%;
+    --ring: 226.0 82.1% 56.1%;
+    --selected: 226.0 82.1% 56.1%;
+    --selected-foreground: 0.0 0.0% 100.0%;
+    --severity_alert: 357.8 65.7% 49.2%;
+    --severity_alert_dimmed: 357.8 64.3% 74.7%;
+    --severity_detection: 36.0 74.3% 39.6%;
+    --severity_detection_dimmed: 36.3 49.4% 69.8%;
+    --severity_significant_motion: 209.5 60.0% 43.1%;
+    --severity_significant_motion_dimmed: 210.0 45.8% 71.8%;
+    --motion_review: 213.8 12.9% 75.7%;
+    --motion_review_dimmed: 215.0 15.4% 84.7%;
+    --audio_review: 209.5 60.0% 43.1%;
+    --crit: 357.8 65.7% 49.2%;
+    --warn: 36.0 74.3% 39.6%;
+    --ok: 155.4 68.3% 32.2%;
+    --info: 209.5 60.0% 43.1%;
+
+    --df-radius-sm: 2px;
+    --df-radius-md: 4px;
+    --df-shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.5);
+    --df-shadow-search-console:
+      0 24px 60px -28px rgba(0, 0, 0, 0.8),
+      0 1px 0 rgba(233, 236, 239, 0.02) inset;
+    --df-ease-inst: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --df-dur-alarm-in: 150ms;
+    --df-dur-live-dot: 2s;
+    --df-dur-edge-pulse: 3s;
+    --df-dur-skeleton: 1.4s;
+  }
+
+  .dark {
+    /* Obsidiana Táctica: tokens crudos (hex) */
+    --df-bg0: #0A0B0D;
+    --df-bg1: #101216;
+    --df-bg2: #15181D;
+    --df-bg3: #1B2026;
+    --df-line1: #1F242B;
+    --df-line2: #2E353E;
+    --df-line3: #3D4650;
+    --df-hi: #E9ECEF;
+    --df-mid: #A4ACB7;
+    --df-lo: #696E79;
+    --df-faint: #474E57;
+    --df-accent: #3867FC;
+    --df-accentHi: #5C82FD;
+    --df-accentDeep: #2A4EC4;
+    --df-accentInk: #FFFFFF;
+    --df-crit: #E5484D;
+    --df-warn: #E2A33C;
+    --df-ok: #3FB57E;
+    --df-info: #5B9DD9;
+    --df-video: #000000;
+    --df-chart-grid: #1F242B;
+    --df-chart-axis: #697079;
+    --df-chart-tooltipBg: #15181D;
+    --df-chart-tooltipBorder: #2E353E;
+    --df-chart-tooltipLabel: #A4ACB7;
+    --df-chart-bar: #3D4650;
+    --df-chart-cursor: #1B2026;
+    --df-chart-dots: #1B2026;
+    --df-chart-edge: #1F242B;
+
+    /* shadcn / Frigate (HSL sin hsl() para hsl(var(--x) / alpha)) */
+    --background: 220.0 13.0% 4.5%;
+    --background-alt: 220.0 15.8% 7.5%;
+    --foreground: 210.0 15.8% 92.5%;
+    --card: 217.5 16.0% 9.8%;
+    --card-foreground: 210.0 15.8% 92.5%;
+    --popover: 217.5 16.0% 9.8%;
+    --popover-foreground: 210.0 15.8% 92.5%;
+    --primary: 210.0 15.8% 92.5%;
+    --primary-variant: 214.7 11.7% 68.0%;
+    --primary-foreground: 220.0 13.0% 4.5%;
+    --secondary: 217.5 16.0% 9.8%;
+    --secondary-foreground: 221.2 7.1% 44.3%;
+    --secondary-highlight: 212.7 16.9% 12.7%;
+    --neutral: 221.2 7.1% 44.3%;
+    --neutral_variant: 213.8 10.1% 31.0%;
+    --muted: 217.5 16.0% 9.8%;
+    --muted-foreground: 221.2 7.1% 44.3%;
+    --accent: 212.7 16.9% 12.7%;
+    --accent-foreground: 210.0 15.8% 92.5%;
+    --destructive: 358.1 75.1% 59.0%;
+    --destructive-foreground: 0.0 0.0% 100.0%;
+    --warning: 36.5 24.7% 18.2%;
+    --warning-foreground: 37.2 74.1% 56.1%;
+    --border: 215.0 16.2% 14.5%;
+    --input: 213.8 14.8% 21.2%;
+    --ring: 225.6 97.0% 60.4%;
+    --selected: 225.6 97.0% 60.4%;
+    --selected-foreground: 0.0 0.0% 100.0%;
+    --severity_alert: 358.1 75.1% 59.0%;
+    --severity_alert_dimmed: 357.7 48.1% 31.8%;
+    --severity_detection: 37.2 74.1% 56.1%;
+    --severity_detection_dimmed: 37.3 53.2% 30.2%;
+    --severity_significant_motion: 208.6 62.4% 60.4%;
+    --severity_significant_motion_dimmed: 208.6 39.4% 32.4%;
+    --motion_review: 211.6 13.5% 27.6%;
+    --motion_review_dimmed: 213.8 14.8% 21.2%;
+    --audio_review: 208.6 62.4% 60.4%;
+    --crit: 358.1 75.1% 59.0%;
+    --warn: 37.2 74.1% 56.1%;
+    --ok: 152.0 48.4% 47.8%;
+    --info: 208.6 62.4% 60.4%;
+  }
+}

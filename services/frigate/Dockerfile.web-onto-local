@@ -15,7 +15,8 @@ COPY frigate/web/patches ./patches
 RUN npm ci
 # DeepFrigate-only dependency (Workflow visual canvas). Installed here, not in
 # the upstream checkout's package.json, so frigate/ stays an untouched clone.
-RUN npm install --no-save --no-audit --no-fund @xyflow/react@12.11.6
+RUN npm install --no-save --no-audit --no-fund @xyflow/react@12.11.6 \
+    @fontsource-variable/archivo@5.3.0 @fontsource-variable/geist-mono@5.3.0
 COPY frigate/web/ ./
 COPY services/frigate/web/DeepFrigate.tsx ./src/pages/DeepFrigate.tsx
 COPY services/frigate/web/DeepFrigateModelsSettingsView.tsx ./src/views/settings/DeepFrigateModelsSettingsView.tsx
@@ -24,6 +25,10 @@ COPY services/frigate/web/DeepFrigateWorkflowCanvas.tsx ./src/views/settings/Dee
 COPY services/frigate/web/DeepFrigateVisualSearch.tsx ./src/views/search/DeepFrigateVisualSearch.tsx
 COPY services/frigate/web/DeepFrigatePersonAttributes.tsx ./src/components/overlay/detail/DeepFrigatePersonAttributes.tsx
 COPY services/frigate/web/DeepFrigateClothingColor.tsx ./src/components/overlay/detail/DeepFrigateClothingColor.tsx
+# Obsidiana Táctica: tokens (replace upstream theme-default), utilities, charts.
+COPY services/frigate/web/themes/theme-default.css ./themes/theme-default.css
+COPY services/frigate/web/obsidiana.css ./src/obsidiana.css
+COPY services/frigate/web/useChartColors.ts ./src/lib/hooks/useChartColors.ts
 COPY services/frigate/patch_web.mjs /tmp/patch_web.mjs
 RUN node /tmp/patch_web.mjs && npm run build
 

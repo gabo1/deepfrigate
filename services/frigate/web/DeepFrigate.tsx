@@ -288,7 +288,7 @@ export default function DeepFrigate() {
                   </div>
                 </div>
                 {similar && !similar.threshold_validated && (
-                  <p className="mb-3 text-xs text-amber-500">
+                  <p className="mb-3 text-xs text-unsaved">
                     Puntajes coseno sin umbral de identidad calibrado.
                   </p>
                 )}

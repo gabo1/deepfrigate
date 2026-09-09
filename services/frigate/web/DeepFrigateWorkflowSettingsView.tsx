@@ -273,7 +273,7 @@ export default function DeepFrigateWorkflowSettingsView(
         </div>
       </div>
 
-      <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
+      <div className="rounded border border-unsaved bg-warning p-3 text-sm">
         Guardar actualiza el contrato. Para aplicar el cambio al pipeline GPU es
         necesario reiniciar Video Engine.
       </div>

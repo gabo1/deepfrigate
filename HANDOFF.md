@@ -1,6 +1,6 @@
 # Handoff — DeepFrigate
 
-## Estado actual (8 sep 2026, ~17:00 UTC)
+## Estado actual (9 sep 2026)
 
 Resumen de lo vivo hoy; el detalle está en las entradas fechadas de abajo
 y en los runbooks. Lo que sigue en el bloque del 4 sep sigue siendo válido
@@ -38,6 +38,11 @@ salvo donde se indica.
   `transiciones`, `analitica` legado). Datasource único `frigate-smoke-pg`.
 - **Heatmap** con fondo de la escena DeepStream y overlay de zonas/líneas/
   direcciones desde Frigate.
+- **Tema "Obsidiana Táctica"** (9 sep) en la UI `:3005`: tokens en
+  `services/frigate/web/themes/theme-default.css` (sustituye al default
+  upstream), Archivo + Geist Mono empaquetadas, radios 2/4 px, sin glow,
+  gráficas vía `useChartColors.ts`. Rollback: tag
+  `pgvector-smoke-pre-obsidiana`. OPERACION §6e.
 - **Reglas declarativas** (8 sep, tarde): `config/rules/rules.yaml` →
   `rule_matched` en `events` + MQTT + `sub_label` en Frigate; recarga por
   mtime; cooldown por objeto/cámara; horarios locales. Activas:

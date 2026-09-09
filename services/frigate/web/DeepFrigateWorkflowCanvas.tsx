@@ -75,7 +75,7 @@ const FAMILY_NAMES: Record<string, string> = {
 
 function Dot({ state }: { state: "ok" | "off" | "warn" | "unknown" }) {
   const color =
-    state === "ok" ? "bg-emerald-400" : state === "warn" ? "bg-amber-400" : state === "off" ? "bg-slate-500" : "bg-slate-600";
+    state === "ok" ? "bg-success" : state === "warn" ? "bg-unsaved" : state === "off" ? "bg-neutral_variant" : "bg-secondary-highlight";
   return <span className={`inline-block size-2 rounded-full ${color}`} />;
 }
 
@@ -96,23 +96,23 @@ function Card({
 }) {
   return (
     <div
-      className={`w-[220px] rounded-lg border bg-[#0d1424] font-mono text-[11px] text-slate-200 shadow-lg shadow-black/40 ${dim ? "opacity-50" : ""}`}
+      className={`w-[220px] rounded border border-border bg-card font-mono text-[11px] text-primary ${dim ? "opacity-50" : ""}`}
       style={{ borderColor: `${accent}55`, borderLeft: `3px solid ${accent}` }}
     >
       {(handles === "both" || handles === "left") && (
-        <Handle className="!size-2 !border-0 !bg-slate-400" position={Position.Left} type="target" />
+        <Handle className="!size-2 !border-0 !bg-neutral" position={Position.Left} type="target" />
       )}
       <div className="flex items-center justify-between gap-2 px-3 pt-2">
-        <span className="text-[12px] font-semibold tracking-wide text-slate-100">{title}</span>
+        <span className="text-[12px] font-semibold tracking-wide text-primary">{title}</span>
         {tag && (
           <span className="rounded px-1.5 py-0.5 text-[9px] uppercase tracking-wider" style={{ background: `${accent}22`, color: accent }}>
             {tag}
           </span>
         )}
       </div>
-      <div className="px-3 pb-2.5 pt-1 text-slate-400">{children}</div>
+      <div className="px-3 pb-2.5 pt-1 text-primary-variant">{children}</div>
       {(handles === "both" || handles === "right") && (
-        <Handle className="!size-2 !border-0 !bg-slate-400" position={Position.Right} type="source" />
+        <Handle className="!size-2 !border-0 !bg-neutral" position={Position.Right} type="source" />
       )}
     </div>
   );
@@ -122,7 +122,7 @@ function Toggle({ on, disabled, onClick, label }: { on: boolean; disabled: boole
   return (
     <button
       aria-label={label}
-      className={`nodrag relative h-4 w-8 rounded-full transition ${on ? "bg-cyan-500" : "bg-slate-600"} ${disabled ? "cursor-not-allowed opacity-60" : ""}`}
+      className={`nodrag relative h-4 w-8 rounded-full transition ${on ? "bg-selected" : "bg-secondary-highlight"} ${disabled ? "cursor-not-allowed opacity-60" : ""}`}
       disabled={disabled}
       onClick={(event) => {
         event.stopPropagation();
@@ -135,11 +135,20 @@ function Toggle({ on, disabled, onClick, label }: { on: boolean; disabled: boole
   );
 }
 
-const CYAN = "#22d3ee";
-const AMBER = "#fbbf24";
-const VIOLET = "#a78bfa";
-const EMERALD = "#34d399";
-const ROSE = "#fb7185";
+// Obsidiana: colors come from the theme tokens (themes/theme-default.css).
+// CSS variables work in `style` objects; React Flow MiniMap writes SVG
+// attributes, so it reads the computed token instead (see `token`).
+const CYAN = "var(--df-accent)";
+const AMBER = "var(--df-warn)";
+const VIOLET = "var(--df-info)";
+const EMERALD = "var(--df-ok)";
+const ROSE = "var(--df-crit)";
+
+function token(name: string, fallback: string): string {
+  if (typeof document === "undefined") return fallback;
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return value || fallback;
+}
 
 // ------------------------------------------------------------------- nodes
 
@@ -168,7 +177,7 @@ function DeepStreamNode({ data }: NodeProps<Node<DeepStreamData>>) {
     <Card accent={EMERALD} tag="GPU T4" title="DeepStream">
       <div>nvmultiurisrcbin · mux 1280×720</div>
       <div>{data.enabled}/{data.cameras} cámaras en el batch</div>
-      <div className="mt-1 text-slate-500">{data.tracker.type} · NvDCF {data.tracker.width}×{data.tracker.height}</div>
+      <div className="mt-1 text-secondary-foreground">{data.tracker.type} · NvDCF {data.tracker.width}×{data.tracker.height}</div>
     </Card>
   );
 }
@@ -178,7 +187,7 @@ function DetectorNode({ data }: NodeProps<Node<DetectorData>>) {
   return (
     <Card accent={VIOLET} tag="Triton" title="Inferencia primaria">
       <select
-        className="nodrag mt-0.5 w-full rounded border border-slate-700 bg-[#111a2e] px-1.5 py-1 text-[11px] text-slate-100"
+        className="nodrag mt-0.5 w-full rounded border border-input bg-background_alt px-1.5 py-1 text-[11px] text-primary"
         disabled={data.actions.disabled}
         onChange={(event) => data.actions.setDetectorModel(event.target.value)}
         value={data.model}
@@ -202,7 +211,7 @@ function PlainNode({ data }: NodeProps<Node<PlainData>>) {
   return (
     <Card accent={data.accent} handles={data.handles} tag={data.tag} title={data.title}>
       {data.lines.map((line, i) => (
-        <div className={i === 0 ? "" : "text-slate-500"} key={i}>
+        <div className={i === 0 ? "" : "text-secondary-foreground"} key={i}>
           {i === 0 && data.state ? (
             <span className="mr-1.5 inline-flex align-middle">
               <Dot state={data.state} />
@@ -228,7 +237,7 @@ function EnrichmentNode({ data }: NodeProps<Node<EnrichmentData>>) {
         <Dot state={!enabled ? "off" : data.ready === undefined ? "unknown" : data.ready ? "ok" : "warn"} />
         <span>{data.enrichment.labels.join(" · ") || "sin labels"}{data.ready === false && enabled ? " · no cargado" : ""}</span>
       </div>
-      {data.note && <div className="mt-1 text-[10px] text-slate-500">{data.note}</div>}
+      {data.note && <div className="mt-1 text-[10px] text-secondary-foreground">{data.note}</div>}
     </Card>
   );
 }
@@ -307,7 +316,7 @@ export default function DeepFrigateWorkflowCanvas({ pipeline, options, status, a
       list.push({ id: `enr:${enrichment.model}:${index}`, type: "enrichment", position: pos(`enr:${enrichment.model}:${index}`, index), data: { enrichment, index, ready: status?.models?.[enrichment.model]?.ready, actions, note } });
     });
 
-    const main = { animated: true, style: { stroke: CYAN, strokeWidth: 1.6 }, labelStyle: { fill: "#94a3b8", fontSize: 10, fontFamily: "ui-monospace, monospace" }, labelBgStyle: { fill: "#0a0f1a", fillOpacity: 0.9 } };
+    const main = { animated: true, style: { stroke: CYAN, strokeWidth: 1.6 }, labelStyle: { fill: "var(--df-mid)", fontSize: 10, fontFamily: "var(--df-font-mono, ui-monospace, monospace)" }, labelBgStyle: { fill: "var(--df-bg1)", fillOpacity: 0.9 } };
     const side = { animated: false, style: { stroke: AMBER, strokeWidth: 1.2, strokeDasharray: "6 4" }, labelStyle: main.labelStyle, labelBgStyle: main.labelBgStyle };
     const edgeList: Edge[] = [];
     pipeline.cameras.forEach((camera) => {
@@ -367,17 +376,17 @@ export default function DeepFrigateWorkflowCanvas({ pipeline, options, status, a
   };
 
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-800 bg-[#0a0f1a]">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 px-3 py-2 font-mono text-[11px] text-slate-400">
+    <div className="overflow-hidden rounded border border-border bg-background">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2 font-mono text-[11px] text-primary-variant">
         <div>
-          <span className="font-semibold text-slate-200">{pipeline.name}</span>
+          <span className="font-semibold text-primary">{pipeline.name}</span>
           <span className="ml-2">cámaras → DeepStream → Triton → eventos · enriquecimiento</span>
         </div>
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1"><Dot state="ok" /> vivo</span>
           <span className="flex items-center gap-1"><Dot state="warn" /> sin señal</span>
           <span className="flex items-center gap-1"><Dot state="off" /> apagado</span>
-          <button className="rounded border border-slate-700 px-2 py-0.5 hover:bg-slate-800" onClick={resetLayout} type="button">
+          <button className="rounded border border-input px-2 py-0.5 hover:bg-accent" onClick={resetLayout} type="button">
             Reordenar
           </button>
         </div>
@@ -396,12 +405,12 @@ export default function DeepFrigateWorkflowCanvas({ pipeline, options, status, a
           onNodesChange={onNodesChange}
           proOptions={{ hideAttribution: true }}
         >
-          <Background color="#1e293b" gap={24} variant={BackgroundVariant.Dots} />
+          <Background color={token("--df-line1", "#1F242B")} gap={24} variant={BackgroundVariant.Dots} />
           <Controls showInteractive={false} />
-          <MiniMap maskColor="rgba(10,15,26,0.7)" nodeColor="#1e3a5f" pannable zoomable />
+          <MiniMap maskColor={token("--df-bg0", "#0A0B0D") + "B3"} nodeColor={token("--df-line3", "#3D4650")} pannable zoomable />
         </ReactFlow>
       </div>
-      <div className="border-t border-slate-800 px-3 py-2 font-mono text-[10px] text-slate-500">
+      <div className="border-t border-border px-3 py-2 font-mono text-[10px] text-secondary-foreground">
         Guardar aplica: cámaras on/off en caliente · modelo o tracker reinician video-engine (~30 s) · enriquecimientos on/off: declarativo hasta que ai-router lea el contrato.
       </div>
     </div>
