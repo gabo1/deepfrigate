@@ -31,6 +31,23 @@ qdrant_url = os.getenv("QDRANT_URL", "http://qdrant:6333").rstrip("/")
 qdrant_collection = os.getenv(
     "QDRANT_COLLECTION", "vehicle_embeddings"
 )
+# Per-label collection for "similar" searches. PP-ShiTu (the default
+# collection) embeds the whole Explore thumbnail and matches scenes; the
+# tracker ReID vector (ai-router `reid_embeddings`) matches people by
+# appearance. Objects without a point in the label collection (older events)
+# fall back to the default collection.
+similar_collections: dict[str, str] = {
+    key.strip(): value.strip()
+    for key, _, value in (
+        item.partition("=")
+        for item in os.getenv("SIMILAR_COLLECTIONS", "person=reid_embeddings").split(",")
+    )
+    if key.strip() and value.strip()
+}
+
+
+def collection_for_label(label: str | None) -> str:
+    return similar_collections.get(str(label or ""), qdrant_collection)
 frigate_api_url = os.getenv(
     "FRIGATE_API_URL", "http://frigate:5000/api"
 ).rstrip("/")
@@ -512,10 +529,10 @@ def get_event(event_id: UUID) -> dict[str, Any]:
 
 
 def qdrant_request(
-    path: str, payload: dict[str, Any]
+    path: str, payload: dict[str, Any], collection: str | None = None
 ) -> dict[str, Any]:
     request = Request(
-        f"{qdrant_url}/collections/{quote(qdrant_collection, safe='')}{path}",
+        f"{qdrant_url}/collections/{quote(collection or qdrant_collection, safe='')}{path}",
         data=json.dumps(payload).encode(),
         headers={"Content-Type": "application/json"},
         method="POST",
@@ -855,7 +872,7 @@ def unload_model(
 
 
 def load_embedding_points(
-    object_id: str, with_vector: bool = False
+    object_id: str, with_vector: bool = False, collection: str | None = None
 ) -> list[dict[str, Any]]:
     try:
         return qdrant_request(
@@ -873,6 +890,7 @@ def load_embedding_points(
                     ]
                 },
             },
+            collection=collection,
         )["result"]["points"]
     except (KeyError, TimeoutError, URLError, ValueError):
         return []
@@ -954,6 +972,7 @@ def search_qdrant_similar(
     offset: int = 0,
     min_score: float = 0,
     restrict_object_ids: list[str] | None = None,
+    collection: str | None = None,
 ) -> list[dict[str, Any]]:
     must: list[dict[str, Any]] = [
         {"key": "label", "match": {"value": label}},
@@ -984,6 +1003,7 @@ def search_qdrant_similar(
                 ],
             },
         },
+        collection=collection,
     )["result"]
 
 
@@ -1005,6 +1025,13 @@ def get_similar_objects(
             point.get("payload", {}).get("frame_timestamp", 0)
         ),
     )
+    collection = collection_for_label(source.get("payload", {}).get("label"))
+    if collection != qdrant_collection:
+        better = load_embedding_points(object_id, with_vector=True, collection=collection)
+        if better:
+            source = max(better, key=lambda point: float(point.get("payload", {}).get("frame_timestamp", 0)))
+        else:
+            collection = qdrant_collection
     source_payload = source.get("payload", {})
     try:
         candidates = search_qdrant_similar(
@@ -1014,6 +1041,7 @@ def get_similar_objects(
             limit=limit,
             offset=offset,
             min_score=min_score,
+            collection=collection,
         )
     except (KeyError, TimeoutError, URLError, ValueError) as error:
         raise HTTPException(
@@ -1112,6 +1140,18 @@ def get_similar_frigate_events(
     source = pick_point_for_event(source_points, object_links, frigate_event_id)
     if source is None:
         return []
+    # People: prefer the tracker ReID vector (appearance) over PP-ShiTu (scene).
+    collection = collection_for_label(source.get("payload", {}).get("label"))
+    if collection != qdrant_collection:
+        better = pick_point_for_event(
+            load_embedding_points(object_id, with_vector=True, collection=collection),
+            object_links,
+            frigate_event_id,
+        )
+        if better is not None:
+            source = better
+        else:
+            collection = qdrant_collection
     current_objects = current_frigate_object_ids(exclude=object_id)
     if not current_objects:
         return []
@@ -1124,6 +1164,7 @@ def get_similar_frigate_events(
             offset=offset,
             min_score=min_score,
             restrict_object_ids=current_objects,
+            collection=collection,
         )
     except (KeyError, TimeoutError, URLError, ValueError) as error:
         raise HTTPException(
@@ -1151,24 +1192,32 @@ def get_similar_frigate_events(
     return hydrated[:limit]
 
 
+# The Frigate link starts when the bridge creates the event, up to a few
+# seconds after the track's first frame (ReID vectors carry that first frame's
+# time). A frame this close before `started_at` still belongs to that track.
+LINK_START_GRACE_SECONDS = 5.0
+
+
 def link_for_frame(
-    links: list[dict[str, Any]], frame_timestamp: float
+    links: list[dict[str, Any]],
+    frame_timestamp: float,
+    grace: float = LINK_START_GRACE_SECONDS,
 ) -> dict[str, Any] | None:
     """The Frigate event a frame of this object_id belongs to.
 
-    A frame is always captured after its track started and before the next
-    occupant of the same NvTracker id starts, so the owner is the link with the
-    latest `started_at` not after the frame. `ended_at` is not used: the
-    Explore thumbnail is embedded ~5-7 s (up to 25 s) after Frigate's end_time,
-    always before any later track with the same id begins. A frame stamp of 0
-    (legacy point) resolves to the newest link.
+    A frame is captured while its track runs and before the next occupant of
+    the same NvTracker id starts, so the owner is the link with the latest
+    `started_at` not later than the frame plus `grace`. `ended_at` is not
+    used: the Explore thumbnail is embedded ~5-7 s (up to 25 s) after Frigate's
+    end_time, always before any later track with the same id begins. A frame
+    stamp of 0 (legacy point) resolves to the newest link.
     """
     chosen = None
     for link in links:
         started = link.get("started_at")
         if started is None:
             continue
-        if frame_timestamp and float(started) > frame_timestamp:
+        if frame_timestamp and float(started) > frame_timestamp + grace:
             continue
         if chosen is None or float(started) > float(chosen["started_at"]):
             chosen = link
@@ -1265,6 +1314,12 @@ def hydrate_similar_frigate_events(
     matched = match_candidates_to_events(candidates, links)
     event_to_object = {event_id: object_id for event_id, object_id, _ in matched}
     scores = {event_id: score for event_id, _, score in matched}
+    model_by_object = {
+        str(candidate.get("object_id")): candidate.get("model")
+        for candidate in candidates
+        if candidate.get("object_id")
+    }
+    models = {event_id: model_by_object.get(object_id) for event_id, object_id in event_to_object.items()}
     if not event_to_object:
         return []
 
@@ -1277,12 +1332,22 @@ def hydrate_similar_frigate_events(
     if not event_to_object:
         return []
 
+    label_by_object = {
+        str(candidate.get("object_id")): str(candidate.get("label") or "")
+        for candidate in candidates
+        if candidate.get("object_id")
+    }
     frigate_events = load_frigate_events(list(event_to_object))
     hydrated: list[dict[str, Any]] = []
     for event in frigate_events:
         event_id = str(event.get("id", ""))
         object_id = event_to_object.get(event_id)
         if object_id is None:
+            continue
+        # A track that never became a Frigate event can still resolve to the
+        # previous occupant of its id; a label mismatch gives that away.
+        wanted = label_by_object.get(object_id) or ""
+        if wanted and str(event.get("label") or "") != wanted:
             continue
         score = scores[event_id]
         data = dict(event.get("data") or {})
@@ -1318,6 +1383,7 @@ def hydrate_similar_frigate_events(
                 "data": data,
                 "deepfrigate_object_id": object_id,
                 "deepfrigate_similarity": score,
+                "deepfrigate_model": models.get(event_id),
             }
         )
     score_order = {event_id: index for index, event_id in enumerate(scores)}

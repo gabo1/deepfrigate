@@ -24,7 +24,8 @@ def test_frame_belongs_to_the_track_running_when_it_was_taken() -> None:
     assert link_for_frame(by, 1016.5)["frigate_event_id"] == "evt-morning-car"   # 6.5 s after end_time
     assert link_for_frame(by, 5027.0)["frigate_event_id"] == "evt-noon-taxi"     # 25 s after end_time
     assert link_for_frame(by, 9012.0)["frigate_event_id"] == "evt-night-person"
-    assert link_for_frame(by, 999.0) is None                                     # before any track
+    assert link_for_frame(by, 999.0)["frigate_event_id"] == "evt-morning-car"    # first frame 1 s before the link
+    assert link_for_frame(by, 990.0) is None                                     # too early for any track
     assert link_for_frame(by, 0)["frigate_event_id"] == "evt-night-person"       # legacy point: newest
 
 
@@ -53,3 +54,11 @@ def test_source_vector_is_used_only_when_it_belongs_to_the_requested_event() -> 
     assert pick_point_for_event([], by, "evt-night-person") is None
     # One link and a legacy point without stamp: still usable.
     assert pick_point_for_event([{"id": "q", "payload": {}}], by[:1], "evt-morning-car")["id"] == "q"
+
+
+def test_collection_per_label_defaults_to_pp_shitu() -> None:
+    from app import main
+
+    assert main.collection_for_label("person") == "reid_embeddings"
+    assert main.collection_for_label("car") == main.qdrant_collection
+    assert main.collection_for_label(None) == main.qdrant_collection

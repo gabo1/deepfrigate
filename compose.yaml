@@ -82,6 +82,8 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-deepfrigate}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@${POSTGRES_HOST:-pgvector-smoke-db}:5432/${POSTGRES_DB:-frigate_pgvector_smoke}
       QDRANT_URL: http://qdrant:6333
       QDRANT_COLLECTION: ${QDRANT_COLLECTION:-vehicle_embeddings}
+      # Similar search per label: people by tracker ReID, the rest by PP-ShiTu.
+      SIMILAR_COLLECTIONS: ${SIMILAR_COLLECTIONS:-person=reid_embeddings}
       FRIGATE_API_URL: ${FRIGATE_API_URL:-http://frigate-pgvector-smoke:5000/api}
       FRIGATE_EVENT_STORE_URL: ${FRIGATE_EVENT_STORE_URL:-postgresql://frigate_pgvector:${FRIGATE_PG_PASSWORD:-frigate_pgvector_smoke}@${POSTGRES_HOST:-pgvector-smoke-db}:5432/${POSTGRES_DB:-frigate_pgvector_smoke}}
       PIPELINE_CONFIG: /app/pipeline-config/pipeline.yaml

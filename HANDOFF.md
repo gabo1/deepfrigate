@@ -38,6 +38,9 @@ salvo donde se indica.
   `transiciones`, `analitica` legado). Datasource único `frigate-smoke-pg`.
 - **Heatmap** con fondo de la escena DeepStream y overlay de zonas/líneas/
   direcciones desde Frigate.
+- **Similares** (9 sep): personas por ReID del tracker, coches por PP-ShiTu
+  (`SIMILAR_COLLECTIONS`); corregida la hidratación con ids reciclados de
+  NvTracker (una persona devolvía coches del mismo id). OPERACION §6.
 - **Tema "Obsidiana Táctica"** (9 sep) en la UI `:3005`: tokens en
   `services/frigate/web/themes/theme-default.css` (sustituye al default
   upstream), Archivo + Geist Mono empaquetadas, radios 2/4 px, sin glow,
@@ -62,7 +65,9 @@ salvo donde se indica.
   de versionar en `tools/fakecam/`), checkout upstream `frigate/`
   (`a745070b`).
 
-Pendientes acordados: editor de reglas en Settings → DeepFrigate y métricas
+Pendientes acordados: guardar el punto de Qdrant por instancia de track
+(`object_id` + `started_at`) para que los eventos viejos con id reciclado
+conserven "similares"; editor de reglas en Settings → DeepFrigate y métricas
 por regla; ai-router lea `enrichments[].enabled` (patrón zonas);
 espejo de `cameras[].enabled` a Frigate para dejar de grabar; fase 3 editor
 visual de líneas/direcciones; filtro de edad de track en transiciones;

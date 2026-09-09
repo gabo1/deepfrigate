@@ -202,10 +202,13 @@ video-engine: mejor frame → {track}-thumb.webp (175 px) + manifest.json (bbox)
    └─ ai-router al END: lee ds-snapshots → Triton PP-ShiTu → Qdrant vehicle_embeddings
 ```
 
-Jina alimenta el buscador de texto de Explore; PP-ShiTu el aside de
-similitud visual (`platform-api /v1/frigate-events/{id}/similar`). Frigate
-no habla Triton: usa su propio onnxruntime con `CUDAExecutionProvider`.
-Ver `docs/OPERACION.md` §6.
+Jina alimenta el buscador de texto de Explore; el aside de similitud visual
+(`platform-api /v1/frigate-events/{id}/similar`) usa PP-ShiTu para coches y,
+desde el 9 sep, el vector ReID del tracker (`reid_embeddings`, §5b-bis) para
+personas: PP-ShiTu casa escenas, ReID casa apariencia. Frigate no habla
+Triton: usa su propio onnxruntime con `CUDAExecutionProvider`. Cada vector se
+resuelve al evento del track que corría cuando se tomó su frame (los ids de
+NvTracker se reciclan). Ver `docs/OPERACION.md` §6.
 
 ## 5b-bis. Transiciones entre cámaras
 

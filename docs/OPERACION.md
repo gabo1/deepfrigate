@@ -320,6 +320,26 @@ Cambiar de modelo Jina exige reindex (espacios distintos). El reindex del
 5 sep se detuvo al 45 % a petición: solo los eventos posteriores al
 5 sep 02:19 y los primeros ~13 900 tienen vector.
 
+**Similares por etiqueta (9 sep).** PP-ShiTu embebe la miniatura entera y
+casa escenas (banqueta verde, pared), no personas. Para `person` platform-api
+busca ahora en Qdrant `reid_embeddings` (vector ReID del tracker, §6b-bis) y
+cae a PP-ShiTu si el evento no tiene vector ReID (anteriores al 8 sep).
+`SIMILAR_COLLECTIONS=person=reid_embeddings` (vacío = todo PP-ShiTu). La
+respuesta trae `deepfrigate_model` (`reidentificationnet` o
+`vehicle-embedding`).
+
+**Ids reutilizados (bug corregido 9 sep).** NvTracker recicla los ids, así
+que `tienda-564` nombra varios tracks al día y Qdrant guarda **un** punto por
+`object_id`+`frame_ref` (el del último ocupante). Antes la hidratación traía
+todos los eventos ligados a ese id: una persona devolvía coches de la mañana,
+todos con la misma puntuación. Ahora cada vector se resuelve al link con el
+último `started_at` ≤ `frame_timestamp` + 5 s (`link_for_frame`), se descarta
+si la etiqueta del Event no coincide, y el vector fuente solo se usa si
+pertenece al evento pedido; si el id ya fue reutilizado, la búsqueda responde
+vacío en vez de buscar con el vector de otro objeto. Consecuencia: eventos
+viejos cuyo id ya se recicló no tienen "similares". Pendiente: guardar el
+punto por instancia de track (`object_id` + `started_at`) en ai-router.
+
 ---
 
 ## 6a. Zonas, líneas y direcciones desde Frigate (7 sep)
@@ -745,6 +765,7 @@ Volver atrás: `docker tag …:pgvector-smoke-pre-obsidiana …:pgvector-smoke` 
 | `DS_SNAPSHOT_RETENTION_HOURS` | video-engine | 24 | borrado de `ds-snapshots`; 0 desactiva |
 | `FRAME_REFRESH_SECONDS` | video-engine | 5 | olvida el mejor thumb si el id no escribe en 5 s (ids reciclados) |
 | `DS_SNAPSHOT_INTERVAL` / `DS_SNAPSHOT_CLEAN` | video-engine | 0.4 / false | mínimo entre escrituras de snapshot por track; escribir también `-clean.webp` (2× encode; hoy lo deriva event-engine) |
+| `SIMILAR_COLLECTIONS` | platform-api | `person=reid_embeddings` | colección Qdrant por etiqueta para "similares"; resto `QDRANT_COLLECTION` (§6) |
 | `RULES_ENABLED` / `RULES_CONFIG` / `RULES_RELOAD_SECONDS` / `RULES_TIMEZONE` | event-engine | true / `/app/config/rules/rules.yaml` / 2 / `America/Mexico_City` | reglas declarativas → `rule_matched` (§6d) |
 | `LOST_AFTER_SECONDS` / `END_AFTER_SECONDS` | adapter | 5 / 5 | gracia antes de LOST/END; Frigate cierra con `last_seen_at` |
 | `FRIGATE_BRIDGE_UPDATE_SECONDS` | event-engine | 1 | coalescing de UPDATE hacia Frigate |
