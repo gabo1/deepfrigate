@@ -47,6 +47,15 @@ communicate through the private Compose network.
 
 ## Frontend development
 
+The Frigate UI ships the "Obsidiana Táctica" design system: tokens in
+`services/frigate/web/themes/theme-default.css` (single source of color, hex
+`--df-*` plus the shadcn/Frigate HSL variables), utilities in `obsidiana.css`,
+Archivo + Geist Mono bundled from fontsource, and `useChartColors.ts` for
+ApexCharts (the only other place allowed to hold a hex). Everything is applied at
+image build time by `Dockerfile.web-onto-local` and `patch_web.mjs`; the upstream
+`frigate/` checkout stays untouched. Recipe and token mapping:
+`docs/OPERACION.md` §6e.
+
 The production Frigate image bakes a patched Vite build. For UI work, do **not**
 rebuild that image: keep Frigate running and start a hot-reload overlay that
 proxies `/api` to the authenticated UI.
@@ -181,6 +190,13 @@ shows lifecycle history, zones, and Qdrant embedding metadata. API calls use
 `/api/deepfrigate/*`, which nginx protects with the existing Frigate session;
 the Platform API remains bound to localhost and is not remotely reachable
 directly.
+
+Declarative rules (`config/rules/rules.yaml`) run on every normalized event and
+emit `rule_matched` events: filters on event type, camera, label, zone, line,
+direction, dwell, count, confidence and a local-time schedule, with per-object
+or per-camera cooldowns. A rule may also set the Frigate `sub_label`. The file
+hot-reloads on mtime; an invalid file is rejected and the previous rules stay.
+See `docs/OPERACION.md` §6d.
 
 Objects with an embedding expose a visual search action backed by Qdrant cosine
 nearest-neighbor search. `GET /v1/objects/{object_id}/similar` filters

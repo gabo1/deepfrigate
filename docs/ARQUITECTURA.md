@@ -167,6 +167,11 @@ solo aporta el tamaño de frame. Ver `docs/OPERACION.md` §6a.
 
 ---
 
+**Reglas (8 sep):** encima de los eventos normalizados, event-engine evalúa
+`config/rules/rules.yaml` (`app/rules.py`) y emite `rule_matched` con
+severidad, mensaje y contexto; horario local, cooldown por objeto/cámara y
+`sub_label` en Frigate. Recarga por mtime. Ver `docs/OPERACION.md` §6d.
+
 **Mapa vivo (8 sep):** Settings → DeepFrigate → Workflow visual dibuja este
 mismo camino con Archify a partir del contrato activo y las zonas de Frigate
 (`platform-api /v1/pipelines/diagram.html`). Ver `docs/OPERACION.md` §6a-bis.
@@ -229,6 +234,10 @@ esa colección (no PP-ShiTu) para desempatar y, cuando esté calibrado, para
 - `data/ds-snapshots` es área de trabajo con retención
   `DS_SNAPSHOT_RETENTION_HOURS=24`. Las fotos que ve Explore son copias en
   el volumen de Frigate, con su propia retención.
+- El exportador escribe como máximo una escena por track cada
+  `DS_SNAPSHOT_INTERVAL=0.4` s y ya no escribe el WebP "clean"
+  (`DS_SNAPSHOT_CLEAN=false`): event-engine lo deriva del jpg al instalar
+  en Frigate. Antes ese WebP era el 63 % del hilo Python (OPERACION §2).
 - La caja de cada evento sale del `manifest.json` del bundle copiado, no
   del MQTT (dos selectores de "mejor frame" desincronizados ~1.3 s).
 - LOST/END llegan 5 s tarde por diseño; Frigate cierra con
@@ -255,6 +264,8 @@ Runbook completo: `docs/OPERACION.md`.
 - Contratos MQTT y bundle: `contracts/README.md`
 - Cámara `user` (probe + enganche 3 sep): `docs/CAMARA-USER.md`
 - Analíticas: `docs/ANALITICAS-FUENTES.md`
+- Reglas: `config/rules/rules.yaml`, `services/event-engine/app/rules.py`
+- Tema UI (Obsidiana): `services/frigate/web/themes/theme-default.css`, `docs/OPERACION.md` §6e
 - Pipeline: `services/video-engine/config/pipeline.yaml`
 - Grafo: `services/video-engine/app/main.py`
 - PULC: `services/ai-router/app/attribute.py`
