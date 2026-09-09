@@ -591,3 +591,85 @@ replaceAll(
   '(systemTheme || theme) == "dark" ? "#606060" : "#D5D5D5"',
   "chartColors.bar",
 );
+
+// Controls: Obsidiana buttons are hairline-bounded surfaces, never flat
+// blocks. One accent (select / primary action), semantics only on borders.
+const ui = `${root}/components/ui`;
+replaceOnce(
+  `${ui}/button.tsx`,
+  '        default: "bg-secondary text-primary hover:bg-secondary/80",\n' +
+    '        select: "bg-selected text-selected-foreground hover:bg-opacity-90",\n' +
+    '        destructive: "bg-destructive text-white hover:bg-destructive/90",\n' +
+    '        outline:\n' +
+    '          "border border-input bg-background hover:bg-accent hover:text-accent-foreground",\n' +
+    '        secondary: "bg-primary text-primary-foreground hover:bg-primary/90",\n' +
+    '        ghost:\n' +
+    '          "text-muted-foreground hover:bg-accent hover:text-accent-foreground",\n',
+  '        default:\n' +
+    '          "border border-input bg-secondary text-primary hover:border-neutral_variant hover:bg-accent",\n' +
+    '        select:\n' +
+    '          "border border-selected bg-selected text-selected-foreground hover:bg-selected/90",\n' +
+    '        destructive:\n' +
+    '          "border border-destructive bg-transparent text-destructive hover:bg-destructive hover:text-white",\n' +
+    '        outline:\n' +
+    '          "border border-input bg-transparent text-primary hover:border-neutral_variant hover:bg-accent",\n' +
+    '        secondary:\n' +
+    '          "border border-selected bg-selected text-selected-foreground hover:bg-selected/90",\n' +
+    '        ghost:\n' +
+    '          "border border-transparent text-muted-foreground hover:bg-accent hover:text-accent-foreground",\n',
+);
+replaceOnce(
+  `${ui}/button.tsx`,
+  '"inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors',
+  '"inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium tracking-[0.01em] ring-offset-background transition-colors duration-150 ease-inst',
+);
+replaceOnce(
+  `${ui}/toggle.tsx`,
+  'data-[state=on]:bg-accent data-[state=on]:text-accent-foreground",',
+  'data-[state=on]:border-neutral_variant data-[state=on]:bg-accent data-[state=on]:text-accent-foreground",',
+);
+replaceOnce(
+  `${ui}/toggle.tsx`,
+  '        default: "bg-transparent",\n',
+  '        default: "border border-transparent bg-transparent",\n',
+);
+replaceOnce(
+  `${ui}/switch.tsx`,
+  'rounded-full bg-muted-foreground shadow-lg ring-0 transition-transform',
+  'rounded-full bg-muted-foreground shadow-none ring-0 transition-transform',
+);
+replaceOnce(
+  `${ui}/switch.tsx`,
+  'rounded-full border-2 border-transparent transition-colors',
+  'rounded-full border border-input transition-colors',
+);
+replaceOnce(
+  `${ui}/badge.tsx`,
+  '"inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors',
+  '"inline-flex items-center rounded-sm border px-2 py-0.5 text-xs font-medium tracking-[0.04em] transition-colors',
+);
+replaceOnce(
+  `${ui}/badge.tsx`,
+  '          "border-transparent bg-primary text-primary hover:bg-primary/80",',
+  '          "border-input bg-secondary text-primary hover:bg-accent",',
+);
+replaceOnce(
+  `${ui}/badge.tsx`,
+  '          "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80",',
+  '          "border-border bg-transparent text-secondary-foreground hover:bg-accent",',
+);
+replaceOnce(
+  `${ui}/badge.tsx`,
+  '          "border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80",',
+  '          "border-destructive bg-transparent text-destructive hover:bg-destructive/10",',
+);
+replaceOnce(
+  `${ui}/tabs.tsx`,
+  '"inline-flex h-10 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground",',
+  '"inline-flex h-10 items-center justify-center rounded-md border border-border bg-background_alt p-1 text-muted-foreground",',
+);
+replaceOnce(
+  `${ui}/tabs.tsx`,
+  'data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm",',
+  'data-[state=active]:bg-accent data-[state=active]:text-foreground data-[state=active]:shadow-none",',
+);

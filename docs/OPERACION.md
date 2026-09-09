@@ -698,6 +698,13 @@ secondary/muted=bg2`, `accent/secondary-highlight=bg3`, `border=line1`,
 `severity_significant_motion/audio_review=info`, `motion_review=line3`.
 `warning` (badge) = warn al 18 % sobre bg2 con texto warn.
 
+Controles (`patch_web.mjs`, 9 sep tarde): `Button` `default`/`outline` con
+borde `input` (hairline visible) y hover `accent`; `select` y `secondary`
+(acción primaria) son el único relleno de acento; `destructive` solo borde y
+texto crit, relleno al hover; `ghost` sin borde. `Toggle` activo con borde;
+`Switch` sin sombra en el pulgar; `Badge` rectangular 2 px con borde en vez de
+píldora rellena; `Tabs` con borde y activo en `accent` sin sombra.
+
 Decisiones: los `bg-gradient-to-*` upstream se conservan porque son scrims
 sobre vídeo (legibilidad de texto sobre miniaturas), no superficies de UI.
 `rounded-full` se conserva para puntos, avatares y toggles.
