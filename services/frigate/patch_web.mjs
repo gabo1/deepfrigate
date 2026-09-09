@@ -545,6 +545,18 @@ replaceOnce(
 `,
 );
 
+// Tailwind opacity modifiers (bg-selected/15, border-destructive/50) need
+// `<alpha-value>` in the color definition; upstream `hsl(var(--x))` ignores
+// them silently. Variables are space-separated HSL, so this is safe.
+{
+  const text = readFileSync(tailwind, "utf8");
+  const next = text.replace(/hsl\(var\((--[a-z_-]+)\)\)/g, "hsl(var($1) / <alpha-value>)");
+  if (next === text && !text.includes("<alpha-value>")) {
+    throw new Error(`Unsupported upstream layout in ${tailwind}`);
+  }
+  writeFileSync(tailwind, next);
+}
+
 // Charts: hex only inside useChartColors (SVG attributes).
 const graphs = `${root}/components/graph`;
 const hookImport = 'import { useChartColors } from "@/lib/hooks/useChartColors";\n';
@@ -608,13 +620,13 @@ replaceOnce(
   '        default:\n' +
     '          "border border-input bg-secondary text-primary hover:border-neutral_variant hover:bg-accent",\n' +
     '        select:\n' +
-    '          "border border-selected bg-selected text-selected-foreground hover:bg-selected/90",\n' +
+    '          "border border-selected/60 bg-selected/15 text-primary hover:bg-selected/25",\n' +
     '        destructive:\n' +
-    '          "border border-destructive bg-transparent text-destructive hover:bg-destructive hover:text-white",\n' +
+    '          "border border-destructive/50 bg-transparent text-destructive hover:border-destructive hover:bg-destructive/10",\n' +
     '        outline:\n' +
     '          "border border-input bg-transparent text-primary hover:border-neutral_variant hover:bg-accent",\n' +
     '        secondary:\n' +
-    '          "border border-selected bg-selected text-selected-foreground hover:bg-selected/90",\n' +
+    '          "border border-neutral_variant bg-accent text-primary hover:border-neutral hover:bg-secondary-highlight",\n' +
     '        ghost:\n' +
     '          "border border-transparent text-muted-foreground hover:bg-accent hover:text-accent-foreground",\n',
 );

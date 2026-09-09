@@ -699,9 +699,13 @@ secondary/muted=bg2`, `accent/secondary-highlight=bg3`, `border=line1`,
 `warning` (badge) = warn al 18 % sobre bg2 con texto warn.
 
 Controles (`patch_web.mjs`, 9 sep tarde): `Button` `default`/`outline` con
-borde `input` (hairline visible) y hover `accent`; `select` y `secondary`
-(acción primaria) son el único relleno de acento; `destructive` solo borde y
-texto crit, relleno al hover; `ghost` sin borde. `Toggle` activo con borde;
+borde `input` (hairline visible) y hover `accent`; `select` (estado
+seleccionado / acción destacada) es tinte de acento al 15 % con borde de
+acento al 60 %, nunca relleno sólido; `secondary` (acción primaria) es
+superficie `accent` con borde `neutral_variant`; `destructive` solo borde
+crit al 50 % y texto crit, tinte al hover; `ghost` sin borde. Para que los
+modificadores `/15`, `/50` funcionen, `patch_web.mjs` reescribe los colores
+de Tailwind a `hsl(var(--x) / <alpha-value>)`. `Toggle` activo con borde;
 `Switch` sin sombra en el pulgar; `Badge` rectangular 2 px con borde en vez de
 píldora rellena; `Tabs` con borde y activo en `accent` sin sombra.
 
