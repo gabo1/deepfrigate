@@ -685,3 +685,27 @@ replaceOnce(
   'data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm",',
   'data-[state=active]:bg-accent data-[state=active]:text-foreground data-[state=active]:shadow-none",',
 );
+
+// Compact controls: 32 px buttons/selects (upstream 40 px), 12.5 px text.
+replaceOnce(
+  `${ui}/button.tsx`,
+  `      size: {
+        default: "h-10 px-4 py-2",
+        xs: "size-6 rounded-md",
+        sm: "h-9 rounded-md px-3",
+        lg: "h-11 rounded-md px-8",
+        icon: "h-10 w-10",
+      },`,
+  `      size: {
+        default: "h-8 px-3 py-1.5",
+        xs: "size-6 rounded-md",
+        sm: "h-7 rounded-md px-2.5 text-xs",
+        lg: "h-9 rounded-md px-5",
+        icon: "h-8 w-8",
+      },`,
+);
+replaceOnce(
+  `${ui}/select.tsx`,
+  '"flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm',
+  '"flex h-8 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-1.5 text-sm',
+);

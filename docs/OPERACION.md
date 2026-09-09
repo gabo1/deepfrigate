@@ -705,7 +705,8 @@ acento al 60 %, nunca relleno sólido; `secondary` (acción primaria) es
 superficie `accent` con borde `neutral_variant`; `destructive` solo borde
 crit al 50 % y texto crit, tinte al hover; `ghost` sin borde. Para que los
 modificadores `/15`, `/50` funcionen, `patch_web.mjs` reescribe los colores
-de Tailwind a `hsl(var(--x) / <alpha-value>)`. `Toggle` activo con borde;
+de Tailwind a `hsl(var(--x) / <alpha-value>)`. Tamaños: botón y select
+`default` 32 px (`h-8`), `sm` 28 px, `lg` 36 px, `icon` 32 px (upstream 40 px). `Toggle` activo con borde;
 `Switch` sin sombra en el pulgar; `Badge` rectangular 2 px con borde en vez de
 píldora rellena; `Tabs` con borde y activo en `accent` sin sombra.
 
