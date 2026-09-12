@@ -496,6 +496,10 @@ services:
       # for this long. 0 disables. A camera outage on every source also
       # trips it; the restart is cheap and the log says why.
       FRAME_STALL_RESTART_SECONDS: ${FRAME_STALL_RESTART_SECONDS:-120}
+      # Per-source watchdog: re-add one slot silent this long while its RTSP
+      # source answers DESCRIBE (0 disables). Checked every CHECK seconds.
+      SOURCE_STALL_SECONDS: ${SOURCE_STALL_SECONDS:-120}
+      SOURCE_STALL_CHECK_SECONDS: ${SOURCE_STALL_CHECK_SECONDS:-15}
       # Delete DeepStream snapshot files (flat + bundles) older than this.
       # Frigate keeps its own copies; nothing reads these after END. 0 disables.
       DS_SNAPSHOT_RETENTION_HOURS: ${DS_SNAPSHOT_RETENTION_HOURS:-24}

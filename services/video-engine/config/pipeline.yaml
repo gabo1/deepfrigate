@@ -8,6 +8,7 @@ pipeline:
   - id: user
     source_env: RTSP_USER
     gpu: 0
+    enabled: true
   - id: c4aac4f4eefe
     source_env: RTSP_C4AAC4F4EEFE
     gpu: 0

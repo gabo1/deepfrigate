@@ -123,6 +123,11 @@ class SourceController:
         with self.lock:
             return len(self.active)
 
+    def active_ids(self) -> set[int]:
+        """Slots the bus has reported as added and not yet removed."""
+        with self.lock:
+            return set(self.active)
+
     def initial_lists(self) -> tuple[str, str, str]:
         """(uri-list, sensor-id-list, sensor-name-list) for the enabled cameras."""
         desired = self.desired()
@@ -183,6 +188,19 @@ class SourceController:
                 if self._add(slot, camera):
                     added.append(camera["id"])
         return added, removed
+
+    def readd(self, camera_id: str) -> bool:
+        """Remove and add one enabled camera's slot again (same slot, same URI).
+
+        Used by the per-source watchdog when nvurisrcbin's own reconnection
+        gave up on a source that is reachable again.
+        """
+        for slot, camera in self.desired().items():
+            if camera["id"] == camera_id:
+                self._remove(slot, camera_id)
+                return self._add(slot, camera)
+        logger.warning("readd: camera %s is not an enabled camera", camera_id)
+        return False
 
     def _add(self, slot: int, camera: dict[str, Any]) -> bool:
         payload = {

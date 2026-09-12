@@ -70,6 +70,32 @@ Zonas, líneas y direcciones: en Frigate (§6a).
 - Cómo medir otra vez: `sudo ~/.local/bin/py-spy record --pid <PID>
   --duration 30 --rate 200 --format raw --output ve.raw` y sumar por función.
 
+### Una cámara sin detecciones mientras las demás siguen (visto 9-12 sep)
+
+- Señal: `ds-snapshots/<cam>` sin archivos nuevos, cero mensajes de esa
+  cámara en `deepfrigate/detections`, `**FPS` con una columna menos; Frigate
+  graba y muestra Live de la misma cámara sin problema. El watchdog global
+  (`FRAME_STALL_RESTART_SECONDS`) no salta porque el pipeline sigue vivo con
+  las otras.
+- Causa: `nvurisrcbin` intenta reconectar ("No data from source since last
+  10 sec. Trying reconnection") unas veces y se queda en un estado del que no
+  sale (`gstrtspsrc pause/try_send` fallidos), aunque el RTSP vuelva. `user`
+  estuvo así del 9 sep 20:45 al 12 sep 15:09.
+- Fix manual: sacar y meter la cámara en caliente, `cameras[].enabled`
+  false → true por `PUT /v1/pipelines/active` (cabecera `Remote-Role: admin`,
+  cuerpo `{api_version, pipeline}`, `If-Match: <source_sha256>`), o el toggle
+  del canvas. 2 s, sin tocar las demás.
+- Fix automático (12 sep): **watchdog por fuente** `SOURCE_STALL_SECONDS=120`
+  (`app/source_watchdog.py`). Cada `SOURCE_STALL_CHECK_SECONDS=15` mira el
+  último frame por cámara (export branch, con o sin objetos); si un slot
+  activo lleva 120 s callado **y** su URI responde `DESCRIBE` (200/401;
+  MediaMTX contesta 404 mientras el path no está listo) hace REST
+  `stream/remove` + `stream/add` del slot. Si el RTSP no responde lo deja a la
+  reconexión de `nvurisrcbin` (re-agregar no ayudaría) y lo dice una vez en
+  el log. Tras re-agregar espera otros 120 s antes de juzgar de nuevo.
+  Log: `Slot 1 camera=user silent for 135 s (limit 120 s) while its RTSP
+  source is ready; re-adding the source`. `0` apaga.
+
 ### nvinferserver no arranca: `Failed to register CUDA shared memory`
 
 - `config_infer_yolo26.pbtxt` usa `enable_cuda_buffer_sharing: true` (sin él
@@ -764,6 +790,7 @@ Volver atrás: `docker tag …:pgvector-smoke-pre-obsidiana …:pgvector-smoke` 
 | `FRAME_STALL_RESTART_SECONDS` | video-engine | 120 | watchdog; 0 desactiva |
 | `DS_SNAPSHOT_RETENTION_HOURS` | video-engine | 24 | borrado de `ds-snapshots`; 0 desactiva |
 | `FRAME_REFRESH_SECONDS` | video-engine | 5 | olvida el mejor thumb si el id no escribe en 5 s (ids reciclados) |
+| `SOURCE_STALL_SECONDS` / `SOURCE_STALL_CHECK_SECONDS` | video-engine | 120 / 15 | watchdog por fuente: re-agrega un slot callado si su RTSP responde DESCRIBE; 0 desactiva (§2) |
 | `DS_SNAPSHOT_INTERVAL` / `DS_SNAPSHOT_CLEAN` | video-engine | 0.4 / false | mínimo entre escrituras de snapshot por track; escribir también `-clean.webp` (2× encode; hoy lo deriva event-engine) |
 | `SIMILAR_COLLECTIONS` | platform-api | `person=reid_embeddings` | colección Qdrant por etiqueta para "similares"; resto `QDRANT_COLLECTION` (§6) |
 | `RULES_ENABLED` / `RULES_CONFIG` / `RULES_RELOAD_SECONDS` / `RULES_TIMEZONE` | event-engine | true / `/app/config/rules/rules.yaml` / 2 / `America/Mexico_City` | reglas declarativas → `rule_matched` (§6d) |

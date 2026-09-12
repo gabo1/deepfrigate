@@ -230,8 +230,10 @@ esa colección (no PP-ShiTu) para desempatar y, cuando esté calibrado, para
 
 ## 5c. Operación: dónde se rompe y qué lo sujeta
 
-- `video-engine` tiene watchdog: `FRAME_STALL_RESTART_SECONDS=120` sin
-  buffers → salida y `restart: unless-stopped`. `broker-queue` y
+- `video-engine` tiene dos watchdogs: `FRAME_STALL_RESTART_SECONDS=120` sin
+  buffers de nadie → salida y `restart: unless-stopped`; y por fuente,
+  `SOURCE_STALL_SECONDS=120`: un slot callado cuyo RTSP responde DESCRIBE se
+  re-agrega solo por REST (la reconexión de `nvurisrcbin` puede rendirse). `broker-queue` y
   `export-queue` son `leaky: 2`: un sink atascado descarta en vez de
   bloquear el `tee` (congelación silenciosa del 5 sep).
 - `data/ds-snapshots` es área de trabajo con retención

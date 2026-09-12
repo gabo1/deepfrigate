@@ -205,6 +205,9 @@ class FrameExporter(BufferRetriever):
         # Monotonic time of the last buffer seen by consume(); the stall
         # watchdog reads it. 0.0 until the first buffer.
         self.last_buffer_at = 0.0
+        # Per camera, for the per-source watchdog (frames with or without
+        # objects: a quiet street still delivers frames).
+        self.last_frame_at: dict[str, float] = {}
 
     def consume(self, buffer: Any) -> int:
         try:
@@ -218,6 +221,8 @@ class FrameExporter(BufferRetriever):
 
         self._buffer_count += 1
         self.last_buffer_at = time.monotonic()
+        for frame in frames:
+            self.last_frame_at[frame.camera_id] = self.last_buffer_at
         if self._buffer_count % 100 == 0:
             logger.debug(
                 "Export buffer identity count=%d timestamp=%s batch_size=%s frames=%s",

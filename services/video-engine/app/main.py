@@ -21,6 +21,7 @@ from .exporter import ExportMetadataCollector, FrameExporter
 from .retention import SnapshotRetention
 from .sources import ConfigWatcher, SourceController, render_msgconv_config
 from .watchdog import StallWatchdog
+from .source_watchdog import SourceWatchdog
 from .pipeline_config import load_pipeline
 
 logging.basicConfig(
@@ -336,14 +337,24 @@ def main() -> None:
         os.getenv("DS_SNAPSHOT_DIR") or "",
         _nonnegative_float("DS_SNAPSHOT_RETENTION_HOURS", "24") * 3600,
     )
+    # One camera silent while the others run: re-add just that slot once its
+    # RTSP source answers again (nvurisrcbin's reconnection can give up).
+    source_watchdog = SourceWatchdog(
+        controller,
+        lambda: exporter.last_frame_at,
+        _nonnegative_float("SOURCE_STALL_SECONDS", "120"),
+        check_interval=_positive_float("SOURCE_STALL_CHECK_SECONDS", "15"),
+    )
     logger.info(
         "Starting declarative pipeline with FrameRef export (stall watchdog %s, "
-        "snapshot retention %s)",
+        "per-source watchdog %s, snapshot retention %s)",
         f"{watchdog.stall_seconds:.0f}s" if watchdog.enabled else "off",
+        f"{source_watchdog.stall_seconds:.0f}s" if source_watchdog.enabled else "off",
         f"{retention.max_age_seconds / 3600:.0f}h" if retention.enabled else "off",
     )
     try:
         watchdog.start()
+        source_watchdog.start()
         retention.start()
         watcher.start()
         pipeline.prepare(on_message).activate()
@@ -351,6 +362,7 @@ def main() -> None:
     finally:
         watcher.stop()
         watchdog.stop()
+        source_watchdog.stop()
         retention.stop()
         exporter.close()
         logger.info("Video engine stopped")

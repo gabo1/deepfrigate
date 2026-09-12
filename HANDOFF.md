@@ -1,6 +1,6 @@
 # Handoff — DeepFrigate
 
-## Estado actual (9 sep 2026)
+## Estado actual (12 sep 2026)
 
 Resumen de lo vivo hoy; el detalle está en las entradas fechadas de abajo
 y en los runbooks. Lo que sigue en el bloque del 4 sep sigue siendo válido
@@ -38,6 +38,10 @@ salvo donde se indica.
   `transiciones`, `analitica` legado). Datasource único `frigate-smoke-pg`.
 - **Heatmap** con fondo de la escena DeepStream y overlay de zonas/líneas/
   direcciones desde Frigate.
+- **Watchdog por fuente** (12 sep): `user` estuvo 2.5 días sin detecciones
+  (nvurisrcbin dejó de reconectar) con Frigate grabándola. Ahora video-engine
+  re-agrega solo el slot callado ≥120 s si su RTSP responde
+  (`SOURCE_STALL_SECONDS`). OPERACION §2.
 - **Similares** (9 sep): personas por ReID del tracker, coches por PP-ShiTu
   (`SIMILAR_COLLECTIONS`); corregida la hidratación con ids reciclados de
   NvTracker (una persona devolvía coches del mismo id). OPERACION §6.
