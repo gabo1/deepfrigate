@@ -69,6 +69,9 @@ salvo donde se indica.
   de versionar en `tools/fakecam/`), checkout upstream `frigate/`
   (`a745070b`).
 
+Para el front nuevo (otro agente): `docs/HANDOFF-FRONT.md` (APIs, datos,
+auth, rutas, diseño, qué no tocar).
+
 Pendientes acordados: guardar el punto de Qdrant por instancia de track
 (`object_id` + `started_at`) para que los eventos viejos con id reciclado
 conserven "similares"; editor de reglas en Settings → DeepFrigate y métricas

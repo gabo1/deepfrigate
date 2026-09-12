@@ -47,6 +47,9 @@ communicate through the private Compose network.
 
 ## Frontend development
 
+Building a separate operator console? Start with `docs/HANDOFF-FRONT.md`: every
+API, table, topic, port, auth rule and design token the front needs.
+
 The Frigate UI ships the "Obsidiana Táctica" design system: tokens in
 `services/frigate/web/themes/theme-default.css` (single source of color, hex
 `--df-*` plus the shadcn/Frigate HSL variables), utilities in `obsidiana.css`,
