@@ -1,5 +1,8 @@
 paho-mqtt==2.1.0
 jsonschema==4.25.1
+# Lee el contrato de pipeline (PIPELINE_CONTRACT_PATH). La imagen base no lo trae,
+# a diferencia de la de video-engine.
+PyYAML==6.0.2
 numpy==2.5.2
 opencv-python-headless==5.0.0.93
 tritonclient[grpc]==2.65.0

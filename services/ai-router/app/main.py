@@ -23,6 +23,7 @@ from .attribute import (
     AttributeItem,
     PersonAttributeService,
 )
+from .pipeline_contract import Capabilities, ContractWatcher
 from .clothing_color import (
     COLOR_FIELDS,
     bbox_on_edge,
@@ -68,22 +69,84 @@ def should_replace_person_crop(quality: float, best: float) -> bool:
 
 
 class FrameRefConsumer:
+    @property
+    def capabilities(self) -> Capabilities:
+        return self._current_capabilities()
+
+    @property
+    def embedding_labels(self) -> frozenset[str]:
+        return self._current_capabilities().embedding_labels
+
+    @embedding_labels.setter
+    def embedding_labels(self, labels) -> None:
+        self._swap(embedding_labels=frozenset(labels))
+
+    @property
+    def attribute_labels(self) -> frozenset[str]:
+        return self._current_capabilities().attribute_labels
+
+    @attribute_labels.setter
+    def attribute_labels(self, labels) -> None:
+        self._swap(attribute_labels=frozenset(labels))
+
+    def _current_capabilities(self) -> Capabilities:
+        # Tests build the consumer with `__new__` and set the label sets one by
+        # one, so the snapshot may not exist yet.
+        current = getattr(self, "_capabilities", None)
+        if current is None:
+            current = Capabilities(frozenset(), frozenset())
+            self._capabilities = current
+        return current
+
+    def _swap(self, **fields) -> None:
+        """Assigning a label set replaces the whole snapshot, like the watcher
+        does: several FrameRef workers read it concurrently."""
+        current = self._current_capabilities()
+        self._capabilities = Capabilities(
+            embedding_labels=fields.get("embedding_labels", current.embedding_labels),
+            attribute_labels=fields.get("attribute_labels", current.attribute_labels),
+            source=fields.get("source", current.source),
+        )
+
+    def _apply_capabilities(self, capabilities: Capabilities) -> None:
+        """Atomic swap: several FrameRef workers read these sets concurrently,
+        so the whole snapshot is replaced instead of mutated in place."""
+        self._capabilities = capabilities
+
     def __init__(self) -> None:
         self.frame_store_url = os.getenv(
             "FRAME_STORE_URL", "http://frame-store:8080"
         ).rstrip("/")
         self.wait_attempts = int(os.getenv("FRAME_REF_WAIT_ATTEMPTS", "10"))
         self.wait_seconds = float(os.getenv("FRAME_REF_WAIT_SECONDS", "0.1"))
-        self.embedding_labels = {
+        # The two label sets are read through `self.capabilities`, which the
+        # contract watcher may replace at runtime. The env values stay as the
+        # floor: a contract that does not mention an enrichment leaves it alone.
+        env_embedding = frozenset(
             label.strip()
             for label in os.getenv("EMBEDDING_LABELS", "car").split(",")
             if label.strip()
-        }
-        self.attribute_labels = {
+        )
+        env_attribute = frozenset(
             label.strip()
             for label in os.getenv("ATTRIBUTE_LABELS", "person").split(",")
             if label.strip()
-        }
+        )
+        self._capabilities = Capabilities(env_embedding, env_attribute)
+        self._contract_watcher = None
+        contract_path = os.getenv("PIPELINE_CONTRACT_PATH", "").strip()
+        if contract_path:
+            self._contract_watcher = ContractWatcher(
+                contract_path,
+                self._apply_capabilities,
+                env_embedding=env_embedding,
+                env_attribute=env_attribute,
+                interval=float(os.getenv("PIPELINE_CONTRACT_RELOAD_SECONDS", "2")),
+            )
+            # Read once before consuming anything: starting with the env values
+            # and switching two seconds later would enrich a handful of objects
+            # under a configuration the operator already turned off.
+            self._contract_watcher.check_once()
         self.max_per_track = int(
             os.getenv("EMBEDDING_MAX_PER_TRACK", "3")
         )

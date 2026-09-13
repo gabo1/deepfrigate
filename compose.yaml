@@ -168,8 +168,16 @@ services:
       PLATE_MIN_CROP_WIDTH: ${PLATE_MIN_CROP_WIDTH:-120}
       PLATE_MAX_ATTEMPTS: ${PLATE_MAX_ATTEMPTS:-6}
       PLATE_SAMPLE_SECONDS: ${PLATE_SAMPLE_SECONDS:-1.0}
+      # Contrato de pipeline como fuente de los enriquecedores encendidos.
+      # VACÍO = apagado: el router se configura solo por las variables de arriba,
+      # exactamente como antes. Con ruta, el contrato puede APAGAR lo que declara
+      # (embeddings y atributos de persona) y nunca toca lo que no menciona.
+      PIPELINE_CONTRACT_PATH: ${PIPELINE_CONTRACT_PATH:-}
+      PIPELINE_CONTRACT_RELOAD_SECONDS: ${PIPELINE_CONTRACT_RELOAD_SECONDS:-2}
     volumes:
       - ./data/ds-snapshots:/opt/ds-snapshots:ro
+      # Mismo archivo que vigila video-engine; platform-api es quien lo escribe.
+      - ./services/video-engine/config/pipeline.yaml:/opt/deepfrigate/pipeline.yaml:ro
     depends_on:
       - mqtt
       - triton
