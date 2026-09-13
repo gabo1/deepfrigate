@@ -42,6 +42,8 @@ export type CanvasOptions = {
   detection_models: string[];
   enrichment_models: string[];
   zones: Record<string, string[]>;
+  lines?: Record<string, string[]>;
+  directions?: Record<string, string[]>;
 };
 export type CanvasStatus = {
   adapter_reachable?: boolean;
@@ -252,7 +254,10 @@ const nodeTypes = {
 
 // ------------------------------------------------------------------ layout
 
-const COL = { cam: 0, ds: 300, det: 580, tee: 860, branch: 1140, out: 1420, far: 1700 };
+// Ocho columnas: el carril de eventos (adapter → event-engine → puente → Frigate)
+// es una más larga que el de enriquecimiento, así que `far` ya no alcanzaba para
+// los dos. Antes el dibujo dejaba aire a la izquierda y apiñaba todo a la derecha.
+const COL = { cam: 0, ds: 260, det: 520, tee: 780, branch: 1040, out: 1320, bridge: 1600, far: 1880 };
 
 function defaultPosition(id: string, index: number): { x: number; y: number } {
   if (id.startsWith("cam:")) return { x: COL.cam, y: 20 + index * 110 };
@@ -263,20 +268,25 @@ function defaultPosition(id: string, index: number): { x: number; y: number } {
       return { x: COL.det, y: 80 };
     case "tee":
       return { x: COL.tee, y: 96 };
+    // Carril de arriba: eventos. Carril de abajo: enriquecimiento sobre crops.
     case "adapter":
       return { x: COL.branch, y: 0 };
     case "event_engine":
       return { x: COL.out, y: 0 };
+    case "bridge":
+      return { x: COL.bridge, y: 0 };
     case "frigate":
       return { x: COL.far, y: 0 };
     case "frame_store":
-      return { x: COL.branch, y: 220 };
+      return { x: COL.branch, y: 260 };
     case "ai_router":
-      return { x: COL.out, y: 220 };
+      return { x: COL.out, y: 260 };
     case "alpr":
-      return { x: COL.far, y: 140 };
+      return { x: COL.bridge, y: 200 };
   }
-  if (id.startsWith("enr:")) return { x: COL.far, y: 250 + index * 105 };
+  // Los enriquecedores cuelgan del ai-router, no del final del carril: ponerlos
+  // en la última columna los dejaba lejos de quien les manda el crop.
+  if (id.startsWith("enr:")) return { x: COL.far, y: 290 + index * 105 };
   return { x: 0, y: 0 };
 }
 
@@ -295,7 +305,11 @@ export default function DeepFrigateWorkflowCanvas({ pipeline, options, status, a
   const built = useMemo<{ nodes: Node[]; edges: Edge[] }>(() => {
     const enabledCams = pipeline.cameras.filter((c) => c.enabled !== false).length;
     const enrichments = pipeline.enrichments ?? [];
-    const zoneCount = Object.values(options?.zones ?? {}).reduce((n, z) => n + z.length, 0);
+    const geoCount = (source?: Record<string, string[]>) =>
+      Object.values(source ?? {}).reduce((n, items) => n + items.length, 0);
+    const zoneCount = geoCount(options?.zones);
+    const lineCount = geoCount(options?.lines);
+    const directionCount = geoCount(options?.directions);
     const pos = (id: string, index = 0) => saved.current[id] ?? defaultPosition(id, index);
 
     const list: Node[] = [];
@@ -305,8 +319,15 @@ export default function DeepFrigateWorkflowCanvas({ pipeline, options, status, a
     list.push({ id: "deepstream", type: "deepstream", position: pos("deepstream"), data: { cameras: pipeline.cameras.length, enabled: enabledCams, tracker: pipeline.tracker } });
     list.push({ id: "detector", type: "detector", position: pos("detector"), data: { model: pipeline.detection.model, version: pipeline.detection.version, models: options?.detection_models ?? [], ready: status?.models?.[pipeline.detection.model]?.ready, actions } });
     list.push({ id: "tee", type: "plain", position: pos("tee"), data: { title: "tee", accent: EMERALD, lines: ["MQTT detections", "crops RGB → SHM"] } });
-    list.push({ id: "adapter", type: "plain", position: pos("adapter"), data: { title: "detection-adapter", tag: "eventos", accent: CYAN, state: status?.adapter_reachable === undefined ? "unknown" : status.adapter_reachable ? "ok" : "warn", lines: ["START/UPDATE/LOST/END", `${zoneCount} zonas de Frigate · ${(pipeline.rules ?? []).length} reglas`] } });
-    list.push({ id: "event_engine", type: "plain", position: pos("event_engine"), data: { title: "event-engine", tag: "PG", accent: CYAN, lines: ["events · puente Frigate", "transiciones entre cámaras"] } });
+    // Aquí es donde se detecta: zonas, líneas, dirección, aforo y detenido salen
+    // de este servicio (zones.py, lines.py, direction.py, crowd.py, lifecycle.py),
+    // no del event-engine. La caja decía solo "eventos" y se leía como una caja
+    // negra entre el tracker y la base.
+    list.push({ id: "adapter", type: "plain", position: pos("adapter"), data: { title: "detection-adapter", tag: "detecta", accent: CYAN, state: status?.adapter_reachable === undefined ? "unknown" : status.adapter_reachable ? "ok" : "warn", lines: ["ciclo de vida · START/UPDATE/LOST/END", `zonas y permanencia · ${zoneCount}`, `cruce de línea · ${lineCount}`, `dirección · ${directionCount}`, "aforo por zona", "objeto detenido"] } });
+    // El event-engine hace dos trabajos distintos y conviene verlos separados:
+    // normalizar + reglas, y el puente hacia Frigate.
+    list.push({ id: "event_engine", type: "plain", position: pos("event_engine"), data: { title: "event-engine", tag: "PG", accent: CYAN, lines: ["normaliza a tipos canónicos", `reglas · ${(pipeline.rules ?? []).length} en el contrato`, "escribe deepfrigate.events"] } });
+    list.push({ id: "bridge", type: "plain", position: pos("bridge"), data: { title: "puente Frigate", tag: "del event-engine", accent: CYAN, lines: ["crea y cierra Events", "instala la foto del track", "transiciones entre cámaras"] } });
     list.push({ id: "frigate", type: "plain", position: pos("frigate"), data: { title: "Frigate", tag: "UI + NVR", accent: CYAN, handles: "left", lines: ["Explore · Review · grabación", "zonas y líneas se dibujan aquí"] } });
     list.push({ id: "frame_store", type: "plain", position: pos("frame_store"), data: { title: "frame-store", tag: "SHM", accent: AMBER, state: status?.services?.frame_store ? (status.services.frame_store.ok ? "ok" : "warn") : "unknown", lines: [`FrameRef · ${(pipeline.frame_export?.labels ?? []).join(", ") || "sin labels"}`, "crops por track, no por frame"] } });
     list.push({ id: "ai_router", type: "plain", position: pos("ai_router"), data: { title: "ai-router", tag: "por crop", accent: AMBER, lines: ["reparte cada crop", "Triton · alpr-worker"] } });
@@ -327,7 +348,8 @@ export default function DeepFrigateWorkflowCanvas({ pipeline, options, status, a
     edgeList.push({ id: "e:det-tee", source: "detector", target: "tee", label: "bboxes + track", ...main });
     edgeList.push({ id: "e:tee-adapter", source: "tee", target: "adapter", label: "MQTT", ...main });
     edgeList.push({ id: "e:adapter-ee", source: "adapter", target: "event_engine", label: "ciclo de vida · zonas", ...main });
-    edgeList.push({ id: "e:ee-frigate", source: "event_engine", target: "frigate", label: "Events · Timeline", ...main });
+    edgeList.push({ id: "e:ee-bridge", source: "event_engine", target: "bridge", label: "evento normalizado", ...main });
+    edgeList.push({ id: "e:bridge-frigate", source: "bridge", target: "frigate", label: "Events · Timeline", ...main });
     edgeList.push({ id: "e:tee-fs", source: "tee", target: "frame_store", label: "crops", ...side });
     edgeList.push({ id: "e:fs-ai", source: "frame_store", target: "ai_router", label: "FrameRef", ...side });
     edgeList.push({ id: "e:ai-alpr", source: "ai_router", target: "alpr", label: "car", ...side });

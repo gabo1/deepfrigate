@@ -254,6 +254,16 @@ def get_pipeline_options() -> dict[str, Any]:
             camera: sorted(config.get("zones", {}))
             for camera, config in zones.items()
         },
+        # The canvas draws what the detection-adapter watches per camera; zones
+        # alone told a third of that story.
+        "lines": {
+            camera: sorted(config.get("lines", {}))
+            for camera, config in zones.items()
+        },
+        "directions": {
+            camera: sorted(config.get("directions", {}))
+            for camera, config in zones.items()
+        },
     }
 
 
