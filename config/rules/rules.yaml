@@ -56,3 +56,16 @@ rules:
       severity: warning
       sub_label: "Contra flujo"
       message: "{label} {direction} en {camera}"
+
+  # tienda (14 sep): zona `estacionamiento` con aforo 4 y línea `entrada`.
+  - name: estacionamiento_lleno
+    enabled: true
+    when:
+      event_type: [overcrowding]
+      camera: [tienda]
+      zone: [estacionamiento]
+    cooldown: {seconds: 300, scope: camera}
+    then:
+      severity: warning
+      sub_label: "Estacionamiento lleno"
+      message: "{count} objetos en {zone}, umbral {threshold} ({camera})"
