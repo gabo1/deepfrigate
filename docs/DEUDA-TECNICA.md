@@ -185,8 +185,19 @@ Prioridad: **A** rompe datos o engaña al usuario · **B** limita producto ·
   que sigue faltando por no decodificar en Frigate: previews (hover de la
   tarjeta y scrubber de la línea de tiempo), banda de motion, WebSocket
   `reviews`/webpush (la UI refresca por summary). Aceptado; el front nuevo
-  hará su bandeja sobre `deepfrigate.events`. Flag por cámara para el
-  escritor pendiente (si se enciende `detect` en una cámara habría duplicados).
+  hará su bandeja sobre `deepfrigate.events`. Por cámara se gobierna con
+  `cameras.X.review.*.enabled` de Frigate (leído cada 60 s).
+
+### B10. Menú "Incidentes" (decidido 14 sep, sin empezar)
+- Review nativo se queda como Frigate lo trae y `user` fuera de él. Nuevo
+  menú **Incidentes** sobre `deepfrigate.events` vía platform-api, con dos
+  vistas: **Alertas** (un ítem por `rule_matched`, foto del instante desde la
+  grabación por `timestamp + bbox`, acuse) y **Actividad** (episodios por
+  cámara acotados a N min, default 5, con conteo por etiqueta, zonas, placas y
+  clip). Sin tablas nuevas: `GET /v1/incidents`, `GET /v1/activity?minutes=5`;
+  página `DeepFrigateIncidents.tsx` con el patrón de `/deepfrigate`, ruta
+  `/incidentes`, entre Review y Explore. Candidato a primer componente del
+  front nuevo. ~1 día.
 
 - `camera_fps` 0, sin motion, Review roto (A4), `bandwidth exceeds expected
   maximum` en el log de storage. Es por diseño (detecta DeepStream) pero

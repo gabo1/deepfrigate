@@ -337,8 +337,9 @@ falta `allow_embedding` en Grafana y sesión (hoy `admin`/`grafana_ro`).
 
 1. Contenedor `console` (Vite + React 19 + TS + Tailwind + shadcn, tokens
    Obsidiana copiados), servido en `/console/` por el nginx de Frigate.
-2. Pantallas en orden: bandeja de alertas (`rule_matched`, severidad, foto,
-   acuse), detalle de evento (foto + clip de Frigate + lifecycle de
+2. Pantallas en orden: **Incidentes** (nombre ya decidido; ruta
+   `/incidentes`): Alertas (`rule_matched`, severidad, foto del instante desde
+   la grabación, acuse) y Actividad (episodios por cámara de 5 min), detalle de evento (foto + clip de Frigate + lifecycle de
    `/v1/objects/{id}`), live grid (go2rtc WebRTC), placas, transiciones,
    canvas del pipeline (portar), reglas (editor YAML), Grafana embebido.
 3. Backend a pedir a este lado: filtros/cursor en `/v1/events`, acuses,

@@ -86,3 +86,50 @@ def test_cutoffs_from_frigate_config() -> None:
     cfg = {"cameras": {"user": {"review": {"alerts": {"cutoff_time": 40}, "detections": {"cutoff_time": 30}}}, "tienda": {"review": {"alerts": {}, "detections": {}}}}}
     assert cutoffs_from_frigate_config(cfg) == {"user": (40.0, 30.0), "tienda": (40.0, 30.0)}
     assert cutoffs_from_frigate_config([]) == {} and cutoffs_from_frigate_config(None) == {}
+
+
+def test_camera_review_flags_come_from_frigate_config_and_gate_items() -> None:
+    from app.review import CameraReview, camera_review_from_frigate_config
+
+    cfg = {"cameras": {
+        "user": {"review": {"alerts": {"enabled": False, "cutoff_time": 40}, "detections": {"enabled": False, "cutoff_time": 30}}},
+        "tienda": {"review": {"alerts": {"enabled": True}, "detections": {"enabled": False}}},
+        "eefe": {"review": {}},
+    }}
+    reviews = camera_review_from_frigate_config(cfg)
+    assert reviews["user"] == CameraReview(False, False, 40.0, 30.0)
+    assert reviews["tienda"] == CameraReview(True, False, 40.0, 30.0)
+    assert reviews["eefe"] == CameraReview()
+
+    w = writer()
+    w.apply_config(reviews, now=0.0)
+    # user: both off -> never an item, not even from a critical rule.
+    assert w.on_event_created("user", "u1", "car", 1000.0) == (None, False)
+    assert w.on_rule("u1", "aforo_excedido", "critical") is None
+    assert w.segments() == []
+    # tienda: detections off, alerts on -> no episode, but a rule opens an alert item for that track.
+    assert w.on_event_created("tienda", "t1", "person", 1000.0) == (None, False)
+    assert w.on_event_created("tienda", "t2", "car", 1001.0) == (None, False)
+    w.on_event_ended("t2", 1002.0)
+    seg = w.on_rule("t1", "merodeo_calle", "warning")
+    assert seg is not None and seg.severity == "alert" and seg.detections == {"t1": "person"}
+    assert seg.start_time == 1000.0 and seg.open_events == {"t1"} and seg.thumb_event_id == "t1"
+    # An info rule on an item-less track opens nothing.
+    assert w.on_rule("t2", "informativa", "info") is None
+    # While the alert item is open, later tracks on tienda join it (episode).
+    seg2, created = w.on_event_created("tienda", "t3", "car", 1005.0)
+    assert seg2 is seg and not created
+    # eefe: defaults, normal episode.
+    assert w.on_event_created("eefe", "e1", "car", 1000.0)[1]
+
+
+def test_disabling_review_for_a_camera_closes_its_open_item() -> None:
+    from app.review import CameraReview
+
+    w = writer()
+    seg, _ = w.on_event_created("user", "e1", "car", 1000.0)
+    closed = w.apply_config({"user": CameraReview(alerts_enabled=True, detections_enabled=False)}, now=1030.0)
+    assert closed == [seg] and seg.ended and seg.end_time == 1000.0 and w.open_segment("user") is None
+    # Alerts still allowed: a rule on the still-running track opens an alert item.
+    alert = w.on_rule("e1", "aforo_excedido", "critical")
+    assert alert is not None and alert is not seg and alert.severity == "alert"

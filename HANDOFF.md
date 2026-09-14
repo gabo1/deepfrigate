@@ -40,7 +40,9 @@ salvo donde se indica.
   direcciones desde Frigate.
 - **Review de Frigate vivo otra vez** (14 sep): event-engine escribe
   `reviewsegment` + miniatura (un ítem por cámara como Frigate; `alert` solo
-  por `rule_matched`). Sin previews/motion/WS. OPERACION §6f.
+  por `rule_matched`; por cámara con `cameras.X.review.*.enabled` de Frigate,
+  `user` apagada). Sin previews/motion/WS. OPERACION §6f. Siguiente: menú
+  **Incidentes** (DEUDA B10).
 - **Direcciones por trayectoria** (14 sep): `direction_match` medía jitter;
   ahora desplazamiento neto en 1.5 s, 3 frames, sin cajas en el borde.
 - **Watchdog por fuente** (12 sep): `user` estuvo 2.5 días sin detecciones

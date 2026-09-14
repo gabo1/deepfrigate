@@ -21,7 +21,7 @@ from .geometry import (
     snapshot_area,
 )
 from .repository import EventRepository
-from .review import ReviewSegment, ReviewWriter, cutoffs_from_frigate_config
+from .review import ReviewSegment, ReviewWriter, camera_review_from_frigate_config
 from .snapshots import SnapshotGeometry, replace_frigate_snapshot, write_review_thumb
 
 logger = logging.getLogger("event-engine.frigate")
@@ -171,8 +171,11 @@ class FrigateReviewBridge:
         )
         self.review_flush_seconds = float(review_flush_seconds)
         self.review_thumb_height = int(review_thumb_height)
-        self._review_cutoffs_loaded = False
+        self._review_config_at = 0.0
         self._review_orphans_closed = False
+        # Frigate's config is the source of truth for cameras.X.review; it is
+        # re-read this often (the UI toggles it without restarting us).
+        self.review_config_refresh_seconds = 60.0
         # Wall clock for review coalescing/cutoffs; tests inject their own.
         self.review_clock = time.time
 
@@ -1075,6 +1078,8 @@ class FrigateReviewBridge:
         segment, created = self.review.on_event_created(
             str(event["camera_id"]), str(frigate_event_id), label, started_at
         )
+        if segment is None:
+            return  # review.detections.enabled: false on this camera
         if created:
             logger.info(
                 "Review segment %s opened camera=%s event=%s",
@@ -1085,16 +1090,24 @@ class FrigateReviewBridge:
         self.flush_review()
 
     def _review_prepare(self) -> None:
-        """Once: cutoffs from Frigate's config and close rows we left open."""
+        """Per-camera review flags/cutoffs from Frigate (refreshed every
+        `review_config_refresh_seconds`) and, once, close rows left open."""
         if self.review is None:
             return
-        if not self._review_cutoffs_loaded:
-            self._review_cutoffs_loaded = True
+        now = self.review_clock()
+        if now - self._review_config_at >= self.review_config_refresh_seconds:
+            self._review_config_at = now
             try:
                 config = self._request("GET", "/config")
-                self.review.cutoffs = cutoffs_from_frigate_config(config)
+                cameras = camera_review_from_frigate_config(config)
+                if cameras:
+                    for segment in self.review.apply_config(cameras, now):
+                        logger.info(
+                            "Review segment %s closed: review disabled for camera=%s",
+                            segment.id, segment.camera,
+                        )
             except Exception as error:  # noqa: BLE001 - defaults are fine
-                logger.warning("Review cutoffs: Frigate config unavailable (%s); using defaults", error)
+                logger.warning("Review config: Frigate unavailable (%s); keeping previous", error)
         if not self._review_orphans_closed:
             self._review_orphans_closed = True
             try:
@@ -1131,6 +1144,7 @@ class FrigateReviewBridge:
         if self.review is None or self.store is None:
             return 0
         now = self.review_clock() if now is None else float(now)
+        self._review_prepare()
         written = 0
         for segment in self.review.due(now):
             self.review.close(segment, now)

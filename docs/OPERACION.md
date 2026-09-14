@@ -844,9 +844,18 @@ mantenedor; el fork no cambia.
   /media/frigate/clips/review/`; `GET /api/review?cameras=user`;
   `GET /api/review/summary?timezone=UTC`. Log: `Review segment … opened` /
   `closed`.
-- Apagar: `FRIGATE_REVIEW_WRITER=false`. Si algún día se enciende `detect` en
-  una cámara, Frigate publicaría sus propios segmentos y habría duplicados:
-  apagar este escritor para esa cámara (pendiente: flag por cámara).
+- **Por cámara se configura en Frigate, igual que nativo**:
+  `cameras.X.review.alerts.enabled` gobierna los ítems Alerta (reglas) y
+  `cameras.X.review.detections.enabled` los episodios Detección. event-engine
+  relee `/api/config` cada 60 s; si una categoría se apaga con un ítem
+  abierto, lo cierra (como `forcibly_end_segment`). Con `detections` apagado y
+  `alerts` encendido, un track no abre episodio pero una regla `warning`/
+  `critical` sí abre un ítem Alerta para él. `user` tiene ambas en `false`
+  desde el 14 sep (calle con tráfico continuo: el episodio nunca cerraba);
+  la cubrirá el menú **Incidentes**. No hay lista de cámaras por env.
+- Apagar todo: `FRIGATE_REVIEW_WRITER=false`. Si algún día se enciende
+  `detect` en una cámara, Frigate publicaría sus propios segmentos y habría
+  duplicados: apagar la review de esa cámara en Frigate o este escritor.
 - Variables: `FRIGATE_REVIEW_WRITER` (true), `REVIEW_FLUSH_SECONDS` (1),
   `REVIEW_THUMB_HEIGHT` (180).
 
