@@ -188,6 +188,15 @@ Prioridad: **A** rompe datos o engaña al usuario · **B** limita producto ·
   hará su bandeja sobre `deepfrigate.events`. Por cámara se gobierna con
   `cameras.X.review.*.enabled` de Frigate (leído cada 60 s).
 
+### B9b. Reglas por atributo y contadores de línea en Actividad
+- Pedido 14 sep: "persona de rojo entrando a tienda" como incidente. Requiere
+  `when.attributes` en el motor de reglas (join con las clasificaciones de
+  ai-router por track, `wait_seconds` porque el color llega después del
+  cruce) y mostrar entradas/salidas (`line_crossed_in/out`) en las tarjetas
+  de Actividad. ~2.5 h. Las reglas de `user` (`merodeo_calle`,
+  `persona_nocturna`, `aforo_excedido`) están huérfanas desde que se le
+  quitó la analítica; redefinir o borrar.
+
 ### B10. Incidentes: tiempo real y notificaciones
 - Menú Incidentes entregado el 14 sep (OPERACION §6g). Falta: SSE/WebSocket
   para que las alertas entren sin el refresco de 10 s, notificaciones

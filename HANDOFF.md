@@ -38,6 +38,12 @@ salvo donde se indica.
   `transiciones`, `analitica` legado). Datasource único `frigate-smoke-pg`.
 - **Heatmap** con fondo de la escena DeepStream y overlay de zonas/líneas/
   direcciones desde Frigate.
+- **Analítica de tienda** (14 sep): zona `estacionamiento` (aforo 4/2, 10 s,
+  objetos person/car/truck/motorcycle) y línea `entrada` (person; in = hacia
+  la pared) en el YAML del fork; regla `estacionamiento_lleno`. `user` sin
+  zonas/líneas/direcciones desde el 14 sep 19:27 UTC. Reglas de `user`
+  (`merodeo_calle`, `persona_nocturna`, `aforo_excedido`) quedaron sin
+  analítica que las dispare; pendiente redefinirlas.
 - **Incidentes** (14 sep): menú nuevo `/incidentes` en la UI de Frigate:
   Alertas (una por `rule_matched`, foto del instante desde la grabación,
   acuse en `deepfrigate.incident_acks`) y Actividad (episodios de N min por
