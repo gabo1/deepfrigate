@@ -66,3 +66,8 @@ CREATE INDEX IF NOT EXISTS camera_transitions_to_seen_idx
 ALTER TABLE camera_transitions ADD COLUMN IF NOT EXISTS method text NOT NULL DEFAULT 'embedding';
 ALTER TABLE camera_transitions ADD COLUMN IF NOT EXISTS candidates integer NOT NULL DEFAULT 1;
 ALTER TABLE camera_transitions ALTER COLUMN score DROP NOT NULL;
+
+-- Resolver el Event de Frigate de un track por su hora (ids de NvTracker reciclados):
+-- platform-api (incidentes, similares) busca el link con started_at <= t por object_id.
+CREATE INDEX IF NOT EXISTS frigate_event_links_object_started_idx
+    ON frigate_event_links (object_id, started_at DESC);

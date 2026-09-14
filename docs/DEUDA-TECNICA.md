@@ -188,6 +188,55 @@ Prioridad: **A** rompe datos o engaña al usuario · **B** limita producto ·
   hará su bandeja sobre `deepfrigate.events`. Por cámara se gobierna con
   `cameras.X.review.*.enabled` de Frigate (leído cada 60 s).
 
+### B10. Incidentes: tiempo real y notificaciones
+- Menú Incidentes entregado el 14 sep (OPERACION §6g). Falta: SSE/WebSocket
+  para que las alertas entren sin el refresco de 10 s, notificaciones
+  (webpush de Frigate no aplica; push propio o correo), retención de
+  `incident_acks` junto con `events`, y contar acuses en Grafana. ~1 día.
+
+---
+
+## C. Mantenimiento y fragilidad
+
+### C1. `patch_web.mjs` sobre la UI upstream de Frigate
+- ~30 `replaceOnce` sobre texto de componentes upstream (rutas, Explore,
+  Tailwind, gráficas, botones, tema). Cada release de Frigate puede romper
+  anclas; el build falla en voz alta, pero hay que reparar a mano.
+- **Arreglo**: microfrontend (web components servidos desde un contenedor
+  `console`, anclas mínimas: script tag, ruta `/deepfrigate`, pestaña
+  Settings, tema). Ver `HANDOFF-FRONT.md` §10. Esfuerzo ~1 semana.
+
+### C2. Imagen `:3005` en tres capas manuales
+- `:local` (TensorRT, 1 sep) → `local-vite-src` (web) → `pgvector-smoke`
+  (Python PG). Receta A a mano, ~6 min; sin CI. Tags de rollback ad hoc
+  (`pre-obsidiana`). Refs: `frigate-pg/docs/RECREAR-IMAGEN-3005.md`.
+
+### C3. Nombre "smoke" para la base y el contenedor de producto
+- `frigate-pgvector-smoke`, `frigate_pgvector_smoke`, volúmenes
+  `frigate-pg_pgvector-smoke-*`. Renombrar exige recrear contenedores y
+  ajustar compose, Grafana datasource y docs. Esfuerzo 1 h, ventana de corte.
+
+### C4. `/opt/fakecam` (MediaMTX) fuera de git
+- Config de todas las fuentes RTSP y los MP4 de prueba viven en la VM.
+  Versionar en `tools/fakecam/` sin los MP4. Esfuerzo 30 min.
+
+### C5. API de MediaMTX apagada
+- El watchdog por fuente usa DESCRIBE RTSP porque `:9997` no está
+  habilitado. Habilitarla daría `ready`, `bytesReceived` y lectores por path
+  para diagnósticos y para el front. 10 min.
+
+### C6. Sin prueba end-to-end
+- No hay test que meta un clip conocido por MediaMTX y verifique eventos
+  esperados. Todo se valida a mano. Esfuerzo 1 día.
+
+### C6b. Review sin previews, motion ni aviso en vivo
+- Los ítems de /review los escribe event-engine (14 sep, OPERACION §6f). Lo
+  que sigue faltando por no decodificar en Frigate: previews (hover de la
+  tarjeta y scrubber de la línea de tiempo), banda de motion, WebSocket
+  `reviews`/webpush (la UI refresca por summary). Aceptado; el front nuevo
+  hará su bandeja sobre `deepfrigate.events`. Por cámara se gobierna con
+  `cameras.X.review.*.enabled` de Frigate (leído cada 60 s).
+
 ### B10. Menú "Incidentes" (decidido 14 sep, sin empezar)
 - Review nativo se queda como Frigate lo trae y `user` fuera de él. Nuevo
   menú **Incidentes** sobre `deepfrigate.events` vía platform-api, con dos

@@ -26,13 +26,15 @@ replaceOnce(
   `${root}/App.tsx`,
   'const Events = lazy(() => import("@/pages/Events"));\n',
   'const Events = lazy(() => import("@/pages/Events"));\n' +
-    'const DeepFrigate = lazy(() => import("@/pages/DeepFrigate"));\n',
+    'const DeepFrigate = lazy(() => import("@/pages/DeepFrigate"));\n' +
+    'const DeepFrigateIncidents = lazy(() => import("@/pages/DeepFrigateIncidents"));\n',
 );
 replaceOnce(
   `${root}/App.tsx`,
   '              <Route path="/review" element={<Events />} />\n',
   '              <Route path="/review" element={<Events />} />\n' +
-    '              <Route path="/deepfrigate" element={<DeepFrigate />} />\n',
+    '              <Route path="/deepfrigate" element={<DeepFrigate />} />\n' +
+    '              <Route path="/incidentes" element={<DeepFrigateIncidents />} />\n',
 );
 
 replaceOnce(
@@ -241,7 +243,42 @@ replaceOnce(
 replaceOnce(
   navigation,
   "export const ID_CHAT = 8;\n",
-  "export const ID_CHAT = 8;\nexport const ID_DEEPFRIGATE = 9;\n",
+  "export const ID_CHAT = 8;\nexport const ID_DEEPFRIGATE = 9;\nexport const ID_INCIDENTES = 10;\n",
+);
+// Incidentes replaces Frigate's Review in the sidebar: Review is off in the
+// config (no decode -> its maintainer never publishes) and our items live in
+// deepfrigate.events. The /review route stays reachable by URL.
+replaceOnce(
+  navigation,
+  'import { MdCategory, MdChat, MdVideoLibrary } from "react-icons/md";\n',
+  'import { MdCategory, MdChat, MdNotificationsActive, MdVideoLibrary } from "react-icons/md";\n',
+);
+replaceOnce(
+  navigation,
+  `        {
+          id: ID_REVIEW,
+          variant,
+          icon: MdVideoLibrary,
+          title: "menu.review",
+          url: "/review",
+        },
+`,
+  `        {
+          id: ID_INCIDENTES,
+          variant,
+          icon: MdNotificationsActive,
+          title: "Incidentes",
+          url: "/incidentes",
+        },
+        {
+          id: ID_REVIEW,
+          variant,
+          icon: MdVideoLibrary,
+          title: "menu.review",
+          url: "/review",
+          enabled: false,
+        },
+`,
 );
 replaceOnce(
   navigation,

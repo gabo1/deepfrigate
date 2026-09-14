@@ -21,6 +21,7 @@ from . import heatmap as heatmap_render
 from .zones_source import ZonesSource, ZonesUnavailable
 from . import diagram as diagram_render
 from .status import collect_status
+from . import incidents as incidents_lib
 import psycopg
 from psycopg.rows import dict_row
 import yaml
@@ -1401,3 +1402,315 @@ def hydrate_similar_frigate_events(
         hydrated,
         key=lambda event: score_order.get(str(event["id"]), len(scores)),
     )
+
+
+# ---------------------------------------------------------------------------
+# Incidentes: alerts (rule_matched + acuse) and activity episodes for the
+# operator console. Frigate's /review is off; this is its replacement.
+# ---------------------------------------------------------------------------
+INCIDENT_ACKS_DDL = """
+CREATE TABLE IF NOT EXISTS incident_acks (
+    event_id uuid PRIMARY KEY,
+    acked_by text NOT NULL,
+    acked_at timestamptz NOT NULL DEFAULT now(),
+    note text
+)
+"""
+_incident_acks_ready = False
+_frame_cache: dict[str, tuple[float, bytes]] = {}
+
+
+def _ensure_incident_acks(connection: Any) -> None:
+    global _incident_acks_ready
+    if not _incident_acks_ready:
+        connection.execute(INCIDENT_ACKS_DDL)
+        # The per-alert LATERAL over frigate_event_links needs this (seq scan
+        # per row otherwise: 3.3 s for 139 alerts). event-engine's migration
+        # creates it too; this covers a platform-api started before it.
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS frigate_event_links_object_started_idx "
+            "ON frigate_event_links (object_id, started_at DESC)"
+        )
+        _incident_acks_ready = True
+
+
+def _link_for_alert_sql() -> str:
+    # The Frigate event of the track that was running when the alert fired
+    # (NvTracker ids are reused; see docs/DEUDA-TECNICA.md A0).
+    return """
+        LEFT JOIN LATERAL (
+            SELECT frigate_event_id
+            FROM frigate_event_links l
+            WHERE l.object_id = e.object_id
+              AND l.started_at <= e.occurred_at + interval '5 seconds'
+              AND l.frigate_event_id IS NOT NULL
+            ORDER BY l.started_at DESC
+            LIMIT 1
+        ) l ON TRUE
+    """
+
+
+@app.get("/v1/incidents", tags=["incidents"])
+def list_incidents(
+    camera_id: str | None = None,
+    severity: str | None = Query(default=None, description="csv: warning,critical,info"),
+    rule: str | None = None,
+    after: datetime | None = None,
+    before: datetime | None = None,
+    acked: bool | None = Query(default=None, description="true = only acknowledged, false = only pending"),
+    limit: int = Query(default=100, ge=1, le=500),
+) -> dict[str, Any]:
+    severities = [s.strip() for s in (severity or ",".join(incidents_lib.ALERT_SEVERITIES)).split(",") if s.strip()]
+    clauses = ["e.event_type = 'rule_matched'", "e.severity = ANY(%s)"]
+    parameters: list[Any] = [severities]
+    if camera_id:
+        clauses.append("e.camera_id = %s"); parameters.append(camera_id)
+    if rule:
+        clauses.append("e.data->>'rule' = %s"); parameters.append(rule)
+    if after is not None:
+        clauses.append("e.occurred_at >= %s"); parameters.append(after)
+    if before is not None:
+        clauses.append("e.occurred_at < %s"); parameters.append(before)
+    if acked is True:
+        clauses.append("a.event_id IS NOT NULL")
+    elif acked is False:
+        clauses.append("a.event_id IS NULL")
+    parameters.append(limit)
+    with psycopg.connect(database_url, row_factory=dict_row) as connection:
+        _ensure_incident_acks(connection)
+        rows = connection.execute(
+            f"""
+            SELECT e.id, e.event_type, e.object_id, e.camera_id, e.track_id,
+                   e.occurred_at, e.source_update_type, e.severity, e.data,
+                   a.acked_by, a.acked_at, a.note, l.frigate_event_id
+            FROM events e
+            LEFT JOIN incident_acks a ON a.event_id = e.id
+            {_link_for_alert_sql()}
+            WHERE {" AND ".join(clauses)}
+            ORDER BY e.occurred_at DESC
+            LIMIT %s
+            """,
+            parameters,
+        ).fetchall()
+    items = []
+    for row in rows:
+        event = {**row, "id": str(row["id"]), "timestamp": row["occurred_at"].timestamp()}
+        ack = {"acked_by": row["acked_by"], "acked_at": row["acked_at"], "note": row["note"]} if row["acked_by"] else None
+        items.append(incidents_lib.alert_row(event, {"frigate_event_id": row["frigate_event_id"]}, ack))
+    return {"items": items}
+
+
+@app.get("/v1/incidents/summary", tags=["incidents"])
+def incidents_summary(hours: int = Query(default=24, ge=1, le=24 * 30)) -> dict[str, Any]:
+    with psycopg.connect(database_url, row_factory=dict_row) as connection:
+        _ensure_incident_acks(connection)
+        rows = connection.execute(
+            """
+            SELECT e.camera_id, e.severity, e.data->>'rule' AS rule,
+                   count(*) AS total,
+                   count(*) FILTER (WHERE a.event_id IS NULL) AS pending
+            FROM events e
+            LEFT JOIN incident_acks a ON a.event_id = e.id
+            WHERE e.event_type = 'rule_matched'
+              AND e.occurred_at > now() - make_interval(hours => %s)
+            GROUP BY 1, 2, 3
+            ORDER BY 1, 2, 3
+            """,
+            (hours,),
+        ).fetchall()
+    by_severity: dict[str, dict[str, int]] = {}
+    for row in rows:
+        bucket = by_severity.setdefault(row["severity"], {"total": 0, "pending": 0})
+        bucket["total"] += row["total"]
+        bucket["pending"] += row["pending"]
+    return {"hours": hours, "by_severity": by_severity, "rows": rows}
+
+
+@app.post("/v1/incidents/{event_id}/ack", tags=["incidents"])
+def ack_incident(
+    event_id: UUID,
+    body: dict[str, Any] | None = None,
+    remote_user: str | None = Header(default=None, alias="Remote-User"),
+) -> dict[str, Any]:
+    user = (remote_user or "operador")[:100]
+    note = str((body or {}).get("note") or "")[:500] or None
+    with psycopg.connect(database_url, row_factory=dict_row) as connection:
+        _ensure_incident_acks(connection)
+        exists = connection.execute(
+            "SELECT 1 FROM events WHERE id = %s AND event_type = 'rule_matched'", (event_id,)
+        ).fetchone()
+        if exists is None:
+            raise HTTPException(status_code=404, detail="incident not found")
+        row = connection.execute(
+            """
+            INSERT INTO incident_acks (event_id, acked_by, note)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (event_id) DO UPDATE SET acked_by = EXCLUDED.acked_by,
+                acked_at = now(), note = EXCLUDED.note
+            RETURNING acked_by, acked_at, note
+            """,
+            (event_id, user, note),
+        ).fetchone()
+    return {"id": str(event_id), "acked": {"by": row["acked_by"], "at": row["acked_at"].timestamp(), "note": row["note"]}}
+
+
+@app.delete("/v1/incidents/{event_id}/ack", tags=["incidents"])
+def unack_incident(event_id: UUID) -> dict[str, Any]:
+    with psycopg.connect(database_url) as connection:
+        _ensure_incident_acks(connection)
+        deleted = connection.execute("DELETE FROM incident_acks WHERE event_id = %s", (event_id,)).rowcount
+    return {"id": str(event_id), "acked": None, "deleted": deleted}
+
+
+@app.get("/v1/incidents/{event_id}/frame.jpg", tags=["incidents"])
+def incident_frame(
+    event_id: UUID,
+    margin: float = Query(default=incidents_lib.DEFAULT_CROP_MARGIN, ge=0, le=3),
+    height: int = Query(default=720, ge=180, le=1080),
+    crop: bool = True,
+) -> Response:
+    """Frame of the instant the rule fired, cut from the recording.
+
+    Frigate indexes recordings by epoch: `/api/{camera}/recordings/{ts}/snapshot.jpg`.
+    The event's `bbox` (DeepStream mux 1280x720) is scaled to that frame and
+    padded by `margin` per side. Falls back to the Frigate event snapshot when
+    the recording is gone (10 days), then to a placeholder.
+    """
+    key = f"{event_id}:{margin}:{height}:{int(crop)}"
+    hit = _frame_cache.get(key)
+    if hit and hit[0] > time.time():
+        return Response(content=hit[1], media_type="image/jpeg", headers={"Cache-Control": "max-age=300"})
+    with psycopg.connect(database_url, row_factory=dict_row) as connection:
+        row = connection.execute(
+            f"""
+            SELECT e.camera_id, e.object_id, e.occurred_at, e.data, l.frigate_event_id
+            FROM events e {_link_for_alert_sql()}
+            WHERE e.id = %s
+            """,
+            (event_id,),
+        ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="incident not found")
+    camera = str(row["camera_id"])
+    stamp = row["occurred_at"].timestamp()
+    payload: bytes | None = None
+    url = f"{frigate_api_url}/{quote(camera, safe='')}/recordings/{stamp:.3f}/snapshot.jpg?height={height}"
+    try:
+        with urlopen(url, timeout=15) as response:
+            if "image" in (response.headers.get("Content-Type") or ""):
+                payload = response.read()
+    except (HTTPError, URLError, TimeoutError):
+        payload = None
+    if payload is None and row["frigate_event_id"]:
+        try:
+            with urlopen(f"{frigate_api_url}/events/{quote(str(row['frigate_event_id']), safe='')}/snapshot.jpg", timeout=10) as response:
+                payload = response.read()
+        except (HTTPError, URLError, TimeoutError):
+            payload = None
+    if payload is None:
+        return Response(content=heatmap_render.placeholder("Sin grabación para este instante"), media_type="image/jpeg")
+    if crop:
+        try:
+            from io import BytesIO
+            from PIL import Image
+
+            image = Image.open(BytesIO(payload)).convert("RGB")
+            box = incidents_lib.crop_box((row["data"] or {}).get("bbox"), image.width, image.height, margin=margin)
+            if box is not None:
+                out = BytesIO()
+                image.crop(box).save(out, format="JPEG", quality=85)
+                payload = out.getvalue()
+        except Exception:  # noqa: BLE001 - serve the full frame instead
+            logging.getLogger(__name__).exception("incident frame crop failed")
+    if len(_frame_cache) > 512:
+        _frame_cache.clear()
+    _frame_cache[key] = (time.time() + 300, payload)
+    return Response(content=payload, media_type="image/jpeg", headers={"Cache-Control": "max-age=300"})
+
+
+@app.get("/v1/activity", tags=["incidents"])
+def list_activity(
+    camera_id: str | None = None,
+    minutes: int = Query(default=incidents_lib.DEFAULT_WINDOW_MINUTES, ge=1, le=60),
+    after: datetime | None = None,
+    before: datetime | None = None,
+    limit: int = Query(default=200, ge=1, le=2000),
+) -> dict[str, Any]:
+    """Activity episodes: fixed windows of `minutes` per camera (SQL GROUP BY)."""
+    size = max(1, int(minutes)) * 60
+    clauses = ["event_type IN ('object_detected','object_lost','object_ended','object_entered_zone','plate_read','rule_matched')"]
+    parameters: list[Any] = []
+    if camera_id:
+        clauses.append("camera_id = %s"); parameters.append(camera_id)
+    if after is None and before is None:
+        clauses.append("occurred_at > now() - interval '6 hours'")
+    if after is not None:
+        clauses.append("occurred_at >= %s"); parameters.append(after)
+    if before is not None:
+        clauses.append("occurred_at < %s"); parameters.append(before)
+    where = " AND ".join(clauses)
+    with psycopg.connect(database_url, row_factory=dict_row) as connection:
+        windows = connection.execute(
+            f"""
+            WITH w AS (
+                SELECT camera_id, event_type, object_id, severity, data,
+                       extract(epoch FROM occurred_at) AS ts,
+                       floor(extract(epoch FROM occurred_at) / %s) * %s AS ws
+                FROM events WHERE {where}
+            )
+            SELECT camera_id, ws,
+                   count(*) FILTER (WHERE event_type = 'object_detected') AS objects,
+                   (array_agg(object_id ORDER BY ts) FILTER (WHERE event_type = 'object_detected'))[1] AS first_object_id,
+                   min(ts) FILTER (WHERE event_type = 'object_detected') AS first_seen,
+                   max(ts) FILTER (WHERE event_type IN ('object_detected','object_lost','object_ended')) AS last_seen,
+                   array_remove(array_agg(DISTINCT data->>'zone') FILTER (WHERE event_type = 'object_entered_zone'), NULL) AS zones,
+                   array_remove(array_agg(DISTINCT upper(data->>'plate')) FILTER (WHERE event_type = 'plate_read'), NULL) AS plates,
+                   count(*) FILTER (WHERE event_type = 'rule_matched') AS alerts,
+                   count(*) FILTER (WHERE event_type = 'rule_matched' AND severity = 'critical') AS critical,
+                   array_remove(array_agg(DISTINCT object_id) FILTER (WHERE event_type = 'object_detected'), NULL) AS object_ids
+            FROM w
+            GROUP BY camera_id, ws
+            ORDER BY ws DESC, camera_id
+            LIMIT %s
+            """,
+            [size, size, *parameters, limit],
+        ).fetchall()
+        labels = connection.execute(
+            f"""
+            SELECT camera_id, floor(extract(epoch FROM occurred_at) / %s) * %s AS ws,
+                   data->>'label' AS label, count(*) AS n
+            FROM events WHERE {where} AND event_type = 'object_detected'
+            GROUP BY 1, 2, 3
+            """,
+            [size, size, *parameters],
+        ).fetchall()
+        episodes = incidents_lib.episodes_from_aggregates(windows, labels, minutes)
+        object_ids = sorted({o for e in episodes for o in e.get("object_ids") or []})
+        links: dict[str, list[tuple[float, str]]] = {}
+        if object_ids:
+            for link in connection.execute(
+                """
+                SELECT object_id, frigate_event_id, extract(epoch FROM started_at) AS started_at
+                FROM frigate_event_links
+                WHERE object_id = ANY(%s) AND frigate_event_id IS NOT NULL
+                """,
+                (object_ids,),
+            ).fetchall():
+                links.setdefault(str(link["object_id"]), []).append((float(link["started_at"]), str(link["frigate_event_id"])))
+    for episode in episodes:
+        fid = None
+        # Thumbnail: the earliest track of the window that Frigate confirmed.
+        # Only links that started inside the window count (NvTracker ids are
+        # reused; an older occupant would show a stranger).
+        candidates: list[tuple[float, str]] = []
+        for object_id in [episode.get("first_object_id"), *(episode.get("object_ids") or [])]:
+            for started_at, candidate in links.get(object_id or "", []):
+                if episode["start"] - 5 <= started_at <= episode["end"] + 5:
+                    candidates.append((started_at, candidate))
+        if candidates:
+            fid = min(candidates)[1]
+        episode["frigate_event_id"] = fid
+        episode["thumbnail_url"] = f"/v1/events/{fid}/thumbnail.jpg" if fid else None
+        episode["clip_url"] = f"/api/{quote(episode['camera_id'], safe='')}/start/{int(episode['start'])}/end/{int(episode['end'])}/clip.mp4"
+    return {"minutes": minutes, "items": episodes}
+

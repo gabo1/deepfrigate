@@ -2,7 +2,7 @@
 
 Documento para quien va a escribir la consola de operación (front propio).
 Describe qué hay corriendo, qué APIs y datos existen, cómo se autentica, dónde
-se despliega y qué no hay que tocar. Estado al 12 sep 2026. Repos:
+se despliega y qué no hay que tocar. Estado al 14 sep 2026. Repos:
 `gabo1/deepfrigate` (`main`, este repo) y `gabo1/pgfrigate` (fork de Frigate,
 rama `deepfrigate/pgsql`, checkout en `frigate-pg/`).
 
@@ -103,6 +103,8 @@ en `/docs` (interno).
 | `GET /v1/frigate-events/{frigate_event_id}/similar` | `limit` ≤25, `offset`, `min_score` | igual, hidratado como `SearchResult` de Frigate (lo que consume Explore) |
 | `GET /v1/camera-transitions` | `after`, `before` (ISO), `label`, `min_score`, `detail` (bool), `limit` ≤2000 | resumen por par `{from,to,count,avg_gap_seconds,avg_score}`; con `detail=true` las filas |
 | `GET /v1/heatmap/{camera}.jpg` | `hours`, `label`… (ver código) | heatmap sobre la escena real con zonas/líneas dibujadas |
+| `GET /v1/incidents` | `camera_id`, `severity` (csv), `rule`, `after`, `before`, `acked`, `limit` ≤500 | alertas (`rule_matched`) con acuse y `frigate_event_id`; `POST/DELETE /v1/incidents/{id}/ack`; `GET /v1/incidents/summary?hours=`; `GET /v1/incidents/{id}/frame.jpg` foto del instante desde la grabación |
+| `GET /v1/activity` | `minutes` 1-60, `camera_id`, `after`, `before`, `limit` | episodios por cámara en ventanas fijas: objetos por etiqueta, zonas, placas, alertas, `thumbnail_url`, `clip_url` |
 
 Forma de un evento (`contracts/event.schema.json`):
 
@@ -337,9 +339,9 @@ falta `allow_embedding` en Grafana y sesión (hoy `admin`/`grafana_ro`).
 
 1. Contenedor `console` (Vite + React 19 + TS + Tailwind + shadcn, tokens
    Obsidiana copiados), servido en `/console/` por el nginx de Frigate.
-2. Pantallas en orden: **Incidentes** (nombre ya decidido; ruta
-   `/incidentes`): Alertas (`rule_matched`, severidad, foto del instante desde
-   la grabación, acuse) y Actividad (episodios por cámara de 5 min), detalle de evento (foto + clip de Frigate + lifecycle de
+2. Pantallas en orden: **Incidentes** ya existe dentro de la UI de Frigate
+   (`/incidentes`, `services/frigate/web/DeepFrigateIncidents.tsx`) sobre
+   `/v1/incidents` y `/v1/activity`; portarla tal cual es el primer paso, detalle de evento (foto + clip de Frigate + lifecycle de
    `/v1/objects/{id}`), live grid (go2rtc WebRTC), placas, transiciones,
    canvas del pipeline (portar), reglas (editor YAML), Grafana embebido.
 3. Backend a pedir a este lado: filtros/cursor en `/v1/events`, acuses,

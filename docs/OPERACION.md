@@ -853,11 +853,57 @@ mantenedor; el fork no cambia.
   `critical` sí abre un ítem Alerta para él. `user` tiene ambas en `false`
   desde el 14 sep (calle con tráfico continuo: el episodio nunca cerraba);
   la cubrirá el menú **Incidentes**. No hay lista de cámaras por env.
-- Apagar todo: `FRIGATE_REVIEW_WRITER=false`. Si algún día se enciende
-  `detect` en una cámara, Frigate publicaría sus propios segmentos y habría
-  duplicados: apagar la review de esa cámara en Frigate o este escritor.
+- **Apagado desde el 14 sep** (`FRIGATE_REVIEW_WRITER=false` y
+  `review.*.enabled: false` global en Frigate): la bandeja es Incidentes
+  (§6g). El escritor queda en el código por si se quiere volver al Review
+  nativo; encenderlo es cambiar las dos banderas.
 - Variables: `FRIGATE_REVIEW_WRITER` (true), `REVIEW_FLUSH_SECONDS` (1),
   `REVIEW_THUMB_HEIGHT` (180).
+
+## 6g. Incidentes (14 sep): la bandeja de operación
+
+Menú **Incidentes** (`/incidentes`, entre Live y Explore; el Review de Frigate
+queda oculto del menú y apagado en config: `review.alerts/detections.enabled:
+false` global en el YAML del fork, `FRIGATE_REVIEW_WRITER=false` en
+event-engine). Todo sale de `deepfrigate.events` vía platform-api; sin tablas
+de Frigate.
+
+**Alertas** (`GET /v1/incidents`): un ítem por `rule_matched` con severidad
+`warning`/`critical` (parámetro `severity` para incluir `info`). Trae
+`rule`, `message`, `label`, `zone/line/direction`, `count`, `dwell_time`,
+`bbox`, el `frigate_event_id` del track (link con `started_at ≤ occurred_at +
+5 s`) y el acuse. Filtros: `camera_id`, `rule`, `after`, `before`, `acked`
+(true/false), `limit ≤ 500`. `GET /v1/incidents/summary?hours=24` cuenta por
+severidad y regla (total y pendientes).
+
+- Acuse: `POST /v1/incidents/{id}/ack` (cuerpo opcional `{"note": …}`,
+  usuario de la cabecera `Remote-User` que pone el nginx de Frigate) y
+  `DELETE …/ack`. Tabla `deepfrigate.incident_acks (event_id, acked_by,
+  acked_at, note)`, creada por platform-api al primer uso.
+- Foto del instante: `GET /v1/incidents/{id}/frame.jpg?margin=0.6&height=720&crop=true`.
+  Corta la grabación de Frigate (`/api/{cam}/recordings/{ts}/snapshot.jpg`) y
+  recorta al `bbox` del evento (escalado del mux 1280×720 al frame) con 60 %
+  de margen. Si la grabación ya no existe (10 días) cae al snapshot del Event
+  de Frigate y luego a un cartel. 0.4-0.7 s por foto, caché 5 min.
+
+**Actividad** (`GET /v1/activity?minutes=5&camera_id=&after=&before=`):
+episodios por cámara en ventanas fijas de N min (UTC): objetos que
+empezaron (`object_detected`) por etiqueta, zonas (`object_entered_zone`),
+placas (`plate_read`), alertas (`rule_matched`, críticas aparte), primer
+track de la ventana → `thumbnail_url` (`/v1/events/{fid}/thumbnail.jpg`) y
+`clip_url` (`/api/{cam}/start/{s}/end/{e}/clip.mp4` de Frigate). Sin filtros
+de tiempo devuelve las últimas 6 h.
+
+UI: `services/frigate/web/DeepFrigateIncidents.tsx` (patrón de
+`/deepfrigate`, Obsidiana). Pestañas Alertas · Actividad; filtros cámara,
+"solo pendientes", ventana 1/5/15/60 min; acuse individual y "acusar N
+visibles"; tarjeta abre el Event en Explore; episodio abre Explore por rango
+o el clip. Refresco 10 s alertas / 30 s actividad.
+
+Código: `services/platform-api/app/incidents.py` (agrupación y recorte,
+puro, con tests en `tests/test_incidents.py`) y los endpoints en `main.py`
+(`tags=["incidents"]`). Pendiente: SSE para que las alertas entren sin
+esperar el refresco, y notificaciones.
 
 ## 7. Variables que importan
 

@@ -19,6 +19,7 @@ RUN npm install --no-save --no-audit --no-fund @xyflow/react@12.11.6 \
     @fontsource-variable/archivo@5.3.0 @fontsource-variable/geist-mono@5.3.0
 COPY frigate/web/ ./
 COPY services/frigate/web/DeepFrigate.tsx ./src/pages/DeepFrigate.tsx
+COPY services/frigate/web/DeepFrigateIncidents.tsx ./src/pages/DeepFrigateIncidents.tsx
 COPY services/frigate/web/DeepFrigateModelsSettingsView.tsx ./src/views/settings/DeepFrigateModelsSettingsView.tsx
 COPY services/frigate/web/DeepFrigateWorkflowSettingsView.tsx ./src/views/settings/DeepFrigateWorkflowSettingsView.tsx
 COPY services/frigate/web/DeepFrigateWorkflowCanvas.tsx ./src/views/settings/DeepFrigateWorkflowCanvas.tsx

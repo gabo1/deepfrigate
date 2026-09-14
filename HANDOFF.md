@@ -38,7 +38,11 @@ salvo donde se indica.
   `transiciones`, `analitica` legado). Datasource único `frigate-smoke-pg`.
 - **Heatmap** con fondo de la escena DeepStream y overlay de zonas/líneas/
   direcciones desde Frigate.
-- **Review de Frigate vivo otra vez** (14 sep): event-engine escribe
+- **Incidentes** (14 sep): menú nuevo `/incidentes` en la UI de Frigate:
+  Alertas (una por `rule_matched`, foto del instante desde la grabación,
+  acuse en `deepfrigate.incident_acks`) y Actividad (episodios de N min por
+  cámara). Review de Frigate apagado y oculto. OPERACION §6g.
+- **Review de Frigate escrito por event-engine** (14 sep, apagado el mismo día): event-engine escribe
   `reviewsegment` + miniatura (un ítem por cámara como Frigate; `alert` solo
   por `rule_matched`; por cámara con `cameras.X.review.*.enabled` de Frigate,
   `user` apagada). Sin previews/motion/WS. OPERACION §6f. Siguiente: menú

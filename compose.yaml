@@ -336,7 +336,7 @@ services:
       FRIGATE_CLIPS_DIR: /media/frigate/clips
       # Review items for Frigate's /review written by us (detect is off in
       # Frigate, its maintainer never publishes). See OPERACION §6f.
-      FRIGATE_REVIEW_WRITER: ${FRIGATE_REVIEW_WRITER:-true}
+      FRIGATE_REVIEW_WRITER: ${FRIGATE_REVIEW_WRITER:-false}
       REVIEW_FLUSH_SECONDS: ${REVIEW_FLUSH_SECONDS:-1}
       REVIEW_THUMB_HEIGHT: ${REVIEW_THUMB_HEIGHT:-180}
       # Cross-camera transitions from PP-ShiTu embeddings: undirected camera
