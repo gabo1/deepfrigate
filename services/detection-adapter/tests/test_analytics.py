@@ -109,15 +109,21 @@ def test_overcrowding_flips_at_threshold_and_clears() -> None:
 
 
 def test_direction_match_once_when_heading_east() -> None:
+    """A person walking east at 5 px/frame (5 fps) in a 100 px frame: the net
+    move over the 1.5 s window (~37 px) exceeds min_move 0.05; the match fires
+    once the window is half full and the heading held for 3 frames, then never
+    again. Stops before the box touches the right edge (clipped boxes are ignored)."""
     directions = DirectionEngine(CONFIG)
-    assert directions.observe(person(3, 0, 10)) == []
-    matched = directions.observe(person(3, 0.2, 80))
+    matched = []
+    for i in range(16):
+        matched += directions.observe(person(3, i * 0.2, 10 + 5 * i))
+    assert len(matched) == 1
     assert matched[0]["update_type"] == "direction"
     assert matched[0]["data"]["event"] == "direction_match"
     assert matched[0]["data"]["direction"] == "este"
     assert matched[0]["data"]["angle_deg"] <= 30
     _schema().validate(matched[0])
-    assert directions.observe(person(3, 0.4, 90)) == []
+    assert directions.observe(person(3, 3.2, 85)) == []
 
 
 def test_checked_in_config_has_no_analytics_yet() -> None:

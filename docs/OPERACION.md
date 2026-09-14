@@ -375,8 +375,21 @@ fork acepta además `overcrowding_threshold`, `overcrowding_clear_threshold`,
 `overcrowding_hold_s` en cada zona (`frigate/config/camera/zone.py`) y los
 bloques `lines:` y `directions:` por cámara (`frigate/config/camera/analytics.py`,
 dos puntos relativos `x1,y1,x2,y2`, `objects`, `enabled`; direcciones con
-`tolerance_deg` y `min_move`). Validación: nombres únicos entre zonas, líneas y
-direcciones de la cámara; `objects` deben estar en `objects.track`.
+`tolerance_deg`, `min_move`, `window_s`, `min_frames`). Validación: nombres
+únicos entre zonas, líneas y direcciones de la cámara; `objects` deben estar
+en `objects.track`.
+
+**Direcciones (14 sep)**: el match es una propiedad de la trayectoria, no de un
+frame. El adapter mide el desplazamiento **neto** del pie del bbox entre el
+punto actual y el de hace `window_s` (1.5 s), exige que mida al menos
+`min_move` del cuadro (0.10, antes 0.02 por frame) dentro de `tolerance_deg`
+(45°) durante `min_frames` (3) frames seguidos, e ignora frames cuya caja toca
+un borde del cuadro. Motivo: con 0.02 por frame, la caja hinchada por los
+faros de noche (anclada al borde superior) se encogía un frame, el pie subía
+14 px y eso era un `hacia_arriba`: 2 043 falsos en 24 h con 313 de 355 coches
+bajando. Sigue siendo un `direction_match` por track y dirección. Una vez
+desplegado no se reprocesa el histórico: los conteos anteriores al 14 sep
+03:50 UTC están inflados.
 
 ```text
 UI Frigate / PUT /api/config/set ──► YAML ──► restart Frigate

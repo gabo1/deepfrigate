@@ -54,7 +54,7 @@ def test_conversion_matches_the_engines_config_shape(caplog) -> None:
     assert "loitering_threshold_s" not in user["zones"]["banqueta"]
     assert set(user["zones"]) == {"calle", "banqueta"}  # disabled + broken skipped
     assert user["lines"] == {"puerta": {"from": [0.2, 0.8], "to": [0.8, 0.8], "objects": ["person"]}}
-    assert user["directions"]["salida"] == {"from": [0.5, 0.9], "to": [0.5, 0.1], "objects": ["car"], "tolerance_deg": 30.0, "min_move": 0.05}
+    assert user["directions"]["salida"] == {"from": [0.5, 0.9], "to": [0.5, 0.1], "objects": ["car"], "tolerance_deg": 30.0, "min_move": 0.05, "window_s": 1.5, "min_frames": 3}
     assert "tienda" in config["cameras"] and "vieja" not in config["cameras"]
     assert "user.zones.rota" in caplog.text and "user.lines.corta" in caplog.text
 

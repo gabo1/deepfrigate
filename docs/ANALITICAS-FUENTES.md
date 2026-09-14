@@ -291,10 +291,10 @@ Topics:
 | `services/detection-adapter/app/metrics.py` | Exporter Prometheus: catálogo `sv_*` + extras `df_*` |
 | `services/detection-adapter/app/crowd.py` | Overcrowding con histéresis (umbral de entrada ≠ de salida) y hold en segundos |
 | `services/detection-adapter/app/lines.py` | Cruce de segmento; un `line_in`/`line_out` por track |
-| `services/detection-adapter/app/direction.py` | Match de ángulo; una vez por track |
+| `services/detection-adapter/app/direction.py` | Match de ángulo sobre el desplazamiento neto en `window_s` (1.5 s), `min_move` 0.10, `min_frames` 3, ignora cajas en el borde; una vez por track (14 sep; antes frame a frame y contaba jitter) |
 | `services/detection-adapter/app/geometry.py` | Pie, intersección, `tracked_message` |
 | `services/detection-adapter/app/lifecycle.py` | START/UPDATE/END, thumbnail, stationary |
-| `services/detection-adapter/tests/test_analytics.py` | 33 tests de línea/crowd/dirección |
+| `services/detection-adapter/tests/test_analytics.py` + `test_direction.py` | tests de línea/crowd/dirección (jitter, borde, ventana) |
 | `services/detection-adapter/tests/test_metrics.py` | 7 tests: contrato `sv_*`, permanencia que sobrevive al exit, umbral de merodeo |
 
 ### Crowd: histéresis (3 sep)

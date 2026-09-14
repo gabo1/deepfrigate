@@ -210,6 +210,12 @@ Prioridad: **A** rompe datos o engaña al usuario · **B** limita producto ·
 
 ## Resuelto (para no repetirlo)
 
+- `direction_match` contaba jitter de la caja como movimiento (2 043 falsos
+  en 24 h en `user.hacia_arriba`): ahora desplazamiento neto en ventana,
+  persistencia y cajas en el borde ignoradas (14 sep). OPERACION §6a.
+  Pendiente relacionado: `cruce` usa el mismo pie frame a frame; 9 497 `out`
+  contra 31 `in` puede ser real (un sentido) o parte jitter; medir.
+
 - CPU video-engine 109 % → ~46 %: WebP "clean" duplicado y sin cadencia por
   track (8 sep). OPERACION §2.
 - Review de similares devolvía coches para una persona por ids reciclados;

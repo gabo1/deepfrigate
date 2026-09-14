@@ -122,7 +122,11 @@ def frigate_to_zones_config(
                     }
                     if kind == "directions":
                         spec["tolerance_deg"] = float(item.get("tolerance_deg") or 45)
-                        spec["min_move"] = float(item.get("min_move") or 0.02)
+                        # Net displacement over `window_s`, held `min_frames`
+                        # frames (see direction.py); 0.02 per frame was jitter.
+                        spec["min_move"] = float(item.get("min_move") or 0.10)
+                        spec["window_s"] = float(item.get("window_s") or 1.5)
+                        spec["min_frames"] = int(item.get("min_frames") or 3)
                     entry[target][name] = spec
                 except (TypeError, ValueError) as error:
                     logger.warning("%s ignorada %s: %s", kind[:-1].title(), what, error)
