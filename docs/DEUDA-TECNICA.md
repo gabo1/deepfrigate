@@ -13,31 +13,50 @@ Prioridad: **A** rompe datos o engaña al usuario · **B** limita producto ·
 
 ## A. Datos que mienten
 
-### A1. Ids de track reciclados en los archivos de `ds-snapshots`
-- **Qué**: video-engine escribe `data/ds-snapshots/{cámara}/{track_id}.jpg`,
-  `-thumb.webp` y `.bundles/{track_id}/`. NvTracker recicla `track_id` por
-  cámara; cuando `tienda` vuelve a usar el 98, los archivos se sobrescriben y
-  cualquier ficha que apunte a ese path enseña la foto de **otra** pasada
-  (`/v1/events/{id}/snapshot.jpg` y `/v1/objects/{id}` los sirven así).
+### A0. Identidad de track no única (raíz de A1, A2 y A3)
+- **Qué**: `object_id = {cámara}-{track_id}` y NvTracker recicla `track_id`
+  por cámara (el 98 de `tienda` tuvo tres ocupantes en 3 h). Todo lo que
+  indexa por `object_id` mezcla objetos distintos: archivos de snapshots,
+  puntos de Qdrant, `/v1/objects`, `LEAD()` sobre detenciones, transiciones.
+  Hoy se compensa con matching difuso por tiempo (`link_for_frame`,
+  `frigate_event_links.started_at`), repetido en cada consumidor.
+- **Arreglo (raíz)**: la identidad nace única donde nace el track. El adapter,
+  al `START`, asigna `object_id = {cámara}-{track_id}-{start_epoch_ms}` (o
+  reutiliza el uuid que ya genera como `start_event_id`) y lo propaga en MQTT.
+  Con eso links, Qdrant, similares, transiciones, `/v1/objects` y las
+  consultas de detención son correctas sin heurísticas. Los archivos del
+  exporter (`ds-snapshots/{cam}/{track}.jpg`) pueden seguir por `track_id`:
+  son caché de 24 h y no identidad.
+- **Cuesta**: contratos `tracked-object-update` y `event`, adapter, bridge
+  (marker y links), ai-router (payload y id de punto), platform-api,
+  dashboards que filtren por `object_id`, tests. ~1 día. Hacer después de A1.
+
+### A1. Fotos por track servidas como si fueran por evento
+- **Qué**: platform-api (`/v1/events/{id}/snapshot.jpg`, `/v1/objects`) sirve
+  `data/ds-snapshots/{cámara}/{track_id}.jpg`. Cuando la cámara recicla el
+  id, el archivo se sobrescribe y la ficha enseña la foto de **otra** pasada.
   Las dos fotos de Frigate (`clips/{cam}-{event_id}.jpg`, thumb) sí son por
   Event y no se pisan.
-- **Arreglo**: nombrar por instancia de track: `{track_id}_{epoch_inicio}.jpg`
-  (y bundle `.bundles/{track_id}_{epoch}/`), donde `epoch_inicio` es el
-  primer frame del track (lo tiene el exporter). El adapter y el bridge ya
-  conocen `START`; platform-api resuelve el archivo por (`object_id`,
-  `started_at` del link). Cambio en DeepFrigate (video-engine, event-engine
-  `snapshots.py`, platform-api), nada en Frigate. Retención 24 h sigue.
-- **Esfuerzo**: ~3 h + tests. Refs: `services/video-engine/app/snapshots.py`,
-  `services/event-engine/app/snapshots.py`, `platform-api` `/v1/events/{id}/{kind}.jpg`.
+- **Arreglo (inmediato, sin tocar video-engine)**: `ds-snapshots` es área de
+  trabajo de 24 h; nadie externo debe usarlo como identidad. El puente ya
+  copia por Event de Frigate la escena al START, en cada mejor frame y al END.
+  platform-api debe resolver `frigate_event_id` vía `frigate_event_links` y
+  servir esa copia (retención 10 días); `ds-snapshots` solo como fallback
+  para tracks aún activos sin Event. ~1 h. Refs: `platform-api`
+  `/v1/events/{id}/{kind}.jpg`, `services/event-engine/app/snapshots.py`.
+- **Descartado**: renombrar a `{track_id}_{epoch}.jpg` en el exporter. Evita
+  la sobreescritura pero el `epoch` del exporter (primer frame visto) no es
+  el `started_at` del adapter (START tras confirmación), así que cada
+  consumidor tendría que casarlos por cercanía. El exporter no es la fuente
+  de identidad; A0 sí.
 
 ### A2. Un punto de Qdrant por `object_id` (mismo reciclado)
 - **Qué**: ai-router hace upsert con id derivado de `{object_id}-explore-thumb`
   / `-reid-final`; el último ocupante sobrescribe al anterior. "Similares"
   de un evento cuyo id ya se recicló responde vacío (antes respondía basura;
   arreglado el 9 sep para no mentir, no para conservar).
-- **Arreglo**: id de punto por instancia (`object_id` + `started_at` o el
-  `start_event_id` del link) y payload con `frigate_event_id`. platform-api
-  busca por `frigate_event_id` directamente. Esfuerzo ~2 h. Refs:
+- **Arreglo**: cae solo con A0 (id de punto por `object_id` único). Mientras,
+  añadir `frigate_event_id` al payload cuando el link exista. Refs:
   `services/ai-router/app/embedding.py`, `reid.py`; `platform-api`
   `link_for_frame`.
 
@@ -45,8 +64,8 @@ Prioridad: **A** rompe datos o engaña al usuario · **B** limita producto ·
 - **Qué**: agrega todos los eventos históricos del `object_id` (ej.
   `tienda-98` devuelve `label: bus`, `first_seen` de hace 6 días, 201
   eventos). El explorador `/deepfrigate` lo usa.
-- **Arreglo**: parámetro `frigate_event_id` o `started_at`; agrupar por
-  `frigate_event_links.start_event_id`. Esfuerzo ~1 h.
+- **Arreglo**: parámetro `frigate_event_id` (o `started_at`) y agrupar por
+  `frigate_event_links.start_event_id`; desaparece con A0. ~1 h.
 
 ### A4. Review de Frigate vacío desde el 4 sep
 - **Qué**: con `detect.enabled: false` el `ReviewSegmentMaintainer` nunca
