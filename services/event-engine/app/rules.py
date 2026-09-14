@@ -393,7 +393,7 @@ def rule_update(update: dict[str, Any], derived: dict[str, Any]) -> dict[str, An
         "track_id": derived["track_id"],
         "timestamp": derived["timestamp"],
         "update_type": "custom",
-        "data": {"kind": "rule", **derived["data"]},
+        "data": {"kind": "rule", "severity": derived["severity"], **derived["data"]},
     }
 
 

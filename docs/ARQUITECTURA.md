@@ -32,7 +32,7 @@ flowchart LR
   end
   MQTT["MQTT deepfrigate/detections"]
   AD["detection-adapter<br/>START/UPDATE/LOST/END · zonas/líneas/crowd<br/>(config desde Frigate /api/config)"]
-  EE["event-engine<br/>PG events · puente Frigate · transiciones"]
+  EE["event-engine<br/>PG events · puente Frigate (Events + Review) · reglas · transiciones"]
   PG["PostgreSQL único (pgvector)<br/>public: Frigate · deepfrigate: events, links, camera_transitions"]
   FR["Frigate smoke :3005<br/>Explore · Jina v2 GPU"]
   API["platform-api :8082<br/>/v1/camera-transitions · heatmap"]

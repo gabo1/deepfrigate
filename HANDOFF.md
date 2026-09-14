@@ -1,6 +1,6 @@
 # Handoff — DeepFrigate
 
-## Estado actual (12 sep 2026)
+## Estado actual (14 sep 2026)
 
 Resumen de lo vivo hoy; el detalle está en las entradas fechadas de abajo
 y en los runbooks. Lo que sigue en el bloque del 4 sep sigue siendo válido
@@ -38,6 +38,11 @@ salvo donde se indica.
   `transiciones`, `analitica` legado). Datasource único `frigate-smoke-pg`.
 - **Heatmap** con fondo de la escena DeepStream y overlay de zonas/líneas/
   direcciones desde Frigate.
+- **Review de Frigate vivo otra vez** (14 sep): event-engine escribe
+  `reviewsegment` + miniatura (un ítem por cámara como Frigate; `alert` solo
+  por `rule_matched`). Sin previews/motion/WS. OPERACION §6f.
+- **Direcciones por trayectoria** (14 sep): `direction_match` medía jitter;
+  ahora desplazamiento neto en 1.5 s, 3 frames, sin cajas en el borde.
 - **Watchdog por fuente** (12 sep): `user` estuvo 2.5 días sin detecciones
   (nvurisrcbin dejó de reconectar) con Frigate grabándola. Ahora video-engine
   re-agrega solo el slot callado ≥120 s si su RTSP responde

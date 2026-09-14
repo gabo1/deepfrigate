@@ -75,18 +75,6 @@ Prioridad: **A** rompe datos o engaña al usuario · **B** limita producto ·
 - **Arreglo**: parámetro `frigate_event_id` (o `started_at`) y agrupar por
   `frigate_event_links.start_event_id`; desaparece con A0. ~1 h.
 
-### A4. Review de Frigate vacío desde el 4 sep
-- **Qué**: con `detect.enabled: false` el `ReviewSegmentMaintainer` nunca
-  recibe frames y no publica ni cierra los segmentos de eventos manuales.
-  Alertas/Detecciones en la UI de Frigate vacías.
-- **Estado**: parche en el fork `frigate-pg/frigate/review/maintainer.py`
-  (`maintain_frameless_segments`, miniatura desde el snapshot del evento) con
-  test `test_review_frameless_segments.py`; 9/10 verdes, falta `detect:
-  enabled: true` explícito en la cámara "con decode" del test. **Sin
-  commit ni despliegue.** Si el front nuevo hace su propia bandeja sobre
-  `deepfrigate.events`, se puede descartar.
-- **Esfuerzo**: 20 min para cerrar; capa B + recreate 2 min.
-
 ---
 
 ## B. Producto incompleto
@@ -192,7 +180,14 @@ Prioridad: **A** rompe datos o engaña al usuario · **B** limita producto ·
 - No hay test que meta un clip conocido por MediaMTX y verifique eventos
   esperados. Todo se valida a mano. Esfuerzo 1 día.
 
-### C7. Frigate no detecta ni decodifica: efectos colaterales
+### C6b. Review sin previews, motion ni aviso en vivo
+- Los ítems de /review los escribe event-engine (14 sep, OPERACION §6f). Lo
+  que sigue faltando por no decodificar en Frigate: previews (hover de la
+  tarjeta y scrubber de la línea de tiempo), banda de motion, WebSocket
+  `reviews`/webpush (la UI refresca por summary). Aceptado; el front nuevo
+  hará su bandeja sobre `deepfrigate.events`. Flag por cámara para el
+  escritor pendiente (si se enciende `detect` en una cámara habría duplicados).
+
 - `camera_fps` 0, sin motion, Review roto (A4), `bandwidth exceeds expected
   maximum` en el log de storage. Es por diseño (detecta DeepStream) pero
   cada release de Frigate puede añadir otra pieza que asuma frames.
@@ -209,6 +204,11 @@ Prioridad: **A** rompe datos o engaña al usuario · **B** limita producto ·
 ---
 
 ## Resuelto (para no repetirlo)
+
+- A4 Review de Frigate vacío desde el 4 sep: event-engine escribe
+  `reviewsegment` y la miniatura; agrupación por cámara como Frigate,
+  severidad por nuestras reglas (14 sep). OPERACION §6f. El parche del
+  mantenedor del fork se descartó y se revirtió.
 
 - `direction_match` contaba jitter de la caja como movimiento (2 043 falsos
   en 24 h en `user.hacia_arriba`): ahora desplazamiento neto en ventana,

@@ -75,6 +75,10 @@ class EventEngine:
                 ),
                 snapshot_dir=os.getenv("DS_SNAPSHOT_DIR"),
                 clips_dir=os.getenv("FRIGATE_CLIPS_DIR"),
+                review_writer=os.getenv("FRIGATE_REVIEW_WRITER", "true").lower()
+                in {"1", "true", "yes"},
+                review_flush_seconds=float(os.getenv("REVIEW_FLUSH_SECONDS", "1")),
+                review_thumb_height=int(os.getenv("REVIEW_THUMB_HEIGHT", "180")),
             )
             if os.getenv("FRIGATE_REVIEW_BRIDGE", "true").lower()
             in {"1", "true", "yes"}
@@ -407,6 +411,13 @@ class EventEngine:
 
     def _run_bridge_worker(self) -> None:
         while not shutdown_requested.is_set():
+            # Review segments close by wall clock and their thumbs may arrive
+            # a tick late; flush on every turn, quiet queue included.
+            if self.frigate_bridge is not None:
+                try:
+                    self.frigate_bridge.flush_review()
+                except Exception:
+                    logger.exception("Review segment flush failed")
             try:
                 update, event = self.bridge_queue.get(timeout=0.2)
             except Empty:

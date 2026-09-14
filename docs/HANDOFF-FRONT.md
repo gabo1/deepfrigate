@@ -188,7 +188,7 @@ Base `/api` (mismo origen). Frigate 0.18 (fork). Referencia completa:
 | Grabaciones | `GET /api/{camera}/recordings/summary`, `GET /api/{camera}/recordings?after=&before=`, VOD `GET /vod/{camera}/start/{ts}/end/{ts}/index.m3u8` (HLS) |
 | Última imagen de cámara | `GET /api/{camera}/latest.jpg?h=360` |
 | Live | WebRTC `ws(s)://…/live/webrtc/api/ws?src={camera}`; MSE `ws(s)://…/live/mse/api/ws?src={camera}`; JSMpeg `/live/jsmpeg/{camera}`. go2rtc también trae un web component (`video-stream`) que habla esos dos WS |
-| Review (alertas de Frigate) | `GET /api/review?...` — **vacío desde el 4 sep** (ver §8); el front nuevo debe basar su bandeja en `deepfrigate.events`, no aquí |
+| Review (alertas de Frigate) | `GET /api/review?cameras=&before=&after=`, `GET /api/review/summary?timezone=` — los ítems los escribe nuestro event-engine (un ítem abierto por cámara, `alert` solo con `rule_matched`, ver OPERACION §6f). Sin previews ni motion. La bandeja del front nuevo sigue mejor sobre `deepfrigate.events` |
 | Estado del sistema | `GET /api/stats` (por cámara `camera_fps` es 0 porque Frigate no detecta: detecta DeepStream) |
 | Eventos tiempo real de Frigate | `ws(s)://…/ws` (MQTT bridge de Frigate: `frigate/events`, `frigate/reviews`) |
 | Login | `POST /api/login`, `POST /api/logout`, `GET /api/profile` |
@@ -292,10 +292,10 @@ falta `allow_embedding` en Grafana y sesión (hoy `admin`/`grafana_ro`).
 ## 8. Cosas que hay que saber antes de diseñar
 
 - **Frigate no detecta ni decodifica** nuestras cámaras: `detect.enabled:
-  false`, solo graba y sirve live. Por eso `camera_fps` es 0, no hay motion,
-  y el Review de Frigate está vacío desde el 4 sep (su mantenedor necesita
-  frames; hay parche en el fork sin desplegar). La bandeja de alertas del
-  front nuevo va sobre `deepfrigate.events`.
+  false`, solo graba y sirve live. Por eso `camera_fps` es 0, no hay motion
+  ni previews. Los ítems de Review los escribe event-engine desde el 14 sep
+  (OPERACION §6f). La bandeja de alertas del front nuevo va sobre
+  `deepfrigate.events`.
 - **Ids de track reciclados**: nunca uses `object_id` solo como identidad.
 - Placas: OpenALPR (SDK comercial, licencia trial en
   `config/openalpr/license.conf`, fuera de git). Hoy solo en `user`.

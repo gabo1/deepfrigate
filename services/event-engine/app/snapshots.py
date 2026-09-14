@@ -206,6 +206,39 @@ def _bundle_sources(
         return None
 
 
+REVIEW_THUMB_HEIGHT = 180
+
+
+def write_review_thumb(
+    source: Path, dest: Path, *, height: int = REVIEW_THUMB_HEIGHT, quality: int = 60
+) -> bool:
+    """`clips/review/thumb-{camera}-{id}.webp` from an event image.
+
+    Frigate's maintainer crops a 16:9 region around the objects from the
+    decoded frame at 180 px high (WebP q60). We have no frame: the source is
+    the scene jpg (or Explore thumb) the bridge installed for the first event
+    of the segment, resized to the same height.
+    """
+    if not source.exists() or source.stat().st_size <= 0:
+        return False
+    try:
+        from PIL import Image
+
+        image = Image.open(source).convert("RGB")
+        if image.height <= 0:
+            return False
+        width = max(1, int(round(height * image.width / image.height)))
+        image = image.resize((width, height), Image.Resampling.LANCZOS)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dest.with_suffix(dest.suffix + ".tmp")
+        image.save(tmp, format="WEBP", quality=quality)
+        tmp.replace(dest)
+        return True
+    except Exception:
+        dest.with_suffix(dest.suffix + ".tmp").unlink(missing_ok=True)
+        return False
+
+
 def write_clean_from_scene(
     scene: Path,
     dest_webp: Path,

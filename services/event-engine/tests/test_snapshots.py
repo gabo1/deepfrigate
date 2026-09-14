@@ -494,3 +494,15 @@ def test_replace_frigate_snapshot_derives_clean_when_bundle_has_none(tmp_path: P
     clean = Image.open(clips / "user-evt-1-clean.webp").convert("RGB")
     assert clean.size == (64, 48) and clean.getpixel((0, 0))[0] > 150
     assert (clips / "thumbs" / "user" / "evt-1.webp").read_bytes() == b"bundle-thumb"
+
+
+def test_write_review_thumb_is_180_px_high_webp(tmp_path: Path) -> None:
+    from app.snapshots import write_review_thumb
+
+    scene = tmp_path / "tienda-evt.jpg"
+    Image.new("RGB", (1280, 720), (10, 200, 10)).save(scene, format="JPEG")
+    dest = tmp_path / "review" / "thumb-tienda-1.webp"
+    assert write_review_thumb(scene, dest)
+    thumb = Image.open(dest)
+    assert thumb.format == "WEBP" and thumb.size == (320, 180)
+    assert not write_review_thumb(tmp_path / "missing.jpg", tmp_path / "review" / "x.webp")

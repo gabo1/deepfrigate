@@ -8,6 +8,7 @@ class FakeStore:
     def __init__(self) -> None:
         self.rows: dict[str, dict[str, Any]] = {}
         self.timeline: list[dict[str, Any]] = []
+        self.reviews: dict[str, dict[str, Any]] = {}
 
     def replace_api_timeline(self, event_id: str) -> None:
         self.timeline = [
@@ -34,6 +35,17 @@ class FakeStore:
             "data": dict(row["data"]),
             "zones": list(row["zones"]),
         }
+
+    def upsert_review_segment(self, row: dict[str, Any]) -> None:
+        self.reviews[row["id"]] = dict(row)
+
+    def close_open_review_segments(self, end_time: float) -> int:
+        closed = 0
+        for row in self.reviews.values():
+            if row.get("end_time") is None:
+                row["end_time"] = end_time
+                closed += 1
+        return closed
 
     def merge(self, event_id: str, **fields: Any) -> bool:
         row = self.rows.setdefault(
@@ -1473,3 +1485,106 @@ def test_rule_sub_label_waits_for_the_frigate_event(monkeypatch):
     # A rule without sub_label never touches Frigate.
     bridge.observe(_rule(ts=131.0, sub_label=""))
     assert store.rows["frigate-event-1"]["sub_label"] == "Persona nocturna"
+
+
+def _review_bridge(tmp_path, monkeypatch, counter):
+    from PIL import Image
+
+    repository = FakeRepository()
+    store = FakeStore()
+    clips = tmp_path / "clips"
+    clips.mkdir()
+    bridge = FrigateReviewBridge(
+        "http://frigate:5000/api", repository, store=store,
+        camera_sizes={"tienda": (1280, 720)}, clips_dir=str(clips),
+    )
+
+    def request(method, path, payload=None):
+        if method == "GET":
+            return {"cameras": {"tienda": {"review": {"alerts": {"cutoff_time": 40}, "detections": {"cutoff_time": 30}}}}}
+        if not path.endswith("/create"):
+            return {}
+        counter[0] += 1
+        event_id = f"frigate-event-{counter[0]}"
+        # The bridge installs the scene right after create; emulate the file.
+        Image.new("RGB", (1280, 720), (40, 40, 40)).save(clips / f"tienda-{event_id}.jpg", format="JPEG")
+        return {"event_id": event_id}
+
+    monkeypatch.setattr(bridge, "_request", request)
+    clock = [100.0]
+    bridge.review_clock = lambda: clock[0]
+    bridge._review_clock_cell = clock  # tests advance it
+    return bridge, store, clips
+
+
+def _event_for(ts: float, **ids: Any) -> dict[str, Any]:
+    event = detected_event()
+    event["timestamp"] = ts
+    if ids:
+        event["object_id"] = ids["object_id"]
+        event["id"] = f"start-{ids['object_id']}"
+    return event
+
+
+def _confirm(bridge, ts, **ids):
+    bridge._review_clock_cell[0] = ts
+    bridge.observe(_detection("START", ts, false_positive=True, position_changes=0, **ids), _event_for(ts, **ids))
+    bridge._review_clock_cell[0] = ts + 1.0
+    bridge.observe(_detection("UPDATE", ts + 1.0, **_quality(), **ids))
+
+
+def test_review_segment_is_written_with_thumb_when_the_event_is_created(tmp_path, monkeypatch) -> None:
+    from PIL import Image
+
+    bridge, store, clips = _review_bridge(tmp_path, monkeypatch, [0])
+    _confirm(bridge, 100.0)
+    assert len(store.reviews) == 1
+    row = next(iter(store.reviews.values()))
+    assert row["camera"] == "tienda" and row["severity"] == "detection" and row["end_time"] is None
+    assert row["data"]["detections"] == ["frigate-event-1"] and row["data"]["objects"] == ["person"]
+    assert row["data"]["zones"] == [] and row["data"]["audio"] == [] and row["data"]["sub_labels"] == []
+    thumb = Image.open(row["thumb_path"])
+    assert thumb.height == 180 and row["thumb_path"].startswith(str(clips / "review" / "thumb-tienda-"))
+    assert len(row["id"]) <= 30 and row["id"].startswith("100.0-")
+
+
+def test_second_track_before_cutoff_joins_and_segment_closes_after_cutoff(tmp_path, monkeypatch) -> None:
+    bridge, store, clips = _review_bridge(tmp_path, monkeypatch, [0])
+    _confirm(bridge, 100.0)
+    bridge.observe(_detection("END", 110.0, last_seen_at=110.0), _event_for(110.0))
+    # Second person 10 s later on the same camera: same review item.
+    ids = {"object_id": "tienda-43", "track_id": 43}
+    _confirm(bridge, 120.0, **ids)
+    assert len(store.reviews) == 1
+    row = next(iter(store.reviews.values()))
+    assert sorted(row["data"]["detections"]) == ["frigate-event-1", "frigate-event-2"]
+    bridge.observe(_detection("END", 130.0, last_seen_at=130.0, **ids), _event_for(130.0, **ids))
+    assert bridge.flush_review(now=150.0) == 0            # 20 s < detection cutoff 30 s
+    assert row["end_time"] is None
+    assert bridge.flush_review(now=161.0) == 1
+    assert store.reviews[row["id"]]["end_time"] == 130.0
+    # A track after the close opens a new item.
+    ids = {"object_id": "tienda-44", "track_id": 44}
+    _confirm(bridge, 200.0, **ids)
+    assert len(store.reviews) == 2
+
+
+def test_plate_marks_verified_and_rule_raises_to_alert(tmp_path, monkeypatch) -> None:
+    bridge, store, clips = _review_bridge(tmp_path, monkeypatch, [0])
+    _confirm(bridge, 100.0)
+    bridge.observe(_plate(ts=101.0))
+    bridge.flush_review(now=102.5)
+    row = next(iter(store.reviews.values()))
+    assert row["data"]["objects"] == ["person-verified"] and row["data"]["sub_labels"] == ["JD6085B"]
+    assert row["data"]["verified_objects"] == ["person-verified"] and row["severity"] == "detection"
+    rule = _rule(ts=103.0, sub_label="Merodeo")
+    rule["data"]["severity"] = "warning"
+    bridge.observe(rule)
+    bridge.flush_review(now=105.0)
+    row = store.reviews[row["id"]]
+    assert row["severity"] == "alert" and "merodeo_calle" in row["data"]["sub_labels"]
+
+
+def test_review_writer_is_off_without_clips_dir_or_store(monkeypatch) -> None:
+    bridge = FrigateReviewBridge("http://frigate:5000/api", FakeRepository(), store=FakeStore(), camera_sizes={"tienda": (1280, 720)})
+    assert bridge.review is None and bridge.flush_review() == 0

@@ -152,6 +152,71 @@ class FrigateEventStore:
             connection.commit()
             return updated
 
+    # ------------------------------------------------------- review segments
+    def upsert_review_segment(self, row: dict[str, Any]) -> None:
+        """Same upsert Frigate's dispatcher does for UPSERT_REVIEW_SEGMENT."""
+        values = (
+            str(row["id"]),
+            str(row["camera"]),
+            float(row["start_time"]),
+            None if row.get("end_time") is None else float(row["end_time"]),
+            str(row["severity"]),
+            str(row["thumb_path"]),
+            json.dumps(row.get("data") or {}, separators=(",", ":")),
+        )
+        if self.is_postgresql:
+            with self._pg_lock:
+                with self._postgres().cursor() as cursor:
+                    cursor.execute(
+                        """
+                        INSERT INTO reviewsegment
+                            (id, camera, start_time, end_time, severity, thumb_path, data)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb)
+                        ON CONFLICT (id) DO UPDATE SET
+                            end_time = EXCLUDED.end_time,
+                            severity = EXCLUDED.severity,
+                            thumb_path = EXCLUDED.thumb_path,
+                            data = EXCLUDED.data
+                        """,
+                        values,
+                    )
+            return
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO reviewsegment
+                    (id, camera, start_time, end_time, severity, thumb_path, data)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (id) DO UPDATE SET
+                    end_time = excluded.end_time,
+                    severity = excluded.severity,
+                    thumb_path = excluded.thumb_path,
+                    data = excluded.data
+                """,
+                values,
+            )
+            connection.commit()
+
+    def close_open_review_segments(self, end_time: float) -> int:
+        """Frigate does this at startup (CLEAR_ONGOING_REVIEW_SEGMENTS); we do
+        it at ours so a restart never leaves rows with end_time NULL (they
+        would never expire)."""
+        if self.is_postgresql:
+            with self._pg_lock:
+                with self._postgres().cursor() as cursor:
+                    cursor.execute(
+                        "UPDATE reviewsegment SET end_time = %s WHERE end_time IS NULL",
+                        (float(end_time),),
+                    )
+                    return cursor.rowcount
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "UPDATE reviewsegment SET end_time = ? WHERE end_time IS NULL",
+                (float(end_time),),
+            )
+            connection.commit()
+            return cursor.rowcount
+
     def replace_api_timeline(self, event_id: str) -> None:
         if self.is_postgresql:
             with self._pg_lock:

@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import time
+from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -20,7 +21,8 @@ from .geometry import (
     snapshot_area,
 )
 from .repository import EventRepository
-from .snapshots import SnapshotGeometry, replace_frigate_snapshot
+from .review import ReviewSegment, ReviewWriter, cutoffs_from_frigate_config
+from .snapshots import SnapshotGeometry, replace_frigate_snapshot, write_review_thumb
 
 logger = logging.getLogger("event-engine.frigate")
 
@@ -134,6 +136,9 @@ class FrigateReviewBridge:
         path_min_delta: float = 0.05,
         snapshot_dir: str | None = None,
         clips_dir: str | None = None,
+        review_writer: bool = True,
+        review_flush_seconds: float = 1.0,
+        review_thumb_height: int = 180,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.repository = repository
@@ -157,6 +162,19 @@ class FrigateReviewBridge:
         ] = {}
         self._attribute_items: dict[str, list[tuple[str, str, float]]] = {}
         self._create_backoff_until: dict[str, float] = {}
+        # Review items for /review: written by us because Frigate's maintainer
+        # never publishes without decoded frames (see review.py).
+        self.review: ReviewWriter | None = (
+            ReviewWriter(clips_dir)
+            if review_writer and clips_dir and hasattr(store, "upsert_review_segment")
+            else None
+        )
+        self.review_flush_seconds = float(review_flush_seconds)
+        self.review_thumb_height = int(review_thumb_height)
+        self._review_cutoffs_loaded = False
+        self._review_orphans_closed = False
+        # Wall clock for review coalescing/cutoffs; tests inject their own.
+        self.review_clock = time.time
 
     def observe(
         self, update: dict[str, Any], event: dict[str, Any] | None = None
@@ -462,6 +480,7 @@ class FrigateReviewBridge:
         )
         if pending is not None and geometry is not None:
             pending.snapshot_box = geometry.box
+        self._review_created(event, frigate_event_id)
         self._seed_geometry(frigate_event_id, event, geometry)
         self._write_timeline(
             frigate_event_id,
@@ -555,6 +574,8 @@ class FrigateReviewBridge:
                 event["object_id"],
             )
         self.repository.end_frigate_link(start_event_id, ended)
+        if self.review is not None:
+            self.review.on_event_ended(str(frigate_event_id), ended)
         self._paths.pop(event["object_id"], None)
         self._zones.pop(event["object_id"], None)
         self._zone_sets.pop(event["object_id"], None)
@@ -616,6 +637,8 @@ class FrigateReviewBridge:
             if zone not in merged:
                 merged.append(zone)
         self._zones[object_id] = merged
+        if self.review is not None:
+            self.review.on_zones(str(link["frigate_event_id"]), merged)
         previous_zones = self._zone_sets.get(object_id, set())
         new_zones = set(current)
         self._zone_sets[object_id] = new_zones
@@ -870,13 +893,16 @@ class FrigateReviewBridge:
             }
         pending = self._pending.get(object_id)
         has_plate = pending is not None and pending.last_plate is not None
+        vehicle_label = vehicle_sub_label(summary) if label == "car" and not has_plate else None
         self.store.merge(
             str(link["frigate_event_id"]),
             data_update=data_update,
             # A read plate is the better sub_label; never overwrite it with
             # "gray sedan".
-            sub_label=vehicle_sub_label(summary) if label == "car" and not has_plate else None,
+            sub_label=vehicle_label,
         )
+        if self.review is not None and vehicle_label:
+            self.review.on_sub_label(str(link["frigate_event_id"]), vehicle_label)
 
     def _plate_update(self, update: dict[str, Any]) -> None:
         object_id = str(update.get("object_id", ""))
@@ -931,6 +957,10 @@ class FrigateReviewBridge:
             data_update={"rule": data.get("rule"), "rule_message": data.get("message")},
             sub_label=sub_label[:100],
         )
+        if self.review is not None:
+            frigate_event_id = str(link["frigate_event_id"])
+            self.review.on_sub_label(frigate_event_id, sub_label)
+            self.review.on_rule(frigate_event_id, str(data.get("rule") or ""), data.get("severity"))
 
     def _persist_plate(self, object_id: str, update: dict[str, Any]) -> None:
         if self.store is None:
@@ -963,6 +993,8 @@ class FrigateReviewBridge:
             },
             sub_label=plate,
         )
+        if self.review is not None:
+            self.review.on_sub_label(str(link["frigate_event_id"]), plate)
 
     def _write_timeline(
         self,
@@ -1031,6 +1063,92 @@ class FrigateReviewBridge:
             class_type,
             object_id=object_id,
         )
+
+    # ------------------------------------------------------------- review
+    def _review_created(self, event: dict[str, Any], frigate_event_id: str) -> None:
+        if self.review is None:
+            return
+        self._review_prepare()
+        label = str((event.get("data") or {}).get("label") or "object")
+        # `started_at` is the START frame time; `timestamp` is the confirming UPDATE.
+        started_at = float(event.get("started_at") or event["timestamp"])
+        segment, created = self.review.on_event_created(
+            str(event["camera_id"]), str(frigate_event_id), label, started_at
+        )
+        if created:
+            logger.info(
+                "Review segment %s opened camera=%s event=%s",
+                segment.id, segment.camera, frigate_event_id,
+            )
+        # The card needs the thumbnail file; write it before the first row.
+        self._review_thumb(segment)
+        self.flush_review()
+
+    def _review_prepare(self) -> None:
+        """Once: cutoffs from Frigate's config and close rows we left open."""
+        if self.review is None:
+            return
+        if not self._review_cutoffs_loaded:
+            self._review_cutoffs_loaded = True
+            try:
+                config = self._request("GET", "/config")
+                self.review.cutoffs = cutoffs_from_frigate_config(config)
+            except Exception as error:  # noqa: BLE001 - defaults are fine
+                logger.warning("Review cutoffs: Frigate config unavailable (%s); using defaults", error)
+        if not self._review_orphans_closed:
+            self._review_orphans_closed = True
+            try:
+                closed = self.store.close_open_review_segments(self.review_clock())
+                if closed:
+                    logger.info("Closed %d review segment(s) left open by a previous run", closed)
+            except Exception:  # noqa: BLE001
+                logger.exception("Could not close open review segments")
+
+    def _review_thumb(self, segment: ReviewSegment) -> bool:
+        """Thumb from the scene jpg of one of the segment's events (first choice
+        the first event); Explore thumb as fallback. Returns True when present."""
+        if segment.has_thumb or not self.clips_dir:
+            return segment.has_thumb
+        clips = Path(self.clips_dir)
+        dest = Path(segment.thumb_path)
+        candidates: list[Path] = []
+        order = [segment.thumb_event_id] + [e for e in segment.detections if e != segment.thumb_event_id]
+        for event_id in order:
+            if not event_id:
+                continue
+            candidates.append(clips / f"{segment.camera}-{event_id}.jpg")
+        for event_id in order:
+            if event_id:
+                candidates.append(clips / "thumbs" / segment.camera / f"{event_id}.webp")
+        for source in candidates:
+            if write_review_thumb(source, dest, height=self.review_thumb_height):
+                self.review.on_thumb(segment, self.review_clock())
+                return True
+        return False
+
+    def flush_review(self, now: float | None = None) -> int:
+        """Persist dirty segments (coalesced) and close the ones past cutoff."""
+        if self.review is None or self.store is None:
+            return 0
+        now = self.review_clock() if now is None else float(now)
+        written = 0
+        for segment in self.review.due(now):
+            self.review.close(segment, now)
+            logger.info(
+                "Review segment %s closed camera=%s severity=%s events=%d",
+                segment.id, segment.camera, segment.severity, len(segment.detections),
+            )
+        for segment in self.review.pending(now, self.review_flush_seconds):
+            if not segment.has_thumb and not self._review_thumb(segment) and not segment.ended:
+                # No image yet (snapshot copy still in flight): the card would
+                # spin on a missing file. Wait for the next flush.
+                if now - segment.start_time < 30:
+                    continue
+            self.store.upsert_review_segment(segment.row())
+            self.review.mark_persisted(segment, now)
+            written += 1
+        self.review.prune(now)
+        return written
 
     def _replace_snapshot(
         self,

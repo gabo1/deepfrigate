@@ -796,6 +796,60 @@ zenika/alpine-chrome --headless --no-sandbox --force-dark-mode --hide-scrollbars
 Volver atrás: `docker tag …:pgvector-smoke-pre-obsidiana …:pgvector-smoke` y
 `up -d --no-build`.
 
+## 6f. Review de Frigate escrito por event-engine (14 sep)
+
+`/review` (Alertas / Detecciones) estuvo vacío del 4 al 14 sep: con
+`detect.enabled: false` el `ReviewSegmentMaintainer` de Frigate crea el
+segmento en memoria al llegar nuestro evento manual pero solo lo publica y lo
+cierra cuando recibe un frame decodificado de esa cámara. Sin decode, nunca.
+Ahora los ítems los escribe **event-engine** en `reviewsegment` (mismo upsert
+que hace Frigate en `frigate/comms/dispatcher.py`) y la miniatura en
+`clips/review/thumb-{cámara}-{id}.webp`. Frigate solo los pinta. Sin parche al
+mantenedor; el fork no cambia.
+
+- Código: `services/event-engine/app/review.py` (`ReviewWriter`, lógica pura),
+  enganches en `frigate_bridge.py` (`_review_created`, `flush_review`,
+  `_review_thumb`), `frigate_store.upsert_review_segment` /
+  `close_open_review_segments`, `snapshots.write_review_thumb` (180 px, WebP
+  q60, como `THUMB_HEIGHT` del mantenedor).
+- **Agrupación como Frigate**: un ítem abierto por cámara. Cada Event que el
+  puente crea se suma a él (`data.detections`) hasta que todos sus tracks
+  terminaron y pasó el `cutoff_time` (`review.alerts.cutoff_time` 40 s /
+  `review.detections.cutoff_time` 30 s, leídos de `/api/config`). Entonces se
+  cierra con `end_time` = último `last_seen_at` y el siguiente track abre otro.
+  En una calle con tráfico continuo el ítem puede durar horas, igual que en
+  Frigate.
+- **Severidad nuestra**: todo nace `detection`; pasa a `alert` cuando una
+  regla de `config/rules/rules.yaml` con severidad `warning` o `critical`
+  dispara sobre un track del ítem (`rule_matched`). El nombre de la regla va
+  a `data.sub_labels` (tooltip de la tarjeta).
+- `data.objects` lleva `{label}-verified` cuando el Event tiene `sub_label`
+  (placa, marca/modelo, regla): la UI pinta el check. `zones` = unión de las
+  zonas de sus tracks. `audio` siempre `[]`, `metadata` `null` (GenAI).
+- Miniatura: de la escena que el puente instaló para el primer Event
+  (`clips/{cámara}-{event_id}.jpg`); si aún no está, se reintenta en cada
+  flush (1 s) y la fila no se escribe hasta tenerla (la tarjeta giraría con
+  un 404) salvo que pasen 30 s.
+- Arranque: cierra con `end_time = now` cualquier fila abierta (equivale al
+  `CLEAR_ONGOING_REVIEW_SEGMENTS` de Frigate; sin ello nunca expirarían).
+  Un reinicio de Frigate hace lo mismo con las nuestras: esperado.
+- Lo que **no** hay y es por diseño (requieren decode): previews (el hover de
+  la tarjeta no reproduce, solo miniatura; nunca se auto-marca como revisada),
+  banda de "motion" en la línea de tiempo, aviso WebSocket `reviews`/webpush
+  en vivo (la UI descubre ítems nuevos por `review/summary`; recarga sola).
+- Retención: la hace Frigate por `record.alerts/detections.retain.days`
+  sobre `end_time` (`frigate/record/cleanup.py`), borrando también la miniatura.
+- Verificar: `SELECT id, camera, severity, end_time, data->'objects' FROM
+  reviewsegment ORDER BY start_time DESC LIMIT 5;` y `ls
+  /media/frigate/clips/review/`; `GET /api/review?cameras=user`;
+  `GET /api/review/summary?timezone=UTC`. Log: `Review segment … opened` /
+  `closed`.
+- Apagar: `FRIGATE_REVIEW_WRITER=false`. Si algún día se enciende `detect` en
+  una cámara, Frigate publicaría sus propios segmentos y habría duplicados:
+  apagar este escritor para esa cámara (pendiente: flag por cámara).
+- Variables: `FRIGATE_REVIEW_WRITER` (true), `REVIEW_FLUSH_SECONDS` (1),
+  `REVIEW_THUMB_HEIGHT` (180).
+
 ## 7. Variables que importan
 
 | Variable | Servicio | Default | Qué hace |
@@ -806,6 +860,7 @@ Volver atrás: `docker tag …:pgvector-smoke-pre-obsidiana …:pgvector-smoke` 
 | `SOURCE_STALL_SECONDS` / `SOURCE_STALL_CHECK_SECONDS` | video-engine | 120 / 15 | watchdog por fuente: re-agrega un slot callado si su RTSP responde DESCRIBE; 0 desactiva (§2) |
 | `DS_SNAPSHOT_INTERVAL` / `DS_SNAPSHOT_CLEAN` | video-engine | 0.4 / false | mínimo entre escrituras de snapshot por track; escribir también `-clean.webp` (2× encode; hoy lo deriva event-engine) |
 | `SIMILAR_COLLECTIONS` | platform-api | `person=reid_embeddings` | colección Qdrant por etiqueta para "similares"; resto `QDRANT_COLLECTION` (§6) |
+| `FRIGATE_REVIEW_WRITER` / `REVIEW_FLUSH_SECONDS` / `REVIEW_THUMB_HEIGHT` | event-engine | true / 1 / 180 | ítems de /review escritos por nosotros (§6f) |
 | `RULES_ENABLED` / `RULES_CONFIG` / `RULES_RELOAD_SECONDS` / `RULES_TIMEZONE` | event-engine | true / `/app/config/rules/rules.yaml` / 2 / `America/Mexico_City` | reglas declarativas → `rule_matched` (§6d) |
 | `LOST_AFTER_SECONDS` / `END_AFTER_SECONDS` | adapter | 5 / 5 | gracia antes de LOST/END; Frigate cierra con `last_seen_at` |
 | `FRIGATE_BRIDGE_UPDATE_SECONDS` | event-engine | 1 | coalescing de UPDATE hacia Frigate |
