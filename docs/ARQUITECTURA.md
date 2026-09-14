@@ -254,6 +254,9 @@ Runbook completo: `docs/OPERACION.md`.
 
 ## 6. Deuda respecto al diseño Savant
 
+Registro completo de deuda (datos, producto, mantenimiento):
+`docs/DEUDA-TECNICA.md`. Lo de abajo es solo lo heredado de Savant.
+
 - Matriz OD (`sv_flujo`)
 - Heatmap de pies / frame (`HeatMapAnnotator`)
 - Escena tráfico en este pipeline

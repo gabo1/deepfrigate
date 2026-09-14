@@ -69,6 +69,9 @@ salvo donde se indica.
   de versionar en `tools/fakecam/`), checkout upstream `frigate/`
   (`a745070b`).
 
+Deuda técnica (registro único, con prioridad y arreglo propuesto):
+`docs/DEUDA-TECNICA.md`.
+
 Para el front nuevo (otro agente): `docs/HANDOFF-FRONT.md` (APIs, datos,
 auth, rutas, diseño, qué no tocar).
 

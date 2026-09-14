@@ -47,6 +47,8 @@ communicate through the private Compose network.
 
 ## Frontend development
 
+Known debt and pending decisions: `docs/DEUDA-TECNICA.md`.
+
 Building a separate operator console? Start with `docs/HANDOFF-FRONT.md`: every
 API, table, topic, port, auth rule and design token the front needs.
 
