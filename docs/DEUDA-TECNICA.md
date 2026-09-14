@@ -31,24 +31,32 @@ Prioridad: **A** rompe datos o engaña al usuario · **B** limita producto ·
   (marker y links), ai-router (payload y id de punto), platform-api,
   dashboards que filtren por `object_id`, tests. ~1 día. Hacer después de A1.
 
-### A1. Fotos por track servidas como si fueran por evento
+### A1. Fotos por track servidas como si fueran por evento (acotado, 14 sep)
 - **Qué**: platform-api (`/v1/events/{id}/snapshot.jpg`, `/v1/objects`) sirve
   `data/ds-snapshots/{cámara}/{track_id}.jpg`. Cuando la cámara recicla el
   id, el archivo se sobrescribe y la ficha enseña la foto de **otra** pasada.
   Las dos fotos de Frigate (`clips/{cam}-{event_id}.jpg`, thumb) sí son por
   Event y no se pisan.
-- **Arreglo (inmediato, sin tocar video-engine)**: `ds-snapshots` es área de
-  trabajo de 24 h; nadie externo debe usarlo como identidad. El puente ya
-  copia por Event de Frigate la escena al START, en cada mejor frame y al END.
-  platform-api debe resolver `frigate_event_id` vía `frigate_event_links` y
-  servir esa copia (retención 10 días); `ds-snapshots` solo como fallback
-  para tracks aún activos sin Event. ~1 h. Refs: `platform-api`
-  `/v1/events/{id}/{kind}.jpg`, `services/event-engine/app/snapshots.py`.
-- **Descartado**: renombrar a `{track_id}_{epoch}.jpg` en el exporter. Evita
-  la sobreescritura pero el `epoch` del exporter (primer frame visto) no es
-  el `started_at` del adapter (START tras confirmación), así que cada
-  consumidor tendría que casarlos por cercanía. El exporter no es la fuente
-  de identidad; A0 sí.
+- **Resuelto en el detalle (dashboard)**: la foto del instante no se guarda ni
+  se busca por track; se corta de la grabación con los dos datos que trae la
+  fila del evento: `GET /api/{cámara}/recordings/{occurred_at en s con
+  ms}/snapshot.jpg?height=720` y recorte al `data.bbox` (xywh → xyxy, píxeles
+  del mux 1280×720) con 60 % de margen. Verificado el 14 sep sobre `tienda-98`:
+  inicio de detención (`1789346527.398`), 10 s antes y fin
+  (`1789346665.706`) devuelven 200 `image/jpeg` en 0.44-0.67 s y muestran a la
+  misma persona con la caja encima. Sin grabación Frigate responde **404**
+  `{"success":false,"message":"Recording not found at …"}` (en nuestro fork
+  no es 200 con JSON) y el detalle cae a la foto del track. Coste 0.2-0.7 s
+  por frame: solo en detalle, nunca en grilla. Disponible mientras dure la
+  grabación (10 días lo ligado a eventos, 1 día el resto).
+- **Lo que queda**: `GET /v1/events/{id}/snapshot.jpg` y la grilla siguen
+  sirviendo el archivo por track. Cambio pequeño en platform-api: resolver
+  `frigate_event_id` por `frigate_event_links` y servir el thumb/snapshot por
+  Event; `ds-snapshots` solo para tracks activos sin Event. ~1 h. La raíz
+  sigue siendo A0.
+- **Descartado**: renombrar a `{track_id}_{epoch}.jpg` en el exporter (el
+  epoch del exporter no es el `started_at` del adapter; casarlos por
+  cercanía en cada consumidor es frágil).
 
 ### A2. Un punto de Qdrant por `object_id` (mismo reciclado)
 - **Qué**: ai-router hace upsert con id derivado de `{object_id}-explore-thumb`
@@ -83,19 +91,24 @@ Prioridad: **A** rompe datos o engaña al usuario · **B** limita producto ·
 
 ## B. Producto incompleto
 
-### B1. Frame al inicio y al fin de cada detención (`object_stationary`)
-- **Qué**: hoy solo transiciones (`stationary: true/false`); duración =
-  diferencia entre consecutivas; sin imagen del momento. El umbral
-  (`DETECT_FPS × 10` frames) declara la detención ~10 s tarde.
-- **Propuesta (pendiente de aprobar)**: ring buffer 20 s a 1 fps por cámara
-  en video-engine; petición MQTT `deepfrigate/snapshots/request {camera,
-  track_id, at, tag}`; frame de inicio en `occurred_at − 10 s`, de fin en el
-  cierre; copia a `clips/deepfrigate/{cam}-{event_id}-stationary-{n}-{start|end}.jpg`;
-  `stationary_seconds`, bboxes y paths en `events.data` y en Frigate
-  `event.data.stationary_periods[]`. Decidir: recorte vs escena, umbral de
-  segundos, y si también `zone_enter`/`zone_exit`. Volumen: 3 713
-  detenciones/día → 2.2 GB/día en escena completa, 0.3 GB/día en recorte.
-- **Esfuerzo**: ~3 h.
+### B1. Frame al inicio y al fin de cada detención (`object_stationary`) — casi resuelto sin almacenar
+- **Qué**: cada fila `object_stationary` es una transición: `stationary:
+  true` abre, `false` cierra; duración = diferencia entre consecutivas del
+  mismo `object_id` (o hasta `object_ended`). `motionless_count` es el
+  contador de frames quietos en el instante: 51 al abrir (umbral
+  `DETECT_FPS × 10`), 0 al cerrar. La detención real empieza ~10 s antes del
+  `true`.
+- **Frame**: mismo mecanismo que A1: `/api/{cámara}/recordings/{ts}/snapshot.jpg`
+  con el `bbox` de la transición, para el `true` (y para `ts − 10 s` si se
+  quiere el instante real de parada; el objeto está quieto, la caja vale) y
+  para el `false`. Nada que guardar; vive lo que la grabación. Verificado
+  14 sep. Descartado el ring buffer + petición MQTT + copia a `clips/`.
+- **Lo que queda (pequeño)**: que el adapter emita `stationary_seconds` y
+  `stationary_since` en la transición de cierre y en el `END` si termina
+  quieto (evita el `LEAD()` y el cruce de ocupantes hasta A0); condición
+  `min_stationary_seconds` en reglas; panel "permanencia quieta" en Grafana.
+  ~1.5 h. Tiempo en zona ya existe: `object_entered_zone`/`object_exited_zone`
+  + `dwell_time` (segundos en el polígono) y `df_zone_dwell_seconds`.
 
 ### B2. Retención de `deepfrigate.events`
 - **Qué**: sin retención; ~50 k filas/día, 210 MB por 5 días. Grafana usa
