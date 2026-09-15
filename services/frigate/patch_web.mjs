@@ -245,9 +245,9 @@ replaceOnce(
   "export const ID_CHAT = 8;\n",
   "export const ID_CHAT = 8;\nexport const ID_DEEPFRIGATE = 9;\nexport const ID_INCIDENTES = 10;\n",
 );
-// Incidentes replaces Frigate's Review in the sidebar: Review is off in the
-// config (no decode -> its maintainer never publishes) and our items live in
-// deepfrigate.events. The /review route stays reachable by URL.
+// Incidentes goes next to Frigate's Review in the sidebar. Review stays
+// visible (15 sep) even though it is off in the config: our items live in
+// deepfrigate.events; turning Review back on is a config/env change.
 replaceOnce(
   navigation,
   'import { MdCategory, MdChat, MdVideoLibrary } from "react-icons/md";\n',
@@ -276,7 +276,6 @@ replaceOnce(
           icon: MdVideoLibrary,
           title: "menu.review",
           url: "/review",
-          enabled: false,
         },
 `,
 );
