@@ -23,7 +23,12 @@ from .attribute import (
     AttributeItem,
     PersonAttributeService,
 )
-from .pipeline_contract import Capabilities, ContractWatcher
+from .pipeline_contract import (
+    Capabilities,
+    ContractWatcher,
+    OverridesWatcher,
+    overrides_from_document,
+)
 from .clothing_color import (
     COLOR_FIELDS,
     bbox_on_edge,
@@ -89,6 +94,15 @@ class FrameRefConsumer:
     def attribute_labels(self, labels) -> None:
         self._swap(attribute_labels=frozenset(labels))
 
+    def capabilities_for(self, camera_id: str) -> Capabilities:
+        """Las capacidades de UNA cámara.
+
+        Todo lo que decide si un objeto se enriquece pasa por aquí: sin
+        excepción para esa cámara devuelve las globales, así que el camino
+        normal no cambia de coste ni de comportamiento.
+        """
+        return self._current_capabilities().for_camera(camera_id)
+
     def _current_capabilities(self) -> Capabilities:
         # Tests build the consumer with `__new__` and set the label sets one by
         # one, so the snapshot may not exist yet.
@@ -111,7 +125,16 @@ class FrameRefConsumer:
     def _apply_capabilities(self, capabilities: Capabilities) -> None:
         """Atomic swap: several FrameRef workers read these sets concurrently,
         so the whole snapshot is replaced instead of mutated in place."""
-        self._capabilities = capabilities
+        self._base_capabilities = capabilities
+        self._capabilities = overrides_from_document(
+            getattr(self, "_overrides_doc", {}), base=capabilities)
+
+    def _apply_overrides(self, document: Any) -> None:
+        """Las excepciones se recalculan sobre la base viva, no sobre la foto
+        anterior: si el contrato cambió mientras tanto, mandan sus capacidades."""
+        self._overrides_doc = document
+        base = getattr(self, "_base_capabilities", None) or self._current_capabilities()
+        self._capabilities = overrides_from_document(document, base=base)
 
     def __init__(self) -> None:
         self.frame_store_url = os.getenv(
@@ -147,6 +170,18 @@ class FrameRefConsumer:
             # and switching two seconds later would enrich a handful of objects
             # under a configuration the operator already turned off.
             self._contract_watcher.check_once()
+        # Excepciones por cámara: lo que permite decir "de ésta, solo la placa"
+        # sin tocar a las demás. Vacío = todo como siempre.
+        self._overrides_watcher = None
+        self._overrides_doc: Any = {}
+        overrides_path = os.getenv("ENRICHMENT_OVERRIDES_PATH", "").strip()
+        if overrides_path:
+            self._overrides_watcher = OverridesWatcher(
+                overrides_path,
+                self._apply_overrides,
+                interval=float(os.getenv("ENRICHMENT_OVERRIDES_RELOAD_SECONDS", "2")),
+            )
+            self._overrides_watcher.check_once()
         self.max_per_track = int(
             os.getenv("EMBEDDING_MAX_PER_TRACK", "3")
         )
@@ -371,9 +406,10 @@ class FrameRefConsumer:
                 return
             if event not in {"START", "UPDATE"}:
                 return
+            caps = self.capabilities_for(key[0])
             if (
-                label not in self.embedding_labels
-                and label not in self.attribute_labels
+                label not in caps.embedding_labels
+                and label not in caps.attribute_labels
             ):
                 return
             with self.lock:
@@ -383,14 +419,16 @@ class FrameRefConsumer:
                     self.last_bbox[key] = bbox
                 if key in self.pending:
                     return
-                if label not in self.attribute_labels:
+                if label not in caps.attribute_labels:
                     return
                 need_pulc = (
-                    self.inference_counts.get(key, 0)
+                    label in caps.infers_attributes
+                    and self.inference_counts.get(key, 0)
                     < self.attribute_max_per_track
                 )
                 color_due = (
                     label == "person"
+                    and label in caps.infers_attributes
                     and time.time() - self.last_color_at.get(key, 0.0)
                     >= self.color_sample_seconds
                 )
@@ -458,7 +496,7 @@ class FrameRefConsumer:
                     )
                     with self.lock:
                         self.seen.setdefault(key, set()).add(ref["id"])
-                        if label in self.attribute_labels:
+                        if label in self.capabilities_for(key[0]).attribute_labels:
                             self.last_color_at[key] = time.time()
                         if enriched:
                             self.inference_counts[key] = (
@@ -484,7 +522,8 @@ class FrameRefConsumer:
         first_for_track: bool = False,
     ) -> bool:
         ref_id = ref["id"]
-        if label not in self.attribute_labels:
+        caps = self.capabilities_for(str(ref["camera_id"]))
+        if label not in caps.attribute_labels:
             return False
         infer_attrs = self._should_infer_attributes(ref, label)
         sample_color = label == "person" and self._color_sample_allowed(ref)
@@ -919,14 +958,17 @@ class FrameRefConsumer:
         """Caller holds self.lock. Extra OpenALPR pass wanted for this car?"""
         if label != "car" or self.vehicle_provider != "openalpr":
             return False
+        if label not in self.capabilities_for(key[0]).plates:
+            return False
         if key in self.plates_found:
             return False
         if self.plate_attempts.get(key, 0) >= self.plate_max_attempts:
             return False
         return time.time() - self.last_plate_at.get(key, 0.0) >= self.plate_sample_seconds
 
-    def _max_for_label(self, label: str) -> int:
-        if label in self.attribute_labels:
+    def _max_for_label(self, label: str, camera_id: str | None = None) -> int:
+        if label in (self.capabilities_for(camera_id).attribute_labels
+                     if camera_id else self.attribute_labels):
             return self.attribute_max_per_track
         return self.max_per_track
 
@@ -939,6 +981,10 @@ class FrameRefConsumer:
         self, ref: dict[str, Any], label: str
     ) -> bool:
         key = (str(ref["camera_id"]), int(ref["track_id"]))
+        # Una cámara puede pedir la placa SIN atributos: el objeto entra igual
+        # al router, pero no pasa por el clasificador.
+        if label not in self.capabilities_for(key[0]).infers_attributes:
+            return False
         quality = self._crop_quality(
             label, int(ref["width"]), int(ref["height"])
         )

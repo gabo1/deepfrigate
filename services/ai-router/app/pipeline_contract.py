@@ -38,7 +38,8 @@ from __future__ import annotations
 
 import logging
 import threading
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
@@ -52,11 +53,54 @@ _PERSON_ATTRIBUTES = ({"person-attribute"}, {"pulc-person"})
 
 @dataclass(frozen=True)
 class Capabilities:
-    """What the router is allowed to run, as a whole. Replaced, never mutated."""
+    """What the router is allowed to run. Replaced, never mutated.
+
+    ``plate_labels`` es None cuando nadie lo ha dicho: entonces la placa va
+    donde siempre, pegada a ``attribute_labels``. Separarlas es lo que permite
+    pedir "de esta cámara solo la placa" sin apagar los atributos de las demás.
+
+    ``per_camera`` es el mapa de excepciones. Vacío —el caso normal— significa
+    que todas las cámaras comparten estas mismas capacidades.
+    """
 
     embedding_labels: frozenset[str]
     attribute_labels: frozenset[str]
+    plate_labels: frozenset[str] | None = None
+    # Qué etiquetas pasan de verdad por el clasificador de atributos. Es otra
+    # cosa que `attribute_labels`, que además decide si el objeto LLEGA al
+    # router: una cámara "solo placa" tiene que dejar entrar al coche sin
+    # correrle los atributos.
+    attribute_infer_labels: frozenset[str] | None = None
+    per_camera: Mapping[str, "Capabilities"] = field(default_factory=dict)
     source: str = "env"
+
+    @property
+    def infers_attributes(self) -> frozenset[str]:
+        """Etiquetas a las que se les corre el clasificador de atributos."""
+        return (self.attribute_labels if self.attribute_infer_labels is None
+                else self.attribute_infer_labels)
+
+    @property
+    def plates(self) -> frozenset[str]:
+        """Etiquetas con lectura de placa. Sin decir nada, las de atributos."""
+        return self.attribute_labels if self.plate_labels is None else self.plate_labels
+
+    def for_camera(self, camera_id: str) -> "Capabilities":
+        """Las capacidades que aplican a UNA cámara.
+
+        Sin excepción para ella, las globales. La excepción se devuelve sin
+        `per_camera` para que nadie la vuelva a resolver por accidente.
+        """
+        propia = self.per_camera.get(str(camera_id))
+        if propia is None:
+            return self
+        return Capabilities(
+            embedding_labels=propia.embedding_labels,
+            attribute_labels=propia.attribute_labels,
+            plate_labels=propia.plate_labels,
+            attribute_infer_labels=propia.attribute_infer_labels,
+            source=propia.source,
+        )
 
 
 def _matches(enrichment: dict[str, Any], names: set[str], families: set[str]) -> bool:
@@ -99,6 +143,87 @@ def capabilities_from_contract(
         elif _matches(enrichment, *_PERSON_ATTRIBUTES) and not enabled:
             attribute -= labels or {"person"}
     return Capabilities(frozenset(embedding), frozenset(attribute), source="contract")
+
+
+# Nombres con los que un documento de excepciones puede pedir cada capacidad, y
+# las etiquetas que cada una admite cuando el contrato no las declara.
+_ALIAS: dict[str, tuple[str, frozenset[str]]] = {
+    "license-plate": ("plate", frozenset({"car"})),
+    "alpr": ("plate", frozenset({"car"})),
+    "openalpr": ("plate", frozenset({"car"})),
+    "person-attribute": ("attribute", frozenset({"person"})),
+    "pulc-person": ("attribute", frozenset({"person"})),
+    "vehicle-attribute": ("attribute", frozenset({"car"})),
+    "pulc-vehicle": ("attribute", frozenset({"car"})),
+    "vehicle-embedding": ("embedding", frozenset({"car", "person"})),
+    "pp-shitu": ("embedding", frozenset({"car", "person"})),
+}
+
+
+def camera_capabilities(pedidos: Any, *, base: Capabilities) -> Capabilities:
+    """Lista de enriquecedores pedidos -> capacidades de UNA cámara.
+
+    Lo que no se nombra queda APAGADO: el documento de excepciones dice lo que
+    esa cámara debe correr, no lo que le falta a lo global. Es lo que permite
+    "solo la placa" sin tener que enumerar todo lo demás.
+    """
+    embedding: set[str] = set()
+    attribute: set[str] = set()
+    plate: set[str] = set()
+    for pedido in pedidos if isinstance(pedidos, list) else []:
+        capacidad = _ALIAS.get(str(pedido).strip().lower())
+        if capacidad is None:
+            logger.warning("Enriquecedor desconocido en las excepciones: %s", pedido)
+            continue
+        destino, etiquetas = capacidad
+        if destino == "embedding":
+            embedding |= set(etiquetas) & set(base.embedding_labels or etiquetas)
+        elif destino == "attribute":
+            attribute |= set(etiquetas)
+        else:
+            plate |= set(etiquetas)
+    return Capabilities(
+        embedding_labels=frozenset(embedding),
+        # La placa viaja aparte: si se pide sin atributos, el objeto tiene que
+        # seguir llegando al router, y eso lo decide `attribute_labels`.
+        attribute_labels=frozenset(attribute | plate),
+        plate_labels=frozenset(plate),
+        attribute_infer_labels=frozenset(attribute),
+        source="overrides",
+    )
+
+
+def overrides_from_document(document: Any, *, base: Capabilities) -> Capabilities:
+    """Documento de excepciones -> `base` con su mapa por cámara.
+
+        cameras:
+          sandbox_abc:
+            enrichments: [license-plate]
+
+    Un documento vacío o ilegible devuelve `base` intacto: la regla de esta
+    casa es que un archivo roto no apaga nada.
+    """
+    if not isinstance(document, dict):
+        return base
+    camaras = document.get("cameras")
+    if not isinstance(camaras, dict) or not camaras:
+        return base
+    mapa: dict[str, Capabilities] = {}
+    for camera_id, ajustes in camaras.items():
+        if not isinstance(ajustes, dict):
+            continue
+        mapa[str(camera_id)] = camera_capabilities(
+            ajustes.get("enrichments"), base=base)
+    if not mapa:
+        return base
+    return Capabilities(
+        embedding_labels=base.embedding_labels,
+        attribute_labels=base.attribute_labels,
+        plate_labels=base.plate_labels,
+        attribute_infer_labels=base.attribute_infer_labels,
+        per_camera=mapa,
+        source=base.source,
+    )
 
 
 class ContractWatcher(threading.Thread):
@@ -167,6 +292,73 @@ class ContractWatcher(threading.Thread):
             ",".join(sorted(capabilities.attribute_labels)) or "none",
         )
         self.on_change(capabilities)
+        return "applied"
+
+    def run(self) -> None:
+        while not self._stop.wait(self.interval):
+            self.check_once()
+
+
+class OverridesWatcher(threading.Thread):
+    """Vigila el documento de EXCEPCIONES por cámara.
+
+    Es otro archivo, no el contrato: el contrato lo escribe platform-api y
+    describe el pipeline entero, mientras que las excepciones las escribe la
+    consola para una cámara concreta —un trabajo del sandbox, una cámara a la
+    que hoy solo se le quiere leer la placa—. Separarlos evita que la consola
+    tenga que reescribir el contrato de producción para probar algo.
+
+    Igual que el contrato: `stat()` cada `interval` segundos, y un archivo
+    ilegible se registra y se IGNORA. Que el archivo desaparezca sí significa
+    algo —ya no hay excepciones— y se aplica.
+    """
+
+    def __init__(
+        self,
+        path: str | Path,
+        on_change: Callable[[Any], None],
+        *,
+        interval: float = 2.0,
+    ) -> None:
+        super().__init__(name="enrichment-overrides-watcher", daemon=True)
+        self.path = Path(path)
+        self.on_change = on_change
+        self.interval = interval
+        self._stop = threading.Event()
+        self._mtime: float | None = None
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def _stat(self) -> float:
+        try:
+            return self.path.stat().st_mtime
+        except OSError:
+            return -1.0
+
+    def read_once(self) -> Any:
+        if not self.path.is_file():
+            return {}
+        try:
+            import yaml
+
+            return yaml.safe_load(self.path.read_text(encoding="utf-8")) or {}
+        except Exception as error:  # noqa: BLE001 - un guardado a medias no tumba el router
+            logger.warning("excepciones ilegibles, conservo las anteriores: %s", error)
+            return None
+
+    def check_once(self) -> str:
+        mtime = self._stat()
+        if mtime == self._mtime:
+            return "unchanged"
+        self._mtime = mtime
+        documento = self.read_once()
+        if documento is None:
+            return "invalid"
+        camaras = documento.get("cameras") if isinstance(documento, dict) else None
+        logger.info("excepciones por cámara aplicadas: %s",
+                    ",".join(sorted(camaras or {})) or "ninguna")
+        self.on_change(documento)
         return "applied"
 
     def run(self) -> None:
