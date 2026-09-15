@@ -306,7 +306,7 @@ def test_classification_car_uses_openalpr_and_votes_plates() -> None:
     consumer.attributes = SimpleNamespace(model_name="person-attribute")
     consumer.openalpr = SimpleNamespace(
         model_name="openalpr-vehicle",
-        enrich=lambda ref, pixels: OpenALPRResult(
+        enrich=lambda ref, pixels, **_: OpenALPRResult(
             attributes=(AttributeItem("color", "white", 0.8), AttributeItem("make", "nissan", 0.5)),
             inference_ms=250.0,
             plates=(next(reads),),
@@ -336,7 +336,7 @@ def test_classification_car_uses_openalpr_and_votes_plates() -> None:
     consumer.vehicle_provider = "pulc"
     consumer.vehicle_attributes = SimpleNamespace(
         model_name="vehicle-attribute",
-        enrich=lambda ref, pixels: OpenALPRResult(attributes=(AttributeItem("color", "gray", 0.7),), inference_ms=5.0),
+        enrich=lambda ref, pixels, **_: OpenALPRResult(attributes=(AttributeItem("color", "gray", 0.7),), inference_ms=5.0),
     )
     update = consumer._classification_update(ref, b"", "car", "ref-9", 100.0, infer_attrs=True, sample_color=False)
     assert update["data"]["model"] == "vehicle-attribute"

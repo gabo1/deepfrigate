@@ -662,6 +662,42 @@ acuerdo 37 de 53 (70 %), pero cobertura SDK 65 tracks frente a 104 del agente.
 Por eso el voto entre pasadas (16:00): recupera lecturas de 50–80 % cuando dos
 pasadas coinciden, sin bajar el umbral de una lectura sola.
 
+## 6c-bis. Enriquecedores POR CÁMARA (`enrichments.yaml`, 15 sep)
+
+Hasta hoy el `ai-router` decidía por ETIQUETA y para todas las cámaras a la
+vez: con `ATTRIBUTE_LABELS=person,car`, atributos y placa corrían en las
+cuatro. Ahora hay un documento de excepciones por cámara:
+
+```yaml
+# data/ds-snapshots/enrichments.yaml  ->  /opt/ds-snapshots/enrichments.yaml
+cameras:
+  user:
+    enrichments: [license-plate, person-attribute, vehicle-attribute, vehicle-embedding]
+  tienda:
+    enrichments: [person-attribute, vehicle-attribute, vehicle-embedding]
+```
+
+* **Lo que una cámara no nombra queda apagado PARA ELLA.** Una cámara que no
+  aparezca en el documento se comporta como siempre.
+* Se recarga sola por `mtime` cada `ENRICHMENT_OVERRIDES_RELOAD_SECONDS` (2 s).
+  Un archivo ilegible se registra y se IGNORA: se conservan las anteriores.
+* `ENRICHMENT_OVERRIDES_PATH` vacío = sin excepciones. Está encendido desde el
+  15 de septiembre en `.env`.
+* Vive en el directorio de snapshots porque ya estaba montado en el router; la
+  consola y el sandbox escriben ahí sin montar nada nuevo. El sandbox MEZCLA:
+  añade su cámara `sandbox_*` y quita las de trabajos viejos, sin tocar la
+  política de las cámaras de verdad.
+
+**La placa es capacidad propia.** Antes viajaba pegada a `attribute_labels`, así
+que apagar atributos apagaba la placa y al revés. Ahora `license-plate` se pide
+aparte, y quitarla de una cámara NO le quita los atributos del vehículo: los dos
+vienen del `alpr-worker` en la misma llamada, que pasa a hacerse con `plates=0`.
+
+Política del 15 de septiembre, elegida con lo medido en 24 h: `user` lee 5.423
+placas al día y las otras tres CERO, así que solo `user` la tiene encendida.
+Quitarla donde nunca lee no pierde nada y le ahorra al worker una etapa por
+coche.
+
 ## 6d. Reglas declarativas (`config/rules/rules.yaml`, 8 sep)
 
 event-engine evalúa cada evento normalizado contra un YAML de reglas y emite

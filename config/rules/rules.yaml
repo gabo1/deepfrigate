@@ -8,8 +8,13 @@
 # min_count, min_confidence, stationary, schedule{days, between, timezone}.
 version: 1
 rules:
+  # 15 sep: APAGADA. La zona `calle` de `user` se quitó el 14 y esta regla
+  # quedó encendida esperando un nombre que ya no existe: ni disparaba ni
+  # avisaba. Nadie valida que la zona de una regla exista, así que la única
+  # forma de que no engañe es apagarla. Se vuelve a encender cuando `user`
+  # tenga zona otra vez (menú Incidentes).
   - name: merodeo_calle
-    enabled: true
+    enabled: false
     when:
       event_type: [dwell_time]
       label: [person]
@@ -35,10 +40,15 @@ rules:
       sub_label: "Persona nocturna"
       message: "{label} entró a {zone} de noche ({camera})"
 
+  # 15 sep: ACOTADA. Sin `camera` ni `zone` capturaba cualquier aforo, así que
+  # el de `tienda` disparaba esta Y `estacionamiento_lleno`: dos rule_matched
+  # para el mismo suceso (00:41). Queda como red para las cámaras que todavía
+  # no tienen regla propia; `tienda` la tiene.
   - name: aforo_excedido
     enabled: true
     when:
       event_type: [overcrowding]
+      camera: [user, c4aac4f4eefe, c4aac4f4ef0a]
     cooldown: {seconds: 300, scope: camera}
     then:
       severity: critical
@@ -69,3 +79,20 @@ rules:
       severity: warning
       sub_label: "Estacionamiento lleno"
       message: "{count} objetos en {zone}, umbral {threshold} ({camera})"
+
+  # 15 sep: la línea `entrada` de `tienda` existía sin regla que la consumiera:
+  # los cruces se escribían y no se convertían en aviso. Entrar es el suceso
+  # que la tienda quiere ver, así que `in` (pie hacia la fachada) sí avisa;
+  # salir sigue registrándose como cruce sin aviso.
+  - name: entrada_tienda
+    enabled: true
+    when:
+      event_type: [line_crossed_in]
+      camera: [tienda]
+      line: [entrada]
+      label: [person]
+    cooldown: {seconds: 20, scope: object}
+    then:
+      severity: info
+      sub_label: "Entró a la tienda"
+      message: "{label} entró por {line} ({camera})"

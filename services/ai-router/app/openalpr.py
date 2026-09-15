@@ -126,12 +126,25 @@ class OpenALPRService:
         self.plate_min_crop_width = plate_min_crop_width
         self.timeout = timeout
 
-    def enrich(self, ref: dict[str, Any], pixels: bytes) -> OpenALPRResult:
+    def enrich(
+        self,
+        ref: dict[str, Any],
+        pixels: bytes,
+        *,
+        allow_plates: bool = True,
+    ) -> OpenALPRResult:
+        """Atributos del vehículo y, si se permite, su placa.
+
+        `allow_plates=False` pide `plates=0`: el worker se salta la etapa de
+        lectura y devuelve solo los atributos. Es lo que permite decir "de esta
+        cámara los atributos sí, la placa no" sin perder lo primero, que viaja
+        en la MISMA llamada.
+        """
         width = int(ref["width"])
         height = int(ref["height"])
         if len(pixels) != width * height * 3:
             raise ValueError(f"expected {width * height * 3} RGB bytes, got {len(pixels)}")
-        read_plates = width >= self.plate_min_crop_width
+        read_plates = allow_plates and width >= self.plate_min_crop_width
         started = time.perf_counter()
         response = self._post(
             f"/analyze?width={width}&height={height}&plates={int(read_plates)}&vehicle=1",

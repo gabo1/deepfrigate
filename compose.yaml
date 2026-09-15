@@ -174,6 +174,12 @@ services:
       # (embeddings y atributos de persona) y nunca toca lo que no menciona.
       PIPELINE_CONTRACT_PATH: ${PIPELINE_CONTRACT_PATH:-}
       PIPELINE_CONTRACT_RELOAD_SECONDS: ${PIPELINE_CONTRACT_RELOAD_SECONDS:-2}
+      # Excepciones POR CÁMARA, en un documento aparte del contrato: el contrato
+      # lo escribe platform-api y describe el pipeline entero, mientras que esto
+      # dice qué corre en una cámara concreta. Lo que una cámara no nombra queda
+      # apagado PARA ELLA. VACÍO = sin excepciones, todo como antes.
+      ENRICHMENT_OVERRIDES_PATH: ${ENRICHMENT_OVERRIDES_PATH:-}
+      ENRICHMENT_OVERRIDES_RELOAD_SECONDS: ${ENRICHMENT_OVERRIDES_RELOAD_SECONDS:-2}
     volumes:
       - ./data/ds-snapshots:/opt/ds-snapshots:ro
       # Mismo archivo que vigila video-engine; platform-api es quien lo escribe.

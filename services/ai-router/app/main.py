@@ -691,7 +691,15 @@ class FrameRefConsumer:
         model_version = MODEL_VERSION
         if infer_attrs:
             if label == "car" and self.vehicle_provider == "openalpr":
-                result = self.openalpr.enrich(ref, pixels)
+                result = self.openalpr.enrich(
+                    ref,
+                    pixels,
+                    # Los atributos del vehículo y la placa vienen en la misma
+                    # llamada: sin esto, quitar la placa de una cámara se
+                    # llevaría por delante "yellow taxi".
+                    allow_plates=label in self.capabilities_for(
+                        str(ref["camera_id"])).plates,
+                )
                 model_name = self.openalpr.model_name
                 model_version = OPENALPR_MODEL_VERSION
                 if result.plates:
