@@ -250,11 +250,14 @@ class ContractWatcher(threading.Thread):
         self.interval = interval
         self._env_embedding = env_embedding
         self._env_attribute = env_attribute
-        self._stop = threading.Event()
+        # OJO: no se puede llamar `_stop`. `threading.Thread` ya tiene un
+        # método con ese nombre y pisarlo con un Event rompe `join()` e
+        # `is_alive()` con «'Event' object is not callable».
+        self._parar = threading.Event()
         self._mtime: float | None = None
 
     def stop(self) -> None:
-        self._stop.set()
+        self._parar.set()
 
     def _stat(self) -> float:
         try:
@@ -295,7 +298,7 @@ class ContractWatcher(threading.Thread):
         return "applied"
 
     def run(self) -> None:
-        while not self._stop.wait(self.interval):
+        while not self._parar.wait(self.interval):
             self.check_once()
 
 
@@ -324,11 +327,14 @@ class OverridesWatcher(threading.Thread):
         self.path = Path(path)
         self.on_change = on_change
         self.interval = interval
-        self._stop = threading.Event()
+        # OJO: no se puede llamar `_stop`. `threading.Thread` ya tiene un
+        # método con ese nombre y pisarlo con un Event rompe `join()` e
+        # `is_alive()` con «'Event' object is not callable».
+        self._parar = threading.Event()
         self._mtime: float | None = None
 
     def stop(self) -> None:
-        self._stop.set()
+        self._parar.set()
 
     def _stat(self) -> float:
         try:
@@ -362,5 +368,5 @@ class OverridesWatcher(threading.Thread):
         return "applied"
 
     def run(self) -> None:
-        while not self._stop.wait(self.interval):
+        while not self._parar.wait(self.interval):
             self.check_once()

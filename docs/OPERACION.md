@@ -693,6 +693,21 @@ que apagar atributos apagaba la placa y al revés. Ahora `license-plate` se pide
 aparte, y quitarla de una cámara NO le quita los atributos del vehículo: los dos
 vienen del `alpr-worker` en la misma llamada, que pasa a hacerse con `plates=0`.
 
+**Se edita desde la consola.** SAiMON → menú *Pipeline* → pestaña *Analíticas*:
+una matriz de cámaras × analíticas donde las cuatro columnas de enriquecedores
+son interruptores (`PUT /api/cameras/{id}/analytics`) y el resto se muestra de
+solo lectura con dónde se cambia. El archivo se escribe entero con un
+reemplazo atómico, mezclando siempre lo que ya había: guardar una cámara no
+toca a las demás ni a las `sandbox_*`.
+
+**Los vigilantes hay que arrancarlos.** `FrameRefConsumer` construía
+`ContractWatcher` y `OverridesWatcher` y llamaba a `check_once()`, pero nunca
+hacía `start()`: el contrato y las excepciones se leían UNA vez, al arrancar, y
+después el archivo dejaba de importar. Corregido el 15 de septiembre; sin eso,
+cambiar la política desde la consola no se notaba hasta reiniciar el
+contenedor. (El `Event` de parada tampoco podía llamarse `_stop`: `Thread` ya
+tiene un método con ese nombre y pisarlo rompe `join()`.)
+
 Política del 15 de septiembre, elegida con lo medido en 24 h: `user` lee 5.423
 placas al día y las otras tres CERO, así que solo `user` la tiene encendida.
 Quitarla donde nunca lee no pierde nada y le ahorra al worker una etapa por

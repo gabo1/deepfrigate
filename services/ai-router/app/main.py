@@ -344,6 +344,13 @@ class FrameRefConsumer:
         self.client.on_message = self._on_message
 
     def run(self) -> None:
+        # Los vigilantes son hilos y hay que ARRANCARLOS. Hasta ahora solo se
+        # llamaba a `check_once()` al construirlos, así que el contrato y las
+        # excepciones se leían una vez y nunca más: cambiar la política pedía
+        # reiniciar el contenedor, que es justo lo que los watchers evitan.
+        for watcher in (self._contract_watcher, self._overrides_watcher):
+            if watcher is not None:
+                watcher.start()
         for worker in self.workers:
             worker.start()
         self.client.connect(
@@ -355,6 +362,9 @@ class FrameRefConsumer:
         shutdown_requested.wait()
         self.client.disconnect()
         self.client.loop_stop()
+        for watcher in (self._contract_watcher, self._overrides_watcher):
+            if watcher is not None:
+                watcher.stop()
         for worker in self.workers:
             worker.join(timeout=2)
 

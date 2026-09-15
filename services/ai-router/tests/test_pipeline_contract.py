@@ -150,3 +150,40 @@ def test_a_missing_file_changes_nothing(tmp_path) -> None:
 
     assert watcher.check_once() == "invalid"
     assert applied == []
+
+
+def test_el_vigilante_arrancado_aplica_un_cambio_sin_reiniciar(tmp_path) -> None:
+    """El hilo tiene que correr, no solo construirse.
+
+    `FrameRefConsumer` llamaba a `check_once()` al construir los vigilantes y
+    nunca los arrancaba: el contrato y las excepciones se leían una vez y el
+    archivo dejaba de importar. Cambiar la política pedía reiniciar el
+    contenedor, que es lo contrario de lo que el vigilante promete.
+    """
+    import threading
+    import time
+
+    from app.pipeline_contract import OverridesWatcher
+
+    archivo = tmp_path / "enrichments.yaml"
+    archivo.write_text("cameras: {user: {enrichments: [license-plate]}}\n", encoding="utf-8")
+    aplicado = threading.Event()
+    vistos: list = []
+
+    def _on_change(documento):
+        vistos.append(documento)
+        if len(vistos) > 1:
+            aplicado.set()
+
+    watcher = OverridesWatcher(archivo, _on_change, interval=0.05)
+    watcher.check_once()
+    watcher.start()
+    try:
+        time.sleep(0.1)
+        archivo.write_text(
+            "cameras: {user: {enrichments: [person-attribute]}}\n", encoding="utf-8")
+        assert aplicado.wait(3.0), "el vigilante no releyó el archivo"
+    finally:
+        watcher.stop()
+        watcher.join(timeout=2)
+    assert vistos[-1]["cameras"]["user"]["enrichments"] == ["person-attribute"]
