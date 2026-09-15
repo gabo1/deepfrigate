@@ -1784,11 +1784,13 @@ def _incident_objects(connection: Any, alert: dict[str, Any]) -> list[dict[str, 
     for index, member in enumerate(members, start=1):
         object_id = member["object_id"]
         row = life_by.get(object_id) or {}
+        if row.get("last_seen") is not None and float(row["last_seen"]) < t - 5:
+            row = {}  # older occupant of a reused id; not the one alive at t
         fid = fid_by.get(object_id)
         fevent = frigate.get(fid or "") or {}
         fdata = fevent.get("data") or {}
         first = member.get("first_seen") if member.get("first_seen") is not None else row.get("first_seen")
-        last = member.get("last_seen") if member.get("first_seen") is not None else row.get("last_seen")
+        last = member.get("last_seen") if member.get("last_seen") is not None else row.get("last_seen")
         out.append({
             "n": index,
             "object_id": object_id,
