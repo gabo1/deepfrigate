@@ -105,8 +105,15 @@ def test_occupancy_at_replays_zone_state_and_survives_id_reuse() -> None:
     inside = occupancy_at(rows, t, "estacionamiento")
     assert [(o["object_id"], o["label"]) for o in inside] == [("tienda-11", "car"), ("tienda-20", "truck")]
     car = inside[0]
-    assert car["first_seen"] == 900 and car["last_seen"] == 1200 and car["bbox"] == {"x": 1, "y": 1, "width": 10, "height": 10}
-    assert inside[1]["last_seen"] is None and inside[1]["bbox"] == {"x": 5, "y": 5, "width": 20, "height": 20}
+    assert car["first_seen"] == 900 and car["confirmed"] and car["bbox"] == {"x": 1, "y": 1, "width": 10, "height": 10}
+    assert inside[1]["bbox"] == {"x": 5, "y": 5, "width": 20, "height": 20}
+    # Tracks that entered without a START (never confirmed) count only when
+    # they entered shortly before t: the adapter prunes them silently.
+    extra = rows + [r("object_entered_zone", "tienda-70", 995, zone="estacionamiento", label="car", bbox={"x": 2, "y": 2, "width": 3, "height": 3}),
+                    r("object_entered_zone", "tienda-80", 100, zone="estacionamiento", label="car")]
+    inside = occupancy_at(extra, t, "estacionamiento", unconfirmed_ttl_s=60)
+    assert [o["object_id"] for o in inside] == ["tienda-11", "tienda-20", "tienda-70"]
+    assert inside[2]["first_seen"] == 995 and inside[2]["label"] == "car" and not inside[2]["confirmed"]
     life = lifecycle_at(rows, t, ["tienda-11", "tienda-50"])
     assert life["tienda-11"]["first_seen"] == 900 and life["tienda-11"]["last_seen"] == 1200
     assert "tienda-50" not in life  # its START (1010) is after t + 5 s

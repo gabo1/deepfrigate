@@ -94,6 +94,7 @@ type IncidentObject = {
 
 type IncidentDetail = Incident & {
   objects: IncidentObject[];
+  objects_approximate?: boolean;
   scene_url: string;
   clip_url: string;
 };
@@ -404,6 +405,9 @@ function IncidentDialog({
             <div className="df-label">
               {detail.objects.length} objeto{detail.objects.length === 1 ? "" : "s"} en el instante de la alerta ·
               tiempos relativos a la alerta
+              {detail.objects_approximate
+                ? " · lista aproximada (alerta anterior al 15 sep, reconstruida del historial)"
+                : ""}
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">

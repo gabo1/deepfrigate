@@ -928,8 +928,10 @@ de Frigate.
 **Alertas** (`GET /v1/incidents`): un ítem por `rule_matched` con severidad
 `warning`/`critical` (parámetro `severity` para incluir `info`). Trae
 `rule`, `message`, `label`, `zone/line/direction`, `count`, `dwell_time`,
-`bbox`, el `frigate_event_id` del track (link con `started_at ≤ occurred_at +
-5 s`) y el acuse. Filtros: `camera_id`, `rule`, `after`, `before`, `acked`
+`bbox`, el `frigate_event_id` del track (link **vivo en el instante**:
+`started_at ≤ occurred_at + 5 s` y `ended_at ≥ occurred_at − 5 s`; si el
+track no tiene Event en Frigate, va sin link en vez de apuntar a un ocupante
+anterior del mismo id) y el acuse. Filtros: `camera_id`, `rule`, `after`, `before`, `acked`
 (true/false), `limit ≤ 500`. `GET /v1/incidents/summary?hours=24` cuenta por
 severidad y regla (total y pendientes).
 
@@ -943,6 +945,28 @@ severidad y regla (total y pendientes).
   de margen. Si la grabación ya no existe (10 días) cae al snapshot del Event
   de Frigate y luego a un cartel. 0.4-0.7 s por foto, caché 5 min.
 
+**Detalle de una alerta** (`GET /v1/incidents/{id}`, 15 sep): la alerta más
+`objects` (quiénes la provocaron), `scene_url` y `clip_url` (±30 s de la
+grabación). Cada objeto trae `n` (número en la escena), `object_id`, `label`,
+`bbox`, `first_seen/last_seen` y `since_alert_s/until_alert_s` (segundos
+relativos a la alerta), `frigate_event_id`, `attributes` (color de ropa,
+vehículo…), `plate`, `sub_label`, `thumbnail_url` y `explore_url`, si el
+track llegó a ser Event. De dónde sale la lista, por orden:
+
+1. `data.objects` del `overcrowding` que disparó la regla: el adapter la
+   publica desde el 15 sep (`{object_id,label,bbox}` de los ocupantes en ese
+   instante, contrato `tracked-object-update.schema.json`). Exacta.
+2. Alertas de aforo anteriores al 15 sep: reconstrucción del historial
+   (`incidents.occupancy_at`): tracks confirmados (START) dentro de la zona
+   hasta su salida/END, más los que entraron sin START en los 60 s previos
+   (el adapter los poda en silencio a los 5 s sin verse, así que no hay
+   evento de cierre). Va con `objects_approximate: true` y la UI lo dice.
+3. Resto de reglas: el track de la alerta.
+
+`GET /v1/incidents/{id}/scene.jpg?height=720` es el frame de la grabación en
+`occurred_at` con las cajas numeradas de esos objetos (bbox del mux 1280×720
+escalado al frame). Sin recorte, para ver el conjunto.
+
 **Actividad** (`GET /v1/activity?minutes=5&camera_id=&after=&before=`):
 episodios por cámara en ventanas fijas de N min (UTC): objetos que
 empezaron (`object_detected`) por etiqueta, zonas (`object_entered_zone`),
@@ -954,8 +978,10 @@ de tiempo devuelve las últimas 6 h.
 UI: `services/frigate/web/DeepFrigateIncidents.tsx` (patrón de
 `/deepfrigate`, Obsidiana). Pestañas Alertas · Actividad; filtros cámara,
 "solo pendientes", ventana 1/5/15/60 min; acuse individual y "acusar N
-visibles"; tarjeta abre el Event en Explore; episodio abre Explore por rango
-o el clip. Refresco 10 s alertas / 30 s actividad.
+visibles"; la tarjeta abre el **diálogo de detalle** (escena numerada, tabla
+de objetos con miniatura, placa, atributos y desde/hasta relativos a la
+alerta, botones Clip ±30 s, Explore y Acusar); episodio abre Explore por
+rango o el clip. Refresco 10 s alertas / 30 s actividad.
 
 Código: `services/platform-api/app/incidents.py` (agrupación y recorte,
 puro, con tests en `tests/test_incidents.py`) y los endpoints en `main.py`

@@ -230,55 +230,62 @@ def episodes_from_aggregates(
     return [e.row() for e in ordered if e.objects or e.alerts]
 
 
-def occupancy_at(rows: Iterable[dict[str, Any]], t: float, zone: str) -> list[dict[str, Any]]:
-    """Who was inside `zone` at instant `t`, replaying events in time order.
+def occupancy_at(rows: Iterable[dict[str, Any]], t: float, zone: str, unconfirmed_ttl_s: float = 60.0) -> list[dict[str, Any]]:
+    """Best-effort: who was inside `zone` at instant `t`, from stored events.
 
-    `rows`: lifecycle and zone events of one camera around `t`, each with
-    `event_type, object_id, timestamp, data`. Replaying (instead of a set
-    difference) is what survives NvTracker id reuse: an id that entered,
-    ended and came back as another object is judged by its *latest* state at
-    `t`. Returns one entry per object inside, with the lifecycle of that
-    occupant: `first_seen` (START at or before `t`), `last_seen` (END after
-    that START, or None while alive), `label` and last `bbox` before `t`.
+    Exact membership is only known from the alert payload itself
+    (`data.objects`, adapter since 2026-09-15). For older alerts this replays
+    the stored lifecycle: confirmed tracks (START) count while inside until
+    exit/END; tracks that entered the zone without a START (never confirmed;
+    the adapter prunes them silently, so there is no closing event) count
+    only if they entered within `unconfirmed_ttl_s` before `t`. Callers must
+    flag the result as approximate.
     """
     state: dict[str, dict[str, Any]] = {}
     for row in sorted(rows, key=lambda r: float(r["timestamp"])):
         stamp = float(row["timestamp"])
+        if stamp > t:
+            continue
         kind = row.get("event_type")
         oid = str(row.get("object_id") or "")
         data = row.get("data") or {}
         if not oid:
             continue
         if kind == "object_detected":
-            # A new occupant of the id: fresh state (previous one is gone).
-            if stamp <= t:
-                state[oid] = {"first_seen": stamp, "last_seen": None, "inside": False, "label": data.get("label"), "bbox": data.get("bbox")}
-            elif oid in state and state[oid]["last_seen"] is None and state[oid]["inside"] is False:
-                pass
+            state[oid] = {"first_seen": stamp, "entered": None, "inside": False, "confirmed": True, "label": data.get("label"), "bbox": data.get("bbox")}
             continue
         entry = state.get(oid)
-        if kind in ("object_ended", "object_lost"):
-            if entry is not None and entry["last_seen"] is None and stamp >= entry["first_seen"]:
-                if stamp <= t:
-                    entry["inside"] = False
-                    entry["last_seen"] = stamp
-                elif entry["last_seen"] is None:
-                    entry["last_seen"] = stamp
-            continue
-        if stamp > t or entry is None:
-            continue
         if kind == "object_entered_zone" and data.get("zone") == zone:
+            if entry is None or entry.get("ended"):
+                entry = {"first_seen": stamp, "entered": None, "inside": False, "confirmed": False, "label": None, "bbox": None}
+                state[oid] = entry
             entry["inside"] = True
+            entry["entered"] = stamp
+        elif entry is None:
+            continue
         elif kind == "object_exited_zone" and data.get("zone") == zone:
             entry["inside"] = False
+        elif kind in ("object_ended", "object_lost"):
+            entry["inside"] = False
+            entry["ended"] = True
         if data.get("label"):
             entry["label"] = data["label"]
         if isinstance(data.get("bbox"), dict):
             entry["bbox"] = data["bbox"]
     out = []
     for oid, entry in state.items():
-        if entry["inside"] and (entry["last_seen"] is None or entry["last_seen"] > t):
-            out.append({"object_id": oid, "label": entry["label"], "bbox": entry["bbox"], "first_seen": entry["first_seen"], "last_seen": entry["last_seen"]})
+        if not entry.get("inside") or entry.get("entered") is None:
+            continue
+        if not entry["confirmed"] and t - float(entry["entered"]) > unconfirmed_ttl_s:
+            continue
+        out.append({
+            "object_id": oid,
+            "label": entry.get("label"),
+            "bbox": entry.get("bbox"),
+            "first_seen": entry["first_seen"],
+            "last_seen": None,
+            "confirmed": entry["confirmed"],
+        })
     out.sort(key=lambda e: e["first_seen"])
     return out
 

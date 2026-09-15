@@ -103,7 +103,7 @@ en `/docs` (interno).
 | `GET /v1/frigate-events/{frigate_event_id}/similar` | `limit` ≤25, `offset`, `min_score` | igual, hidratado como `SearchResult` de Frigate (lo que consume Explore) |
 | `GET /v1/camera-transitions` | `after`, `before` (ISO), `label`, `min_score`, `detail` (bool), `limit` ≤2000 | resumen por par `{from,to,count,avg_gap_seconds,avg_score}`; con `detail=true` las filas |
 | `GET /v1/heatmap/{camera}.jpg` | `hours`, `label`… (ver código) | heatmap sobre la escena real con zonas/líneas dibujadas |
-| `GET /v1/incidents` | `camera_id`, `severity` (csv), `rule`, `after`, `before`, `acked`, `limit` ≤500 | alertas (`rule_matched`) con acuse y `frigate_event_id`; `POST/DELETE /v1/incidents/{id}/ack`; `GET /v1/incidents/summary?hours=`; `GET /v1/incidents/{id}/frame.jpg` foto del instante desde la grabación |
+| `GET /v1/incidents` | `camera_id`, `severity` (csv), `rule`, `after`, `before`, `acked`, `limit` ≤500 | alertas (`rule_matched`) con acuse y `frigate_event_id`; `POST/DELETE /v1/incidents/{id}/ack`; `GET /v1/incidents/summary?hours=`; `GET /v1/incidents/{id}/frame.jpg` foto del instante desde la grabación; `GET /v1/incidents/{id}` detalle con `objects` (quiénes provocaron la alerta: label, bbox, atributos, placa, desde/hasta, `explore_url`; `objects_approximate` si es reconstrucción), `scene_url`, `clip_url`; `GET /v1/incidents/{id}/scene.jpg` frame con las cajas numeradas |
 | `GET /v1/activity` | `minutes` 1-60, `camera_id`, `after`, `before`, `limit` | episodios por cámara en ventanas fijas: objetos por etiqueta, zonas, placas, alertas, `thumbnail_url`, `clip_url` |
 
 Forma de un evento (`contracts/event.schema.json`):

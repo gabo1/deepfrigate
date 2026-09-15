@@ -1759,6 +1759,7 @@ def _incident_objects(connection: Any, alert: dict[str, Any]) -> list[dict[str, 
         members = [dict(m) for m in data["objects"] if isinstance(m, dict) and m.get("object_id")]
     elif data.get("source_event_type") == "overcrowding" and zone:
         members = incidents_lib.occupancy_at(rows, t, str(zone))
+        alert["objects_approximate"] = True
     else:
         members = [{"object_id": str(alert["object_id"]), "label": data.get("label"), "bbox": data.get("bbox")}]
     object_ids = [m["object_id"] for m in members]
