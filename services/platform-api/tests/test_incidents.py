@@ -76,3 +76,37 @@ def test_episodes_from_aggregates_matches_build_episodes() -> None:
     ep = out[0]
     assert ep["labels"] == {"car": 2, "person": 1} and ep["plates"] == ["JD6085B"] and ep["zones"] == ["calle"]
     assert ep["objects"] == 3 and ep["critical"] == 1 and ep["end"] == base + 300 and ep["id"] == f"user:{int(base)}"
+
+
+def test_occupancy_at_replays_zone_state_and_survives_id_reuse() -> None:
+    from app.incidents import lifecycle_at, occupancy_at
+
+    def r(kind, oid, ts, **data):
+        return {"event_type": kind, "object_id": oid, "timestamp": ts, "data": data}
+
+    t = 1000.0
+    rows = [
+        # id 11: first occupant entered and ended long before t
+        r("object_detected", "tienda-11", 100, label="person"), r("object_entered_zone", "tienda-11", 105, zone="estacionamiento"), r("object_ended", "tienda-11", 120),
+        # id 11 reused: second occupant inside at t
+        r("object_detected", "tienda-11", 900, label="car", bbox={"x": 1, "y": 1, "width": 10, "height": 10}), r("object_entered_zone", "tienda-11", 905, zone="estacionamiento"),
+        r("object_ended", "tienda-11", 1200),
+        # id 20 inside, still alive
+        r("object_detected", "tienda-20", 950, label="truck"), r("object_entered_zone", "tienda-20", 955, zone="estacionamiento", bbox={"x": 5, "y": 5, "width": 20, "height": 20}),
+        # id 30 entered then left before t
+        r("object_detected", "tienda-30", 960, label="person"), r("object_entered_zone", "tienda-30", 961, zone="estacionamiento"), r("object_exited_zone", "tienda-30", 990, zone="estacionamiento"),
+        # id 40 in another zone
+        r("object_detected", "tienda-40", 970, label="person"), r("object_entered_zone", "tienda-40", 971, zone="otra"),
+        # id 50 enters after t (future occupant)
+        r("object_detected", "tienda-50", 1010, label="car"), r("object_entered_zone", "tienda-50", 1012, zone="estacionamiento"),
+        # id 60 started before t but only entered the zone after t
+        r("object_detected", "tienda-60", 980, label="car"), r("object_entered_zone", "tienda-60", 1005, zone="estacionamiento"),
+    ]
+    inside = occupancy_at(rows, t, "estacionamiento")
+    assert [(o["object_id"], o["label"]) for o in inside] == [("tienda-11", "car"), ("tienda-20", "truck")]
+    car = inside[0]
+    assert car["first_seen"] == 900 and car["last_seen"] == 1200 and car["bbox"] == {"x": 1, "y": 1, "width": 10, "height": 10}
+    assert inside[1]["last_seen"] is None and inside[1]["bbox"] == {"x": 5, "y": 5, "width": 20, "height": 20}
+    life = lifecycle_at(rows, t, ["tienda-11", "tienda-50"])
+    assert life["tienda-11"]["first_seen"] == 900 and life["tienda-11"]["last_seen"] == 1200
+    assert "tienda-50" not in life  # its START (1010) is after t + 5 s

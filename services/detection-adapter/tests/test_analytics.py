@@ -101,6 +101,10 @@ def test_overcrowding_flips_at_threshold_and_clears() -> None:
     assert entered[0]["data"]["event"] == "overcrowding"
     assert entered[0]["data"]["count"] == 2
     assert entered[0]["data"]["zone"] == "cajas"
+    # who made the count: both persons, with label and last bbox
+    members = entered[0]["data"]["objects"]
+    assert sorted(m["object_id"] for m in members) == ["tienda-1", "tienda-2"]
+    assert all(m["label"] == "person" and set(m["bbox"]) == {"x", "y", "width", "height"} for m in members)
     _schema().validate(entered[0])
     zones.end("tienda", 2, 1)
     cleared = crowd.observe(first, timestamp=1)

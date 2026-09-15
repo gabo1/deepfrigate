@@ -1443,6 +1443,7 @@ def _link_for_alert_sql() -> str:
             FROM frigate_event_links l
             WHERE l.object_id = e.object_id
               AND l.started_at <= e.occurred_at + interval '5 seconds'
+              AND (l.ended_at IS NULL OR l.ended_at >= e.occurred_at - interval '5 seconds')
               AND l.frigate_event_id IS NOT NULL
             ORDER BY l.started_at DESC
             LIMIT 1
@@ -1713,4 +1714,171 @@ def list_activity(
         episode["thumbnail_url"] = f"/v1/events/{fid}/thumbnail.jpg" if fid else None
         episode["clip_url"] = f"/api/{quote(episode['camera_id'], safe='')}/start/{int(episode['start'])}/end/{int(episode['end'])}/clip.mp4"
     return {"minutes": minutes, "items": episodes}
+
+
+def _frigate_events_by_id(event_ids: list[str]) -> dict[str, dict[str, Any]]:
+    """label, sub_label, data (attributes, plate) of Frigate events, from PG."""
+    store_url = os.getenv("FRIGATE_EVENT_STORE_URL", "").strip()
+    if not store_url or not event_ids:
+        return {}
+    with psycopg.connect(store_url, row_factory=dict_row) as connection:
+        rows = connection.execute(
+            "SELECT id, label, sub_label, start_time, end_time, data FROM event WHERE id = ANY(%s)",
+            (event_ids,),
+        ).fetchall()
+    return {str(row["id"]): row for row in rows}
+
+
+def _incident_objects(connection: Any, alert: dict[str, Any]) -> list[dict[str, Any]]:
+    """The objects behind an alert.
+
+    Overcrowding since 15 sep carries `data.objects` (who was inside when the
+    count flipped, with bbox). Older overcrowding alerts are reconstructed:
+    tracks that entered the zone before `t` and had not left/ended by `t`.
+    Any other rule: the single track of the event.
+    """
+    camera = alert["camera_id"]
+    t = float(alert["timestamp"])
+    data = alert.get("data") or {}
+    zone = data.get("zone")
+    # Every lifecycle/zone event of the camera around t, replayed in Python
+    # (see incidents.occupancy_at / lifecycle_at): robust to reused ids.
+    rows = connection.execute(
+        """
+        SELECT event_type, object_id, extract(epoch FROM occurred_at) AS timestamp, data
+        FROM events
+        WHERE camera_id = %s
+          AND event_type IN ('object_detected','object_ended','object_lost','object_entered_zone','object_exited_zone')
+          -- parked vehicles enter the zone hours before the alert: look back far
+          AND occurred_at BETWEEN to_timestamp(%s) - interval '6 hours' AND to_timestamp(%s) + interval '30 minutes'
+        """,
+        (camera, t, t),
+    ).fetchall()
+    members: list[dict[str, Any]] = []
+    if isinstance(data.get("objects"), list) and data["objects"]:
+        members = [dict(m) for m in data["objects"] if isinstance(m, dict) and m.get("object_id")]
+    elif data.get("source_event_type") == "overcrowding" and zone:
+        members = incidents_lib.occupancy_at(rows, t, str(zone))
+    else:
+        members = [{"object_id": str(alert["object_id"]), "label": data.get("label"), "bbox": data.get("bbox")}]
+    object_ids = [m["object_id"] for m in members]
+    if not object_ids:
+        return []
+    life_by = incidents_lib.lifecycle_at(rows, t, object_ids)
+    links = connection.execute(
+        """
+        SELECT object_id, frigate_event_id, extract(epoch FROM started_at) AS started_at
+        FROM frigate_event_links
+        WHERE object_id = ANY(%s) AND frigate_event_id IS NOT NULL
+          AND started_at <= to_timestamp(%s) + interval '5 seconds'
+          AND (ended_at IS NULL OR ended_at >= to_timestamp(%s) - interval '5 seconds')
+        """,
+        (object_ids, t, t),
+    ).fetchall()
+    fid_by: dict[str, str] = {}
+    for link in links:
+        fid_by[str(link["object_id"])] = str(link["frigate_event_id"])
+    frigate = _frigate_events_by_id(list(fid_by.values()))
+    out = []
+    for index, member in enumerate(members, start=1):
+        object_id = member["object_id"]
+        row = life_by.get(object_id) or {}
+        fid = fid_by.get(object_id)
+        fevent = frigate.get(fid or "") or {}
+        fdata = fevent.get("data") or {}
+        first = member.get("first_seen") if member.get("first_seen") is not None else row.get("first_seen")
+        last = member.get("last_seen") if member.get("first_seen") is not None else row.get("last_seen")
+        out.append({
+            "n": index,
+            "object_id": object_id,
+            "label": member.get("label") or row.get("label") or fevent.get("label"),
+            "bbox": member.get("bbox") or row.get("bbox"),
+            "first_seen": first,
+            "last_seen": last,
+            "since_alert_s": None if first is None else round(first - t, 1),
+            "until_alert_s": None if last is None else round(last - t, 1),
+            "frigate_event_id": fid,
+            "sub_label": fevent.get("sub_label"),
+            "attributes": fdata.get("person_attributes") or fdata.get("vehicle_attributes"),
+            "plate": (fdata.get("license_plate") or {}).get("plate") or fdata.get("recognized_license_plate"),
+            "thumbnail_url": f"/v1/events/{fid}/thumbnail.jpg" if fid else None,
+            "explore_url": f"/explore?event_id={quote(fid, safe='')}" if fid else None,
+        })
+    return out
+
+
+@app.get("/v1/incidents/{event_id}", tags=["incidents"])
+def get_incident(event_id: UUID) -> dict[str, Any]:
+    """One alert with the objects behind it (see `_incident_objects`)."""
+    with psycopg.connect(database_url, row_factory=dict_row) as connection:
+        _ensure_incident_acks(connection)
+        row = connection.execute(
+            f"""
+            SELECT e.id, e.event_type, e.object_id, e.camera_id, e.track_id,
+                   e.occurred_at, e.source_update_type, e.severity, e.data,
+                   a.acked_by, a.acked_at, a.note, l.frigate_event_id
+            FROM events e
+            LEFT JOIN incident_acks a ON a.event_id = e.id
+            {_link_for_alert_sql()}
+            WHERE e.id = %s AND e.event_type = 'rule_matched'
+            """,
+            (event_id,),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="incident not found")
+        event = {**row, "id": str(row["id"]), "timestamp": row["occurred_at"].timestamp()}
+        ack = {"acked_by": row["acked_by"], "acked_at": row["acked_at"], "note": row["note"]} if row["acked_by"] else None
+        alert = incidents_lib.alert_row(event, {"frigate_event_id": row["frigate_event_id"]}, ack)
+        alert["data"] = row["data"]
+        alert["objects"] = _incident_objects(connection, alert)
+    alert["scene_url"] = f"/v1/incidents/{event_id}/scene.jpg"
+    alert["clip_url"] = f"/api/{quote(alert['camera_id'], safe='')}/start/{int(alert['timestamp']) - 30}/end/{int(alert['timestamp']) + 30}/clip.mp4"
+    return alert
+
+
+@app.get("/v1/incidents/{event_id}/scene.jpg", tags=["incidents"])
+def incident_scene(event_id: UUID, height: int = Query(default=720, ge=180, le=1080)) -> Response:
+    """Full frame at the alert instant with every involved object boxed and numbered."""
+    key = f"scene:{event_id}:{height}"
+    hit = _frame_cache.get(key)
+    if hit and hit[0] > time.time():
+        return Response(content=hit[1], media_type="image/jpeg", headers={"Cache-Control": "max-age=300"})
+    detail = get_incident(event_id)
+    camera = detail["camera_id"]
+    stamp = float(detail["timestamp"])
+    payload: bytes | None = None
+    try:
+        with urlopen(f"{frigate_api_url}/{quote(camera, safe='')}/recordings/{stamp:.3f}/snapshot.jpg?height={height}", timeout=15) as response:
+            if "image" in (response.headers.get("Content-Type") or ""):
+                payload = response.read()
+    except (HTTPError, URLError, TimeoutError):
+        payload = None
+    if payload is None:
+        return Response(content=heatmap_render.placeholder("Sin grabación para este instante"), media_type="image/jpeg")
+    try:
+        from io import BytesIO
+        from PIL import Image, ImageDraw
+
+        image = Image.open(BytesIO(payload)).convert("RGB")
+        draw = ImageDraw.Draw(image)
+        sx, sy = image.width / 1280.0, image.height / 720.0
+        for obj in detail.get("objects") or []:
+            box = obj.get("bbox")
+            if not isinstance(box, dict):
+                continue
+            x, y = float(box["x"]) * sx, float(box["y"]) * sy
+            w, h = float(box["width"]) * sx, float(box["height"]) * sy
+            draw.rectangle([x, y, x + w, y + h], outline=(56, 103, 252), width=3)
+            tag = f"{obj['n']} {obj.get('label') or ''}".strip()
+            draw.rectangle([x, max(0, y - 18), x + 8 * len(tag) + 10, max(0, y - 18) + 18], fill=(10, 11, 13))
+            draw.text((x + 4, max(0, y - 16)), tag, fill=(233, 236, 239))
+        out = BytesIO()
+        image.save(out, format="JPEG", quality=85)
+        payload = out.getvalue()
+    except Exception:  # noqa: BLE001
+        logging.getLogger(__name__).exception("incident scene draw failed")
+    if len(_frame_cache) > 512:
+        _frame_cache.clear()
+    _frame_cache[key] = (time.time() + 300, payload)
+    return Response(content=payload, media_type="image/jpeg", headers={"Cache-Control": "max-age=300"})
 

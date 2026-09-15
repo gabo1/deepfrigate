@@ -67,6 +67,7 @@ class CrowdEngine:
         camera_id = detection.camera_id
         now = detection.timestamp if timestamp is None else timestamp
         occupancy = self._zones.occupancy(camera_id)
+        members = self._zones.members(camera_id)
         updates: list[dict[str, Any]] = []
         for zone_name, rule in self._zones.overcrowding_rules(camera_id).items():
             threshold = rule["threshold"]
@@ -109,6 +110,8 @@ class CrowdEngine:
                         "zone": zone_name,
                         "count": count,
                         "threshold": threshold,
+                        # The objects behind the count, at this instant.
+                        "objects": members.get(zone_name, []),
                     },
                     timestamp,
                 )

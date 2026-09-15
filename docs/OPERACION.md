@@ -713,6 +713,12 @@ placas al día y las otras tres CERO, así que solo `user` la tiene encendida.
 Quitarla donde nunca lee no pierde nada y le ahorra al worker una etapa por
 coche.
 
+## 6c-ter. Qué mide cada detector de evento
+
+Tiempo en zona, aforo y detenido se confunden entre sí. La tabla con lo que mide
+cada uno, el `event_type` que escribe y dónde se enciende está en
+[`docs/GLOSARIO-DETECTORES.md`](GLOSARIO-DETECTORES.md).
+
 ## 6d. Reglas declarativas (`config/rules/rules.yaml`, 8 sep)
 
 event-engine evalúa cada evento normalizado contra un YAML de reglas y emite

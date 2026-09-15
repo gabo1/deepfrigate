@@ -187,6 +187,26 @@ class ZoneEngine:
                 counts[zone_name] = counts.get(zone_name, 0) + 1
         return counts
 
+    def members(self, camera_id: str) -> dict[str, list[dict[str, Any]]]:
+        """Who is inside each zone right now: object id, label and last bbox.
+
+        Overcrowding carries this list so an alert can show *which* objects
+        made the count, not only how many (Incidentes detail view).
+        """
+        out: dict[str, list[dict[str, Any]]] = {}
+        for (track_camera, track_id), track in self._tracks.items():
+            if track_camera != camera_id:
+                continue
+            for zone_name in track.current_zones:
+                out.setdefault(zone_name, []).append(
+                    {
+                        "object_id": f"{track_camera}-{track_id}",
+                        "label": track.detection.label,
+                        "bbox": dict(track.detection.bbox),
+                    }
+                )
+        return out
+
     def overcrowding_thresholds(self, camera_id: str) -> dict[str, int]:
         camera = self._cameras.get(camera_id)
         if camera is None:

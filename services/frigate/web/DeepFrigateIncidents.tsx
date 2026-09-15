@@ -9,6 +9,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { FrigateConfig } from "@/types/frigateConfig";
 import axios from "axios";
@@ -68,6 +75,29 @@ type Episode = {
   clip_url: string;
 };
 
+type IncidentObject = {
+  n: number;
+  object_id: string;
+  label?: string | null;
+  bbox?: { x: number; y: number; width: number; height: number } | null;
+  first_seen?: number | null;
+  last_seen?: number | null;
+  since_alert_s?: number | null;
+  until_alert_s?: number | null;
+  frigate_event_id?: string | null;
+  sub_label?: string | null;
+  attributes?: Record<string, { value: string; score: number }> | null;
+  plate?: string | null;
+  thumbnail_url?: string | null;
+  explore_url?: string | null;
+};
+
+type IncidentDetail = Incident & {
+  objects: IncidentObject[];
+  scene_url: string;
+  clip_url: string;
+};
+
 type Summary = {
   hours: number;
   by_severity: Record<string, { total: number; pending: number }>;
@@ -123,6 +153,10 @@ export default function DeepFrigateIncidents() {
   const [camera, setCamera] = useState("all");
   const [onlyPending, setOnlyPending] = useState(true);
   const [minutes, setMinutes] = useState(5);
+  const [selected, setSelected] = useState<string | null>(null);
+  const { data: detail } = useSWR<IncidentDetail>(
+    selected ? `${API}/incidents/${encodeURIComponent(selected)}` : null,
+  );
 
   const { data: config } = useSWR<FrigateConfig>("config", {
     revalidateOnFocus: false,
@@ -283,12 +317,7 @@ export default function DeepFrigateIncidents() {
                   item={item}
                   onAck={() => ack([item.id])}
                   onUnack={() => unack(item.id)}
-                  onOpen={() =>
-                    item.frigate_event_id &&
-                    navigate(
-                      `/explore?event_id=${encodeURIComponent(item.frigate_event_id)}`,
-                    )
-                  }
+                  onOpen={() => setSelected(item.id)}
                 />
               ))}
             </div>
@@ -315,7 +344,153 @@ export default function DeepFrigateIncidents() {
           </div>
         )}
       </div>
+      <IncidentDialog
+        detail={selected ? detail : undefined}
+        open={selected !== null}
+        onClose={() => setSelected(null)}
+        onAck={(id) => ack([id])}
+        onExplore={(url) => navigate(url)}
+      />
     </div>
+  );
+}
+
+function attributeSummary(attrs?: IncidentObject["attributes"]): string {
+  if (!attrs) return "";
+  const order = ["upper_color", "lower_color", "gender", "age", "sleeve", "glasses", "orientation", "color", "make_model", "body_type"];
+  return order
+    .filter((key) => attrs[key]?.value)
+    .map((key) => `${attrs[key].value}`)
+    .join(" · ");
+}
+
+function IncidentDialog({
+  detail,
+  open,
+  onClose,
+  onAck,
+  onExplore,
+}: {
+  detail?: IncidentDetail;
+  open: boolean;
+  onClose: () => void;
+  onAck: (id: string) => void;
+  onExplore: (url: string) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={(value) => !value && onClose()}>
+      <DialogContent className="max-h-[92vh] w-[min(96vw,1100px)] max-w-none overflow-y-auto">
+        {!detail ? (
+          <ActivityIndicator />
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex flex-wrap items-center gap-2">
+                {severityBadge(detail.severity)}
+                <span className="font-mono text-sm text-primary-variant">{detail.rule}</span>
+                <span className="text-sm text-secondary-foreground">
+                  {detail.camera_id} · {dayAndClock(detail.timestamp)} · {clock(detail.timestamp)}
+                </span>
+              </DialogTitle>
+              <DialogDescription className="text-primary">{detail.message}</DialogDescription>
+            </DialogHeader>
+            <div className="relative overflow-hidden rounded border border-border bg-black">
+              <img
+                className="max-h-[52vh] w-full object-contain"
+                src={`${baseUrl}api/deepfrigate${detail.scene_url}`}
+                alt="escena"
+              />
+            </div>
+            <div className="df-label">
+              {detail.objects.length} objeto{detail.objects.length === 1 ? "" : "s"} en el instante de la alerta ·
+              tiempos relativos a la alerta
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="df-label text-left">
+                  <tr>
+                    <th className="px-2 py-1">#</th>
+                    <th className="px-2 py-1">foto</th>
+                    <th className="px-2 py-1">objeto</th>
+                    <th className="px-2 py-1">atributos</th>
+                    <th className="px-2 py-1">aparece</th>
+                    <th className="px-2 py-1">se va</th>
+                    <th className="px-2 py-1"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {detail.objects.map((obj) => (
+                    <tr key={obj.object_id} className="border-t border-border align-middle">
+                      <td className="px-2 py-1 font-mono text-primary-variant">{obj.n}</td>
+                      <td className="px-2 py-1">
+                        {obj.thumbnail_url ? (
+                          <img
+                            className="h-14 w-14 rounded object-cover"
+                            loading="lazy"
+                            src={`${baseUrl}api/deepfrigate${obj.thumbnail_url}`}
+                            alt={obj.label ?? ""}
+                          />
+                        ) : (
+                          <div className="flex h-14 w-14 items-center justify-center rounded bg-secondary text-[10px] text-secondary-foreground">
+                            sin Event
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-2 py-1 text-primary">
+                        <div>{obj.label}</div>
+                        {obj.plate && <div className="font-mono text-xs text-primary-variant">{obj.plate}</div>}
+                        {!obj.plate && obj.sub_label && (
+                          <div className="text-xs text-secondary-foreground">{obj.sub_label}</div>
+                        )}
+                        <div className="font-mono text-[10px] text-secondary-foreground">{obj.object_id}</div>
+                      </td>
+                      <td className="px-2 py-1 text-xs text-secondary-foreground">{attributeSummary(obj.attributes)}</td>
+                      <td className="px-2 py-1 font-mono text-xs text-primary-variant">
+                        {obj.since_alert_s == null ? "-" : `${obj.since_alert_s > 0 ? "+" : ""}${obj.since_alert_s} s`}
+                      </td>
+                      <td className="px-2 py-1 font-mono text-xs text-primary-variant">
+                        {obj.until_alert_s == null ? "sigue" : `${obj.until_alert_s > 0 ? "+" : ""}${obj.until_alert_s} s`}
+                      </td>
+                      <td className="px-2 py-1 text-right">
+                        {obj.explore_url && (
+                          <Button size="sm" variant="ghost" onClick={() => onExplore(obj.explore_url!)}>
+                            Explore
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+              <span className="text-xs text-secondary-foreground">
+                {detail.acked
+                  ? `acusó ${detail.acked.by} · ${dayAndClock(detail.acked.at)}`
+                  : "pendiente de acuse"}
+              </span>
+              <div className="flex gap-1">
+                <Button size="sm" variant="outline" asChild>
+                  <a href={`${baseUrl}${detail.clip_url.replace(/^\//, "")}`} target="_blank" rel="noreferrer">
+                    Clip ±30 s
+                  </a>
+                </Button>
+                {detail.frigate_event_id && (
+                  <Button size="sm" variant="ghost" onClick={() => onExplore(`/explore?event_id=${encodeURIComponent(detail.frigate_event_id!)}`)}>
+                    Explore
+                  </Button>
+                )}
+                {!detail.acked && (
+                  <Button size="sm" variant="secondary" onClick={() => onAck(detail.id)}>
+                    Acusar
+                  </Button>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -344,7 +519,7 @@ function AlertCard({
         type="button"
         className="relative block aspect-video w-full overflow-hidden bg-black"
         onClick={onOpen}
-        title="Abrir en Explore"
+        title="Ver detalle"
       >
         <img
           className="size-full object-contain"

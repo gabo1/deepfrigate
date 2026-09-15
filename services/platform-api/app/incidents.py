@@ -228,3 +228,81 @@ def episodes_from_aggregates(
             episode.labels[str(row["label"] or "object")] = int(row["n"])
     ordered = sorted(episodes.values(), key=lambda e: (-e.start, e.camera_id))
     return [e.row() for e in ordered if e.objects or e.alerts]
+
+
+def occupancy_at(rows: Iterable[dict[str, Any]], t: float, zone: str) -> list[dict[str, Any]]:
+    """Who was inside `zone` at instant `t`, replaying events in time order.
+
+    `rows`: lifecycle and zone events of one camera around `t`, each with
+    `event_type, object_id, timestamp, data`. Replaying (instead of a set
+    difference) is what survives NvTracker id reuse: an id that entered,
+    ended and came back as another object is judged by its *latest* state at
+    `t`. Returns one entry per object inside, with the lifecycle of that
+    occupant: `first_seen` (START at or before `t`), `last_seen` (END after
+    that START, or None while alive), `label` and last `bbox` before `t`.
+    """
+    state: dict[str, dict[str, Any]] = {}
+    for row in sorted(rows, key=lambda r: float(r["timestamp"])):
+        stamp = float(row["timestamp"])
+        kind = row.get("event_type")
+        oid = str(row.get("object_id") or "")
+        data = row.get("data") or {}
+        if not oid:
+            continue
+        if kind == "object_detected":
+            # A new occupant of the id: fresh state (previous one is gone).
+            if stamp <= t:
+                state[oid] = {"first_seen": stamp, "last_seen": None, "inside": False, "label": data.get("label"), "bbox": data.get("bbox")}
+            elif oid in state and state[oid]["last_seen"] is None and state[oid]["inside"] is False:
+                pass
+            continue
+        entry = state.get(oid)
+        if kind in ("object_ended", "object_lost"):
+            if entry is not None and entry["last_seen"] is None and stamp >= entry["first_seen"]:
+                if stamp <= t:
+                    entry["inside"] = False
+                    entry["last_seen"] = stamp
+                elif entry["last_seen"] is None:
+                    entry["last_seen"] = stamp
+            continue
+        if stamp > t or entry is None:
+            continue
+        if kind == "object_entered_zone" and data.get("zone") == zone:
+            entry["inside"] = True
+        elif kind == "object_exited_zone" and data.get("zone") == zone:
+            entry["inside"] = False
+        if data.get("label"):
+            entry["label"] = data["label"]
+        if isinstance(data.get("bbox"), dict):
+            entry["bbox"] = data["bbox"]
+    out = []
+    for oid, entry in state.items():
+        if entry["inside"] and (entry["last_seen"] is None or entry["last_seen"] > t):
+            out.append({"object_id": oid, "label": entry["label"], "bbox": entry["bbox"], "first_seen": entry["first_seen"], "last_seen": entry["last_seen"]})
+    out.sort(key=lambda e: e["first_seen"])
+    return out
+
+
+def lifecycle_at(rows: Iterable[dict[str, Any]], t: float, object_ids: list[str]) -> dict[str, dict[str, Any]]:
+    """For each object id, the occupant alive at `t`: START at or before `t`
+    (latest) and its END (first END after that START), label, last bbox <= t."""
+    by: dict[str, dict[str, Any]] = {}
+    for row in sorted(rows, key=lambda r: float(r["timestamp"])):
+        oid = str(row.get("object_id") or "")
+        if oid not in object_ids:
+            continue
+        stamp = float(row["timestamp"]); kind = row.get("event_type"); data = row.get("data") or {}
+        entry = by.get(oid)
+        if kind == "object_detected" and stamp <= t + 5:
+            by[oid] = {"first_seen": stamp, "last_seen": None, "label": data.get("label"), "bbox": data.get("bbox")}
+            continue
+        if entry is None:
+            continue
+        if kind in ("object_ended", "object_lost") and entry["last_seen"] is None and stamp >= entry["first_seen"]:
+            entry["last_seen"] = stamp
+        if stamp <= t:
+            if data.get("label"):
+                entry["label"] = data["label"]
+            if isinstance(data.get("bbox"), dict):
+                entry["bbox"] = data["bbox"]
+    return by
